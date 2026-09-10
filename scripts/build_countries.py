@@ -89,6 +89,21 @@ def load_country_codes() -> dict[str, str]:
 	return codes
 
 
+def load_excluded_overture_country_codes() -> set[str]:
+	policy_path = ROOT / "config" / "overture-excluded-country-codes.json"
+	payload = json.loads(policy_path.read_text(encoding="utf-8"))
+	codes = {
+		str(code).strip().upper()
+		for code in payload.get("codes", [])
+		if str(code).strip()
+	}
+	if not codes:
+		raise ValueError("Overture excluded-country policy must contain at least one code.")
+	if any(len(code) != 2 for code in codes):
+		raise ValueError("Overture excluded-country codes must be two characters long.")
+	return codes
+
+
 def open_duckdb() -> duckdb.DuckDBPyConnection:
 	connection = duckdb.connect()
 	connection.execute("INSTALL spatial;")
@@ -107,7 +122,61 @@ def create_iso_table(connection: duckdb.DuckDBPyConnection, codes: dict[str, str
 	)
 
 
-def create_country_tables(connection: duckdb.DuckDBPyConnection, release: str) -> dict[str, int]:
+def validate_overture_country_policy(
+	connection: duckdb.DuckDBPyConnection,
+	excluded_codes: set[str],
+) -> list[dict[str, str | None]]:
+	unknown_rows = connection.execute(
+		"""
+		SELECT
+			d.iso2,
+			d.name,
+			d.wikidata,
+			d.overture_id
+		FROM country_divisions d
+		LEFT JOIN iso_codes c USING (iso2)
+		WHERE c.iso3 IS NULL
+		ORDER BY d.iso2;
+		"""
+	).fetchall()
+	observed_codes = {row[0] for row in unknown_rows}
+	unexpected_codes = sorted(observed_codes - excluded_codes)
+	missing_expected_codes = sorted(excluded_codes - observed_codes)
+
+	if unexpected_codes:
+		details = ", ".join(
+			f"{code} ({name or 'unnamed'}, {wikidata or 'no Wikidata'})"
+			for code, name, wikidata, _ in unknown_rows
+			if code in unexpected_codes
+		)
+		raise RuntimeError(
+			"New or unreviewed Overture country code(s) require an explicit policy decision: "
+			+ details
+		)
+
+	if missing_expected_codes:
+		raise RuntimeError(
+			"Reviewed Overture synthetic country code(s) disappeared or became ISO-compatible; "
+			"review the policy before continuing: "
+			+ ", ".join(missing_expected_codes)
+		)
+
+	return [
+		{
+			"code": code,
+			"name": name,
+			"wikidata": wikidata,
+			"overtureId": overture_id,
+		}
+		for code, name, wikidata, overture_id in unknown_rows
+	]
+
+
+def create_country_tables(
+	connection: duckdb.DuckDBPyConnection,
+	release: str,
+	excluded_codes: set[str],
+) -> tuple[dict[str, int], list[dict[str, str | None]]]:
 	division_path = f"{S3_BASE}/{release}/theme=divisions/type=division/*.parquet"
 	area_path = f"{S3_BASE}/{release}/theme=divisions/type=division_area/*.parquet"
 
@@ -142,23 +211,16 @@ def create_country_tables(connection: duckdb.DuckDBPyConnection, release: str) -
 		"""
 	)
 
-	unknown_codes = [
-		row[0]
-		for row in connection.execute(
-			"""
-			SELECT d.iso2
-			FROM country_divisions d
-			LEFT JOIN iso_codes c USING (iso2)
-			WHERE c.iso3 IS NULL
-			ORDER BY d.iso2;
-			"""
-		).fetchall()
-	]
-	if unknown_codes:
-		raise RuntimeError(
-			"Missing ISO-3 mapping for Overture country code(s): "
-			+ ", ".join(unknown_codes)
-		)
+	excluded_entities = validate_overture_country_policy(connection, excluded_codes)
+
+	connection.execute(
+		"""
+		CREATE TEMP TABLE statistics_country_divisions AS
+		SELECT d.*
+		FROM country_divisions d
+		INNER JOIN iso_codes c USING (iso2);
+		"""
+	)
 
 	connection.execute(
 		f"""
@@ -170,7 +232,7 @@ def create_country_tables(connection: duckdb.DuckDBPyConnection, release: str) -
 			d.wikidata,
 			a.geometry
 		FROM read_parquet('{area_path}', hive_partitioning=1) a
-		INNER JOIN country_divisions d
+		INNER JOIN statistics_country_divisions d
 			ON a.division_id = d.overture_id
 		WHERE
 			a.subtype = 'country'
@@ -189,14 +251,14 @@ def create_country_tables(connection: duckdb.DuckDBPyConnection, release: str) -
 	).fetchall()
 	if duplicate_areas:
 		details = ", ".join(f"{iso2}={count}" for iso2, count in duplicate_areas)
-		raise RuntimeError(f"Expected exactly one land polygon per country: {details}")
+		raise RuntimeError(f"Expected exactly one land polygon per statistics country: {details}")
 
 	missing_areas = [
 		row[0]
 		for row in connection.execute(
 			"""
 			SELECT d.iso2
-			FROM country_divisions d
+			FROM statistics_country_divisions d
 			LEFT JOIN country_areas a USING (iso2)
 			WHERE a.iso2 IS NULL
 			ORDER BY d.iso2;
@@ -205,7 +267,7 @@ def create_country_tables(connection: duckdb.DuckDBPyConnection, release: str) -
 	]
 	if missing_areas:
 		raise RuntimeError(
-			"Country division(s) without land polygon: " + ", ".join(missing_areas)
+			"Statistics country division(s) without land polygon: " + ", ".join(missing_areas)
 		)
 
 	connection.execute(
@@ -235,7 +297,7 @@ def create_country_tables(connection: duckdb.DuckDBPyConnection, release: str) -
 			d.wikidata,
 			d.overture_id,
 			d.label_geometry AS geometry
-		FROM country_divisions d
+		FROM statistics_country_divisions d
 		INNER JOIN iso_codes c USING (iso2);
 		"""
 	)
@@ -243,11 +305,11 @@ def create_country_tables(connection: duckdb.DuckDBPyConnection, release: str) -
 	country_count = connection.execute("SELECT COUNT(*) FROM country_features;").fetchone()[0]
 	label_count = connection.execute("SELECT COUNT(*) FROM country_labels;").fetchone()[0]
 	perspective_fallbacks = connection.execute(
-		"SELECT COUNT(*) FROM country_divisions WHERE has_perspective;"
+		"SELECT COUNT(*) FROM statistics_country_divisions WHERE has_perspective;"
 	).fetchone()[0]
 
 	if not 180 <= country_count <= 260:
-		raise RuntimeError(f"Unexpected country count: {country_count}")
+		raise RuntimeError(f"Unexpected statistics-country count: {country_count}")
 	if country_count != label_count:
 		raise RuntimeError(
 			f"Country/label count mismatch: polygons={country_count}, labels={label_count}"
@@ -256,12 +318,20 @@ def create_country_tables(connection: duckdb.DuckDBPyConnection, release: str) -
 		"SELECT COUNT(*) FROM country_features WHERE area_id = 'country:AUT';"
 	).fetchone()[0] != 1:
 		raise RuntimeError("Sanity check failed: country:AUT is missing.")
+	if connection.execute(
+		"SELECT COUNT(*) FROM country_features WHERE area_id = 'country:XKX';"
+	).fetchone()[0] != 1:
+		raise RuntimeError("Sanity check failed: reviewed Kosovo mapping country:XKX is missing.")
 
-	return {
-		"countries": country_count,
-		"labels": label_count,
-		"perspectiveFallbacks": perspective_fallbacks,
-	}
+	return (
+		{
+			"countries": country_count,
+			"labels": label_count,
+			"excludedSyntheticCountries": len(excluded_entities),
+			"perspectiveFallbacks": perspective_fallbacks,
+		},
+		excluded_entities,
+	)
 
 
 def export_geojsonseq(
@@ -361,7 +431,7 @@ def build_pmtiles(
 		"--no-feature-limit",
 		"--no-tile-size-limit",
 		"--name=Kartensammlung world admin",
-		"--description=Country geometries and label points for area statistics",
+		"--description=Statistics-compatible country geometries and label points",
 		f"--attribution={ATTRIBUTION}",
 		"-L",
 		f"country:{country_path}",
@@ -379,6 +449,7 @@ def write_metadata(
 	release: str,
 	generated_at: str,
 	counts: dict[str, int],
+	excluded_entities: list[dict[str, str | None]],
 	pmtiles_path: Path | None,
 ) -> None:
 	payload = {
@@ -389,8 +460,10 @@ def write_metadata(
 			"level": "country",
 			"areaId": "country:<ISO-3166-1 alpha-3>",
 			"sourceLayers": ["country", "country_label"],
+			"policy": "ISO-compatible statistics countries plus explicitly reviewed mappings only",
 		},
 		"counts": counts,
+		"excludedOvertureCountryEntities": excluded_entities,
 		"source": {
 			"name": "Overture Maps divisions",
 			"license": "ODbL-1.0",
@@ -429,11 +502,15 @@ def main() -> int:
 	registry_path = output_dir / "area-registry-countries.json"
 	pmtiles_path = output_dir / "world-admin.pmtiles"
 
-	print(f"Overture release: {release}")
+	print(f"Overture release: {release}", flush=True)
 	connection = open_duckdb()
 	try:
 		create_iso_table(connection, load_country_codes())
-		counts = create_country_tables(connection, release)
+		counts, excluded_entities = create_country_tables(
+			connection,
+			release,
+			load_excluded_overture_country_codes(),
+		)
 		export_geojsonseq(connection, "country_features", country_path)
 		export_geojsonseq(connection, "country_labels", label_path)
 		write_registry(connection, registry_path, release, generated_at)
@@ -451,12 +528,14 @@ def main() -> int:
 		release,
 		generated_at,
 		counts,
+		excluded_entities,
 		final_pmtiles_path,
 	)
 
 	print(
 		"Built "
-		f"{counts['countries']} countries and {counts['labels']} labels"
+		f"{counts['countries']} statistics countries and {counts['labels']} labels; "
+		f"excluded {counts['excludedSyntheticCountries']} reviewed Overture synthetic entities"
 		+ (
 			f"; PMTiles: {pmtiles_path.stat().st_size:,} bytes"
 			if final_pmtiles_path
