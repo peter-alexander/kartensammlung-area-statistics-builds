@@ -99,6 +99,38 @@ def validate_provider_catalog(payload: Any) -> dict[str, Any]:
 	return payload
 
 
+def validate_classification(indicator_id: str, classification: Any) -> None:
+	if classification is None:
+		return
+	if not isinstance(classification, dict):
+		raise ValueError(f"Indicator {indicator_id} has invalid classification metadata.")
+
+	classification_type = str(classification.get("type", "")).strip()
+	if classification_type != "fixed":
+		raise ValueError(
+			f"Indicator {indicator_id} uses unsupported classification type: {classification_type or '(empty)'}."
+		)
+
+	scale = str(classification.get("scale", "linear")).strip()
+	if scale not in ("linear", "logarithmic"):
+		raise ValueError(f"Indicator {indicator_id} has invalid classification scale: {scale}.")
+
+	breaks = classification.get("breaks")
+	if not isinstance(breaks, list) or len(breaks) != 6:
+		raise ValueError(f"Indicator {indicator_id} fixed classification requires exactly 6 breaks.")
+
+	normalized_breaks: list[float] = []
+	for value in breaks:
+		if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+			raise ValueError(f"Indicator {indicator_id} has a non-numeric classification break.")
+		normalized_breaks.append(float(value))
+
+	if any(value <= normalized_breaks[index - 1] for index, value in enumerate(normalized_breaks) if index > 0):
+		raise ValueError(f"Indicator {indicator_id} classification breaks must be strictly ascending.")
+	if scale == "logarithmic" and normalized_breaks[0] <= 0:
+		raise ValueError(f"Indicator {indicator_id} logarithmic classification breaks must be positive.")
+
+
 def validate_config(payload: Any) -> dict[str, Any]:
 	if not isinstance(payload, dict) or payload.get("schema") != "kartensammlung.eurostat-statistics/v1":
 		raise ValueError("Invalid Eurostat statistics config.")
@@ -140,6 +172,7 @@ def validate_config(payload: Any) -> dict[str, Any]:
 			raise ValueError(f"Duplicate indicator slug: {slug}")
 		ids.add(indicator_id)
 		slugs.add(slug)
+		validate_classification(indicator_id, indicator.get("classification"))
 		if indicator["timeMode"] not in ("annual", "latest-semester-per-year"):
 			raise ValueError(f"Unsupported timeMode for {indicator_id}: {indicator['timeMode']}")
 		filters = indicator.get("filters")
@@ -463,6 +496,8 @@ def normalize_indicator(
 		},
 		"values": sorted_values,
 	}
+	if indicator.get("classification") is not None:
+		result["indicator"]["classification"] = indicator["classification"]
 
 	print(
 		f"  mapped={len(areas_with_any_value)} "
@@ -536,21 +571,22 @@ def main() -> None:
 	for indicator, payload in indicator_payloads:
 		filename = f"{indicator['slug']}.json"
 		write_json(release_dir / filename, payload)
-		index_indicators.append(
-			{
-				"id": indicator["id"],
-				"title": indicator["title"],
-				"description": indicator["description"],
-				"areaLevel": "country",
-				"frequency": "annual",
-				"unit": indicator["unit"],
-				"sourceDataset": indicator["dataset"],
-				"path": f"releases/{snapshot}/{filename}",
-				"availableYears": payload["availableYears"],
-				"defaultYear": payload["defaultYear"],
-				"coverage": payload["coverage"],
-			}
-		)
+		index_indicator = {
+			"id": indicator["id"],
+			"title": indicator["title"],
+			"description": indicator["description"],
+			"areaLevel": "country",
+			"frequency": "annual",
+			"unit": indicator["unit"],
+			"sourceDataset": indicator["dataset"],
+			"path": f"releases/{snapshot}/{filename}",
+			"availableYears": payload["availableYears"],
+			"defaultYear": payload["defaultYear"],
+			"coverage": payload["coverage"],
+		}
+		if indicator.get("classification") is not None:
+			index_indicator["classification"] = indicator["classification"]
+		index_indicators.append(index_indicator)
 
 	registry_source = {
 		"url": args.registry if args.registry.startswith(("https://", "http://")) else None,
