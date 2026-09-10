@@ -142,9 +142,39 @@ kartensammlung.area-registry/v1
 
 Der Workflow baut Tippecanoe reproduzierbar aus einer festgelegten Version und prüft den Download per SHA-256. Die Overture-Daten werden mit DuckDB direkt aus den cloud-gehosteten GeoParquet-Dateien gelesen, sodass nicht das vollständige globale Dataset heruntergeladen werden muss.
 
-Die fertigen Dateien werden vorerst als GitHub-Actions-Artefakt gespeichert. Bei einem fehlgeschlagenen Lauf werden die Coverage- und Build-Diagnosen separat als Actions-Artefakt hochgeladen.
+Jeder erfolgreiche Build wird weiterhin für 30 Tage als GitHub-Actions-Artefakt gespeichert. Bei einem fehlgeschlagenen Lauf werden die Coverage- und Build-Diagnosen separat als Actions-Artefakt hochgeladen.
 
-Die dauerhafte öffentliche Auslieferung wird separat festgelegt, damit Build und Hosting nicht unnötig gekoppelt werden.
+### Produktions-Deployment
+
+Produktionsläufe auf `main` veröffentlichen anschließend automatisch nach `tiles.radlobby.at`. Pull-Request-Builds führen ausdrücklich kein Deployment durch. Auch ein manuell auf einem anderen Branch gestarteter Workflow darf nicht deployen.
+
+Der FTP-Benutzer ist bereits auf das Document-Root der Subdomain eingeschränkt. Deshalb gibt es kein zusätzliches `EASYNAME_REMOTE_ROOT`. Das feste Zielverzeichnis lautet relativ zum FTP-Root:
+
+```text
+AreaStatistics/
+```
+
+Öffentliche Dateien:
+
+```text
+https://tiles.radlobby.at/AreaStatistics/world-admin.pmtiles
+https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json
+https://tiles.radlobby.at/AreaStatistics/build-metadata.json
+```
+
+Benötigte GitHub Actions Secrets:
+
+```text
+EASYNAME_FTP_HOST
+EASYNAME_FTP_USER
+EASYNAME_FTP_PASSWORD
+```
+
+`EASYNAME_FTP_HOST` enthält nur den Hostnamen, ohne Protokoll und ohne führenden oder nachgestellten Slash.
+
+Das Deployment verwendet FTPS über `lftp`. Alle drei Dateien werden zuerst unter laufbezogenen temporären Namen hochgeladen und erst nach vollständig erfolgreicher Übertragung im Zielverzeichnis umbenannt. `world-admin.pmtiles` wird zuletzt auf den produktiven Namen gesetzt. Dadurch wird keine teilweise hochgeladene PMTiles-Datei unter der öffentlichen URL sichtbar.
+
+Nach dem Deployment prüft der Workflow die öffentliche PMTiles-URL zusätzlich mit einem HTTP-Range-Request.
 
 ## Validierung
 
