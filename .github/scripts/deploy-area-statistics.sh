@@ -27,6 +27,7 @@ LFTP_CMDS=$(mktemp)
 trap 'rm -f "$LFTP_CMDS"' EXIT
 
 {
+	echo "set cmd:fail-exit yes"
 	echo "set ftp:ssl-force true"
 	echo "set ftp:ssl-protect-data true"
 	echo "set ftp:passive-mode true"
