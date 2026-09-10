@@ -1,0 +1,25 @@
+{
+	"codes": [
+		"XA",
+		"XB",
+		"XC",
+		"XD",
+		"XG",
+		"XH",
+		"XI",
+		"XL",
+		"XM",
+		"XN",
+		"XO",
+		"XP",
+		"XQ",
+		"XR",
+		"XT",
+		"XU",
+		"XW",
+		"XX",
+		"XY",
+		"XZ"
+	],
+	"policy": "Overture synthetic country-like codes representing disputed or special-status areas are not assigned invented ISO-3 identifiers. They are excluded from the statistics-compatible country layer. Any change to this set must be reviewed explicitly."
+}

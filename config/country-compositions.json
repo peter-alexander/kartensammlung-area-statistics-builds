@@ -1,0 +1,59 @@
+{
+	"BQ": {
+		"name": "Bonaire, Sint Eustatius and Saba",
+		"wikidata": "Q27561",
+		"components": [
+			{
+				"subtype": "dependency",
+				"country": "BQ"
+			},
+			{
+				"subtype": "dependency",
+				"country": "XE"
+			},
+			{
+				"subtype": "dependency",
+				"country": "XS"
+			}
+		]
+	},
+	"SJ": {
+		"name": "Svalbard and Jan Mayen",
+		"wikidata": "Q842829",
+		"components": [
+			{
+				"subtype": "dependency",
+				"country": "SJ"
+			},
+			{
+				"subtype": "dependency",
+				"country": "XJ"
+			}
+		]
+	},
+	"PS": {
+		"name": "State of Palestine",
+		"wikidata": "Q219060",
+		"components": [
+			{
+				"subtype": "country",
+				"country": "XG"
+			},
+			{
+				"subtype": "country",
+				"country": "XW"
+			}
+		]
+	},
+	"EH": {
+		"name": "Western Sahara",
+		"wikidata": "Q6250",
+		"components": [
+			{
+				"subtype": "region",
+				"country": "MA",
+				"wikidata": "Q6250"
+			}
+		]
+	}
+}
