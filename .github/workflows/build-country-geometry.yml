@@ -58,7 +58,11 @@ jobs:
         run: pip install --requirement requirements.txt
 
       - name: Inspect country and dependency coverage
-        run: python scripts/inspect_overture_countries.py --release "${OVERTURE_RELEASE}"
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          python scripts/inspect_overture_countries.py --release "${OVERTURE_RELEASE}" 2>&1 | tee diagnostics/overture-coverage.log
 
       - name: Install Tippecanoe
         shell: bash
@@ -76,7 +80,10 @@ jobs:
           tippecanoe --version
 
       - name: Build country geometry
-        run: python scripts/build_countries.py --release "${OVERTURE_RELEASE}"
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/build_countries.py --release "${OVERTURE_RELEASE}" 2>&1 | tee diagnostics/build.log
 
       - name: Show build metadata
         run: |
@@ -88,5 +95,14 @@ jobs:
         with:
           name: country-geometry-${{ github.sha }}
           path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: country-geometry-diagnostics-${{ github.sha }}
+          path: diagnostics/
           if-no-files-found: error
           retention-days: 30
