@@ -56,6 +56,10 @@
 				"label": "EUR pro Monat",
 				"symbol": "€"
 			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [500, 1000, 1500, 2000, 2500, 3000]
+			},
 			"minAreasWithAnyValue": 25,
 			"maxDefaultYearAge": 1,
 			"requiredAreas": [
@@ -83,6 +87,10 @@
 				"label": "PPS pro Monat",
 				"symbol": "PPS"
 			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [700, 900, 1100, 1300, 1500, 1700]
+			},
 			"minAreasWithAnyValue": 25,
 			"maxDefaultYearAge": 1,
 			"requiredAreas": [
@@ -93,6 +101,187 @@
 			"excludedGeos": [
 				"US"
 			]
+		},
+		{
+			"id": "unemployment.total-percent",
+			"slug": "unemployment-total-percent",
+			"dataset": "une_rt_a",
+			"title": "Arbeitslosenquote",
+			"description": "Arbeitslose im Alter von 15 bis 74 Jahren in Prozent der Erwerbspersonen derselben Altersgruppe; beide Geschlechter.",
+			"timeMode": "annual",
+			"filters": {
+				"freq": "A",
+				"unit": "PC_ACT",
+				"sex": "T",
+				"age": "Y15-74"
+			},
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [3, 5, 7, 10, 15, 20]
+			},
+			"minAreasWithAnyValue": 30,
+			"maxDefaultYearAge": 2,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:FRA"
+			],
+			"excludedGeos": []
+		},
+		{
+			"id": "unemployment.youth-percent",
+			"slug": "unemployment-youth-percent",
+			"dataset": "une_rt_a",
+			"title": "Jugendarbeitslosenquote",
+			"description": "Arbeitslose im Alter von 15 bis 24 Jahren in Prozent der Erwerbspersonen derselben Altersgruppe; beide Geschlechter.",
+			"timeMode": "annual",
+			"filters": {
+				"freq": "A",
+				"unit": "PC_ACT",
+				"sex": "T",
+				"age": "Y15-24"
+			},
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [5, 10, 15, 20, 30, 40]
+			},
+			"minAreasWithAnyValue": 30,
+			"maxDefaultYearAge": 2,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:FRA"
+			],
+			"excludedGeos": []
+		},
+		{
+			"id": "employment.age-20-64-percent",
+			"slug": "employment-age-20-64-percent",
+			"dataset": "lfsi_emp_a",
+			"title": "Beschäftigungsquote (20–64)",
+			"description": "Beschäftigte im Alter von 20 bis 64 Jahren in Prozent der Bevölkerung derselben Altersgruppe; beide Geschlechter.",
+			"timeMode": "annual",
+			"filters": {
+				"freq": "A",
+				"unit": "PC",
+				"sex": "T",
+				"age": "Y20-64"
+			},
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [50, 60, 70, 75, 80, 85]
+			},
+			"minAreasWithAnyValue": 30,
+			"maxDefaultYearAge": 2,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:FRA"
+			],
+			"excludedGeos": []
+		},
+		{
+			"id": "life-expectancy.at-birth-years",
+			"slug": "life-expectancy-at-birth-years",
+			"dataset": "demo_mlexpec",
+			"title": "Lebenserwartung bei Geburt",
+			"description": "Durchschnittliche Zahl der Jahre, die ein Neugeborenes bei Fortbestehen der im jeweiligen Jahr beobachteten Sterblichkeitsverhältnisse leben würde; beide Geschlechter.",
+			"timeMode": "annual",
+			"filters": {
+				"freq": "A",
+				"unit": "YR",
+				"sex": "T",
+				"age": "Y_LT1"
+			},
+			"unit": {
+				"id": "years",
+				"label": "Jahre",
+				"symbol": "Jahre"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [70, 75, 78, 80, 82, 84]
+			},
+			"minAreasWithAnyValue": 30,
+			"maxDefaultYearAge": 2,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:FRA"
+			],
+			"excludedGeos": []
+		},
+		{
+			"id": "fertility.total-children-per-woman",
+			"slug": "fertility-total-children-per-woman",
+			"dataset": "demo_find",
+			"title": "Gesamtfertilitätsrate",
+			"description": "Durchschnittliche Zahl der Kinder, die eine Frau bei den altersspezifischen Fertilitätsraten des jeweiligen Jahres im Laufe ihres Lebens bekommen würde.",
+			"timeMode": "annual",
+			"filters": {
+				"freq": "A",
+				"indic_de": "TOTFERRT"
+			},
+			"unit": {
+				"id": "children-per-woman",
+				"label": "Kinder je Frau"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [1.2, 1.4, 1.6, 1.8, 2.1, 2.3]
+			},
+			"minAreasWithAnyValue": 30,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:FRA"
+			],
+			"excludedGeos": []
+		},
+		{
+			"id": "income-inequality.gini",
+			"slug": "income-inequality-gini",
+			"dataset": "ilc_di12",
+			"title": "Gini-Koeffizient des verfügbaren Einkommens",
+			"description": "Gini-Koeffizient des verfügbaren Äquivalenzeinkommens. 0 bedeutet vollständige Gleichverteilung, 100 maximale Ungleichverteilung.",
+			"timeMode": "annual",
+			"filters": {
+				"freq": "A",
+				"age": "TOTAL",
+				"statinfo": "GINI_HND"
+			},
+			"unit": {
+				"id": "gini-0-100",
+				"label": "Gini-Koeffizient (0–100)"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [20, 25, 30, 35, 40, 45]
+			},
+			"minAreasWithAnyValue": 25,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:FRA"
+			],
+			"excludedGeos": []
 		}
 	]
 }
