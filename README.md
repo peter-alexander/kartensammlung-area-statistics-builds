@@ -16,16 +16,30 @@ Die Kartensammlung selbst enthält nur Runtime, Panel, Styling und Interaktion. 
 
 ## Länder-Geometrie
 
-Der erste Build erzeugt einen globalen Länder-Geometriesatz aus dem Overture-Maps-Theme `divisions`.
+Der erste Build erzeugt einen globalen, für Statistik-Joins geeigneten Länder-Geometriesatz aus dem Overture-Maps-Theme `divisions`.
 
 ### Eingaben
 
 - `division_area`, `subtype=country`, `is_land=true` für Länderpolygone
 - `division`, `subtype=country` für Labelpunkte und zusätzliche Metadaten
 - ISO-3166-Codes aus `pycountry`
-- explizite Sonderfälle aus `config/country-code-overrides.json`
+- explizit freigegebene Sonderfälle aus `config/country-code-overrides.json`
+- explizit geprüfte, aber nicht als Statistikländer verwendete Overture-Codes aus `config/overture-excluded-country-codes.json`
 
 Der Overture-Release wird standardmäßig dynamisch aus dem STAC-Katalog ermittelt. Für reproduzierbare Tests kann ein bestimmter Release mit `--release` vorgegeben werden.
+
+### Statistikländer und Overture-Sondergebiete
+
+Overture verwendet bei `subtype=country` neben ISO-Ländercodes auch eigene synthetische `X*`-Codes für umstrittene oder sonstige Sondergebiete. Diese Codes werden **nicht** automatisch in erfundene ISO-3-Codes übersetzt.
+
+Der Layer `country` enthält daher nur:
+
+- Länder mit belastbarer ISO-3166-1-alpha-3-Zuordnung
+- ausdrücklich geprüfte Sonderfälle, derzeit `XK -> XKX` für Kosovo
+
+Die übrigen aktuell bekannten synthetischen Overture-Codes werden bewusst vom Statistik-Ländersatz ausgeschlossen. Die Liste steht in `config/overture-excluded-country-codes.json`. Wenn Overture einen neuen solchen Code einführt, einen bekannten entfernt oder ein bisher synthetisches Gebiet künftig ISO-kompatibel wird, bricht der Build ab und verlangt eine bewusste Prüfung der Policy.
+
+`scripts/inspect_overture_countries.py` kann die aktuellen synthetischen Overture-Ländereinträge mit Name, Wikidata-ID, GERS-ID und vorhandenen Landflächen ausgeben.
 
 ### Gebietsschlüssel
 
@@ -81,6 +95,8 @@ Das Länderregister verwendet bereits den Vertrag:
 kartensammlung.area-registry/v1
 ```
 
+Die Build-Metadaten dokumentieren zusätzlich, welche überprüften Overture-Sondergebiete aus dem Statistik-Ländersatz ausgeschlossen wurden.
+
 ## Aktualisierung
 
 `.github/workflows/build-country-geometry.yml` läuft automatisch am 28. jedes Monats und kann zusätzlich manuell gestartet werden. Overture veröffentlicht das Divisions-Theme monatlich; der Workflow fragt jeweils den aktuellen Release ab.
@@ -93,12 +109,14 @@ Die fertigen Dateien werden vorerst als GitHub-Actions-Artefakt gespeichert. Die
 
 Der Länderbuild bricht unter anderem ab, wenn:
 
-- ein Overture-Ländercode keine ISO-3-Zuordnung besitzt,
-- für ein Land kein Landpolygon vorhanden ist,
+- ein nicht ausdrücklich behandelter Overture-Ländercode keine ISO-3-Zuordnung besitzt,
+- sich die überprüfte Menge der ausgeschlossenen synthetischen Overture-Codes ändert,
+- für ein Statistikland kein Landpolygon vorhanden ist,
 - mehrere Landpolygone für dieselbe kanonische Länder-ID entstehen,
 - Polygon- und Labelanzahl voneinander abweichen,
 - die globale Länderanzahl außerhalb eines plausiblen Bereichs liegt,
-- `country:AUT` fehlt.
+- `country:AUT` fehlt,
+- der explizit freigegebene Kosovo-Schlüssel `country:XKX` fehlt.
 
 Bei mehreren Overture-`division`-Varianten derselben Länderkennung wird zuerst eine Variante ohne politische Perspektivmarkierung gewählt. Nur wenn keine solche Variante existiert, wird deterministisch eine alternative Variante verwendet; die Zahl dieser Fallbacks wird in den Build-Metadaten ausgewiesen.
 
@@ -123,6 +141,12 @@ Bestimmten Overture-Release verwenden:
 
 ```bash
 python scripts/build_countries.py --release 2026-08-19.0
+```
+
+Synthetische Overture-Ländereinträge prüfen:
+
+```bash
+python scripts/inspect_overture_countries.py --release 2026-08-19.0
 ```
 
 ## Lizenz und Attribution
