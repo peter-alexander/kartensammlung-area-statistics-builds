@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import re
+from urllib.request import Request, urlopen
+
+import duckdb
+
+STAC_URL = "https://stac.overturemaps.org/catalog.json"
+S3_BASE = "s3://overturemaps-us-west-2/release"
+RELEASE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}\.\d+$")
+
+
+def parse_args() -> argparse.Namespace:
+	parser = argparse.ArgumentParser(
+		description="Inspect synthetic Overture country codes before defining Kartensammlung crosswalks."
+	)
+	parser.add_argument("--release", default="latest")
+	return parser.parse_args()
+
+
+def validate_release(value: str) -> str:
+	release = str(value or "").strip().rstrip("/")
+	if not RELEASE_RE.fullmatch(release):
+		raise ValueError(f"Invalid Overture release: {release!r}")
+	return release
+
+
+def resolve_latest_release() -> str:
+	request = Request(
+		STAC_URL,
+		headers={"User-Agent": "kartensammlung-area-statistics-builds/1"},
+	)
+	with urlopen(request, timeout=30) as response:
+		payload = json.load(response)
+	return validate_release(payload.get("latest", ""))
+
+
+def main() -> int:
+	args = parse_args()
+	release = resolve_latest_release() if args.release == "latest" else validate_release(args.release)
+	division_path = f"{S3_BASE}/{release}/theme=divisions/type=division/*.parquet"
+	area_path = f"{S3_BASE}/{release}/theme=divisions/type=division_area/*.parquet"
+
+	connection = duckdb.connect()
+	connection.execute("INSTALL httpfs;")
+	connection.execute("LOAD httpfs;")
+	connection.execute("SET s3_region='us-west-2';")
+
+	rows = connection.execute(
+		f"""
+		WITH division_rows AS (
+			SELECT
+				country AS code,
+				names.primary AS name,
+				wikidata,
+				id AS overture_id,
+				perspectives IS NOT NULL AS has_perspective
+			FROM read_parquet('{division_path}', hive_partitioning=1)
+			WHERE subtype = 'country' AND country LIKE 'X%'
+		),
+		area_counts AS (
+			SELECT
+				division_id,
+				COUNT(*) FILTER (WHERE is_land = TRUE) AS land_areas,
+				COUNT(*) AS all_areas
+			FROM read_parquet('{area_path}', hive_partitioning=1)
+			WHERE subtype = 'country'
+			GROUP BY division_id
+		)
+		SELECT
+			d.code,
+			d.name,
+			d.wikidata,
+			d.overture_id,
+			d.has_perspective,
+			COALESCE(a.land_areas, 0) AS land_areas,
+			COALESCE(a.all_areas, 0) AS all_areas
+		FROM division_rows d
+		LEFT JOIN area_counts a ON a.division_id = d.overture_id
+		ORDER BY d.code, d.has_perspective, d.name, d.overture_id;
+		"""
+	).fetchall()
+	connection.close()
+
+	print(f"Overture release: {release}")
+	print("Synthetic Overture country codes:")
+	for code, name, wikidata, overture_id, has_perspective, land_areas, all_areas in rows:
+		print(
+			f"{code}\t{name}\twikidata={wikidata or '-'}\t"
+			f"perspective={'yes' if has_perspective else 'no'}\t"
+			f"land_areas={land_areas}\tall_areas={all_areas}\t{overture_id}"
+		)
+	return 0
+
+
+if __name__ == "__main__":
+	raise SystemExit(main())
