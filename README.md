@@ -6,7 +6,7 @@ Die Geometrie-, Registry- und Statistik-Builds werden bewusst getrennt von der M
 
 ## Architektur
 
-Das Repo soll langfristig drei voneinander getrennte Aufgaben übernehmen:
+Das Repo übernimmt drei voneinander getrennte Aufgaben:
 
 - `geometry`: wiederverwendbare Gebietsgeometrien für Choroplethen und Beschriftungen
 - `registry`: stabile Gebietsschlüssel und Crosswalks zwischen externen Codes
@@ -14,9 +14,11 @@ Das Repo soll langfristig drei voneinander getrennte Aufgaben übernehmen:
 
 Die Kartensammlung selbst enthält nur Runtime, Panel, Styling und Interaktion. Statistikwerte und Geometrien werden nicht in die MapLibre-Anwendung eingebaut.
 
+Externe Statistik-APIs werden nicht direkt aus dem Browser abgefragt. GitHub Actions lädt die Quelldaten periodisch, normalisiert sie auf die stabilen `area_id`-Schlüssel, validiert den neuen Stand und veröffentlicht ausschließlich geprüfte statische Dateien auf `tiles.radlobby.at`.
+
 ## Länder-Geometrie
 
-Der erste Build erzeugt einen globalen, für Statistik-Joins geeigneten Länder-Geometriesatz aus dem Overture-Maps-Theme `divisions`.
+Der Geometrie-Build erzeugt einen globalen, für Statistik-Joins geeigneten Länder-Geometriesatz aus dem Overture-Maps-Theme `divisions`.
 
 Der Zielbestand ist bewusst nicht mit Overtures politischer Klassifizierung `subtype=country` gleichgesetzt. Für Statistik-Joins ist der stabile Codesatz entscheidend: enthalten werden alle 249 ISO-3166-1-Gebiete plus ausdrücklich geprüfte zusätzliche Gebiete, derzeit Kosovo (`XK -> XKX`). Der erwartete Gesamtbestand beträgt damit 250 Gebiete.
 
@@ -84,7 +86,7 @@ country:ESH
 country:XKX
 ```
 
-Die gleiche `area_id` wird sowohl im Polygon- als auch im Label-Layer verwendet.
+Die gleiche `area_id` wird sowohl im Polygon- als auch im Label-Layer sowie in den normalisierten Statistikdaten verwendet.
 
 ### Eingaben
 
@@ -136,25 +138,130 @@ Das Länderregister verwendet den Vertrag:
 kartensammlung.area-registry/v1
 ```
 
-## Aktualisierung
+## Länderstatistiken
 
-`.github/workflows/build-country-geometry.yml` läuft automatisch am 28. jedes Monats und kann zusätzlich manuell gestartet werden. Overture veröffentlicht das Divisions-Theme monatlich; der Workflow fragt jeweils den aktuellen Release ab.
+Statistikdaten werden als eigene, von der Geometrie unabhängige Build-Pipelines gepflegt. Ein Provider-Build darf nur auf `main` veröffentlichen, wenn Abruf, Normalisierung und Validierung vollständig erfolgreich waren. Die Kartensammlung greift ausschließlich auf die veröffentlichten statischen Dateien zu und benötigt keine direkte Verbindung zu den APIs der Datenanbieter.
 
-Der Workflow baut Tippecanoe reproduzierbar aus einer festgelegten Version und prüft den Download per SHA-256. Die Overture-Daten werden mit DuckDB direkt aus den cloud-gehosteten GeoParquet-Dateien gelesen, sodass nicht das vollständige globale Dataset heruntergeladen werden muss.
+### World Bank / World Development Indicators
 
-Jeder erfolgreiche Build wird weiterhin für 30 Tage als GitHub-Actions-Artefakt gespeichert. Bei einem fehlgeschlagenen Lauf werden die Coverage- und Build-Diagnosen separat als Actions-Artefakt hochgeladen.
+Der erste Statistik-Provider ist die World Bank. `scripts/build_world_bank.py` lädt die World Development Indicators über die World-Bank-API und ordnet nur Datensätze zu, deren ISO-3-Code in `area-registry-countries.json` auf eine bekannte `area_id` aufgelöst werden kann. Aggregate und andere nicht zuordenbare World-Bank-Codes werden nicht als Länderwerte ausgegeben.
 
-### Produktions-Deployment
-
-Produktionsläufe auf `main` veröffentlichen anschließend automatisch nach `tiles.radlobby.at`. Pull-Request-Builds führen ausdrücklich kein Deployment durch. Auch ein manuell auf einem anderen Branch gestarteter Workflow darf nicht deployen.
-
-Der FTP-Benutzer ist bereits auf das Document-Root der Subdomain eingeschränkt. Deshalb gibt es kein zusätzliches `EASYNAME_REMOTE_ROOT`. Das feste Zielverzeichnis lautet relativ zum FTP-Root:
+Aktuell konfigurierte Indikatoren stehen in `config/world-bank-indicators.json`:
 
 ```text
-AreaStatistics/
+population.total                    SP.POP.TOTL
+                                     Bevölkerung
+
+gdp.current-usd                     NY.GDP.MKTP.CD
+                                     BIP, laufende US-Dollar
+
+gdp-per-capita.current-usd          NY.GDP.PCAP.CD
+                                     BIP pro Kopf, laufende US-Dollar
+
+inflation.cpi-annual-percent         FP.CPI.TOTL.ZG
+                                     Inflation, Verbraucherpreisindex, % pro Jahr
 ```
 
-Öffentliche Dateien:
+Die internen Indikator-IDs und Einheiten sind unabhängig vom Quellformat. Dadurch können spätere Provider auf denselben Gebiets- und Metadatenvertrag normalisiert werden, ohne dass die MapLibre-Runtime World-Bank-spezifische API-Strukturen kennen muss.
+
+Jede Indikatordatei enthält unter anderem:
+
+```text
+schema
+indicator
+source
+availableYears
+defaultYear
+coverage
+values
+```
+
+`values` ist nach Jahr und danach nach `area_id` organisiert. Beispiel:
+
+```json
+{
+	"2025": {
+		"country:AUT": 1,
+		"country:DEU": 2
+	}
+}
+```
+
+Die Beispielwerte dienen nur zur Darstellung der Struktur.
+
+### Versionierte Statistik-Snapshots
+
+Die normalisierten Indikatordaten werden nicht direkt unter einem veränderlichen Dateinamen veröffentlicht. Der Build berechnet aus ihrem normalisierten Inhalt einen Snapshot-Hash und schreibt die Dateien unter:
+
+```text
+dist/statistics/world-bank/releases/<snapshot>/population-total.json
+dist/statistics/world-bank/releases/<snapshot>/gdp-current-usd.json
+dist/statistics/world-bank/releases/<snapshot>/gdp-per-capita-current-usd.json
+dist/statistics/world-bank/releases/<snapshot>/inflation-cpi-annual-percent.json
+```
+
+Dazu gibt es zwei kleine Manifeste:
+
+```text
+dist/statistics/index.json
+dist/statistics/world-bank/index.json
+```
+
+Der globale Index listet die verfügbaren Provider. Der World-Bank-Index enthält `activeSnapshot`, die verfügbaren Indikatoren, Jahre, Einheiten, Abdeckungsinformationen und die Pfade zu den Dateien des aktiven Snapshots.
+
+Beim Deployment werden zuerst sämtliche Dateien des neuen Snapshots hochgeladen. Erst wenn das erfolgreich war, wird der World-Bank-Index ersetzt; der globale Statistik-Index folgt zuletzt. Schlägt Download, Validierung oder Upload vorher fehl, verweist der produktive Provider-Index weiterhin auf den letzten vollständig veröffentlichten Snapshot.
+
+### Statistik-Validierung
+
+Der World-Bank-Build prüft unter anderem:
+
+- Struktur von Provider-Konfiguration und Area Registry,
+- eindeutige ISO-3- und `area_id`-Zuordnung,
+- numerische und endliche Werte,
+- keine doppelten Werte für dasselbe Gebiet und Jahr,
+- Mindestabdeckung je Indikator,
+- definierte Sanity-Gebiete mit mindestens einem Wert,
+- ein ausreichend aktuelles Jahr mit breiter Länderabdeckung,
+- keine zukünftigen Beobachtungen im produktiven Datensatz.
+
+Temporäre Netzwerk- und API-Fehler werden mit begrenzten Wiederholungsversuchen behandelt. Bleibt der Abruf fehlerhaft oder erfüllt der neue Datenstand die Validierung nicht, bricht der Workflow vor dem Deployment ab.
+
+## Aktualisierung
+
+Die Geometrie und die Statistikdaten haben getrennte Aktualisierungszyklen:
+
+```text
+Länder-Geometrie    28. jedes Monats, 03:17 UTC
+World Bank          Dienstag, 04:17 UTC
+```
+
+Beide Workflows können zusätzlich manuell gestartet werden.
+
+`.github/workflows/build-country-geometry.yml` fragt beim Länderbuild jeweils den aktuellen Overture-Release ab. Der Workflow baut Tippecanoe reproduzierbar aus einer festgelegten Version und prüft den Download per SHA-256. Die Overture-Daten werden mit DuckDB direkt aus den cloud-gehosteten GeoParquet-Dateien gelesen, sodass nicht das vollständige globale Dataset heruntergeladen werden muss.
+
+`.github/workflows/build-world-bank-statistics.yml` erzeugt die normalisierten World-Bank-Snapshots unabhängig von einem Geometrie-Neubau. Als Join-Grundlage verwendet er die bereits veröffentlichte Area Registry.
+
+Jeder erfolgreiche Build wird zusätzlich für 30 Tage als GitHub-Actions-Artefakt gespeichert. Bei einem fehlgeschlagenen Lauf werden die jeweiligen Diagnosen separat als Actions-Artefakt hochgeladen.
+
+## Produktions-Deployment
+
+Produktionsläufe auf `main` veröffentlichen automatisch nach `tiles.radlobby.at`. Pull-Request-Builds führen ausdrücklich kein Deployment durch. Auch ein manuell auf einem anderen Branch gestarteter Workflow darf nicht deployen.
+
+Der FTP-Benutzer ist auf das Document-Root der Subdomain eingeschränkt. Die Zielpfade sind daher relativ zu diesem FTP-Root; eine zusätzliche `REMOTE_ROOT`-Variable ist nicht erforderlich.
+
+Benötigte GitHub Actions Secrets:
+
+```text
+FTP_HOST
+FTP_USER
+FTP_PASS
+```
+
+`FTP_HOST` enthält nur den Hostnamen, ohne Protokoll und ohne führenden oder nachgestellten Slash.
+
+Einzeldateien werden über den gemeinsamen Upload-Helper mit `curl` und explizitem FTPS (`--ftp-ssl-reqd`) übertragen. Der Helper enthält zusätzlich einen `lftp`-Fallback für Verzeichnis-Uploads; die derzeitigen Area-Statistics-Builds veröffentlichen ausschließlich Dateien.
+
+Öffentliche Geometrie-/Registry-Dateien:
 
 ```text
 https://tiles.radlobby.at/AreaStatistics/world-admin.pmtiles
@@ -162,21 +269,18 @@ https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json
 https://tiles.radlobby.at/AreaStatistics/build-metadata.json
 ```
 
-Benötigte GitHub Actions Secrets:
+Öffentliche Statistik-Einstiegspunkte:
 
 ```text
-EASYNAME_FTP_HOST
-EASYNAME_FTP_USER
-EASYNAME_FTP_PASSWORD
+https://tiles.radlobby.at/AreaStatistics/statistics/index.json
+https://tiles.radlobby.at/AreaStatistics/statistics/world-bank/index.json
 ```
 
-`EASYNAME_FTP_HOST` enthält nur den Hostnamen, ohne Protokoll und ohne führenden oder nachgestellten Slash.
+Die konkreten World-Bank-Indikatordateien liegen in versionierten `releases/<snapshot>/`-Verzeichnissen und werden über den Provider-Index referenziert.
 
-Das Deployment verwendet FTPS über `lftp`. Alle drei Dateien werden zuerst unter laufbezogenen temporären Namen hochgeladen und erst nach vollständig erfolgreicher Übertragung im Zielverzeichnis umbenannt. `world-admin.pmtiles` wird zuletzt auf den produktiven Namen gesetzt. Dadurch wird keine teilweise hochgeladene PMTiles-Datei unter der öffentlichen URL sichtbar.
+Nach dem Geometrie-Deployment prüft der Workflow die öffentliche PMTiles-URL mit einem HTTP-Range-Request. Nach einem Statistik-Deployment werden die beiden öffentlichen Indizes mit dem gerade erzeugten Stand verglichen und alle darin referenzierten Indikatordateien per HTTP-Range-Request geprüft.
 
-Nach dem Deployment prüft der Workflow die öffentliche PMTiles-URL zusätzlich mit einem HTTP-Range-Request.
-
-## Validierung
+## Geometrie-Validierung
 
 Der Länderbuild bricht unter anderem ab, wenn:
 
@@ -192,9 +296,9 @@ Der Länderbuild bricht unter anderem ab, wenn:
 
 Damit bemerken wir Änderungen am Overture-Datenmodell oder an der Länderabdeckung früh, statt stillschweigend Statistikwerte ohne passende Geometrie zu erzeugen.
 
-## Lokaler Build
+## Lokale Builds
 
-Benötigt werden Python und Tippecanoe. Tippecanoe 2.17 oder neuer kann PMTiles direkt erzeugen.
+Für den Länder-Geometrie-Build werden Python und Tippecanoe benötigt. Tippecanoe 2.17 oder neuer kann PMTiles direkt erzeugen.
 
 ```bash
 python -m venv .venv
@@ -221,6 +325,18 @@ Coverage und Sonderfälle prüfen:
 python scripts/inspect_overture_countries.py --release 2026-08-19.0
 ```
 
+Der World-Bank-Build benötigt neben Python keine zusätzlichen Python-Pakete. Standardmäßig verwendet er die produktive Area Registry:
+
+```bash
+python scripts/build_world_bank.py
+```
+
+Alternativ kann eine lokale Registry übergeben werden:
+
+```bash
+python scripts/build_world_bank.py --registry dist/area-registry-countries.json
+```
+
 ## Lizenz und Attribution
 
 Das Overture-Theme `divisions` wird unter ODbL veröffentlicht und enthält unter anderem OpenStreetMap-Daten. Die PMTiles erhalten deshalb die Attribution:
@@ -229,4 +345,4 @@ Das Overture-Theme `divisions` wird unter ODbL veröffentlicht und enthält unte
 © OpenStreetMap contributors, Overture Maps Foundation
 ```
 
-Weitere Datenquellen und Statistikdatensätze bekommen jeweils eigene Quellen- und Lizenzmetadaten.
+Die World Development Indicators werden mit World-Bank-Quellen- und Lizenzmetadaten in den erzeugten Statistikdateien dokumentiert. Weitere Datenquellen und Statistikdatensätze erhalten jeweils eigene Quellen- und Lizenzmetadaten.
