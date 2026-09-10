@@ -5,6 +5,11 @@
 			"id": "world-bank",
 			"name": "World Bank",
 			"index": "world-bank/index.json"
+		},
+		{
+			"id": "eurostat",
+			"name": "Eurostat",
+			"index": "eurostat/index.json"
 		}
 	]
 }
