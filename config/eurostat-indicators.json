@@ -1,0 +1,98 @@
+{
+	"schema": "kartensammlung.eurostat-statistics/v1",
+	"apiBase": "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data",
+	"broadCoverageFraction": 0.7,
+	"geoAliases": {
+		"EL": "GR",
+		"UK": "GB"
+	},
+	"provider": {
+		"id": "eurostat",
+		"name": "Eurostat",
+		"dataset": "Eurostat Database",
+		"license": "European Commission reuse policy (Decision 2011/833/EU)",
+		"licenseUrl": "https://ec.europa.eu/eurostat/help/copyright-notice",
+		"attribution": "Eurostat"
+	},
+	"indicators": [
+		{
+			"id": "gender-pay-gap.unadjusted-percent",
+			"slug": "gender-pay-gap-unadjusted-percent",
+			"dataset": "earn_gr_gpgr2",
+			"title": "Gender Pay Gap (unbereinigt)",
+			"description": "Unbereinigter Unterschied zwischen dem durchschnittlichen Bruttostundenverdienst von Männern und Frauen in Prozent des durchschnittlichen Bruttostundenverdiensts der Männer; NACE Rev. 2 B–S ohne O.",
+			"timeMode": "annual",
+			"filters": {
+				"freq": "A",
+				"unit": "PC",
+				"nace_r2": "B-S_X_O"
+			},
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"minAreasWithAnyValue": 25,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU"
+			],
+			"excludedGeos": []
+		},
+		{
+			"id": "minimum-wage.eur-per-month",
+			"slug": "minimum-wage-eur-per-month",
+			"dataset": "earn_mw_cur",
+			"title": "Gesetzlicher Mindestlohn",
+			"description": "Gesetzlicher monatlicher Mindestlohn in Euro. Pro Jahr wird der letzte verfügbare Halbjahreswert verwendet (S2, sonst S1). Länder ohne nationalen gesetzlichen Mindestlohn haben keinen Wert.",
+			"timeMode": "latest-semester-per-year",
+			"filters": {
+				"freq": "S",
+				"currency": "EUR"
+			},
+			"unit": {
+				"id": "eur-per-month",
+				"label": "EUR pro Monat",
+				"symbol": "€"
+			},
+			"minAreasWithAnyValue": 25,
+			"maxDefaultYearAge": 1,
+			"requiredAreas": [
+				"country:DEU",
+				"country:FRA",
+				"country:POL"
+			],
+			"excludedGeos": [
+				"US"
+			]
+		},
+		{
+			"id": "minimum-wage.pps-per-month",
+			"slug": "minimum-wage-pps-per-month",
+			"dataset": "earn_mw_cur",
+			"title": "Gesetzlicher Mindestlohn (PPS)",
+			"description": "Gesetzlicher monatlicher Mindestlohn in Kaufkraftstandards (PPS). Pro Jahr wird der letzte verfügbare Halbjahreswert verwendet (S2, sonst S1). Länder ohne nationalen gesetzlichen Mindestlohn haben keinen Wert.",
+			"timeMode": "latest-semester-per-year",
+			"filters": {
+				"freq": "S",
+				"currency": "PPS"
+			},
+			"unit": {
+				"id": "pps-per-month",
+				"label": "PPS pro Monat",
+				"symbol": "PPS"
+			},
+			"minAreasWithAnyValue": 25,
+			"maxDefaultYearAge": 1,
+			"requiredAreas": [
+				"country:DEU",
+				"country:FRA",
+				"country:POL"
+			],
+			"excludedGeos": [
+				"US"
+			]
+		}
+	]
+}
