@@ -112,9 +112,9 @@ jobs:
       - name: Deploy to tiles.radlobby.at
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
-          EASYNAME_FTP_HOST: ${{ secrets.EASYNAME_FTP_HOST }}
-          EASYNAME_FTP_USER: ${{ secrets.EASYNAME_FTP_USER }}
-          EASYNAME_FTP_PASSWORD: ${{ secrets.EASYNAME_FTP_PASSWORD }}
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
         run: |
           chmod +x .github/scripts/deploy-area-statistics.sh
           .github/scripts/deploy-area-statistics.sh dist
