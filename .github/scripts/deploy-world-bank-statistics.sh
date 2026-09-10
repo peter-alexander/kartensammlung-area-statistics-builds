@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DIST_DIR="${1:-dist/statistics}"
-PROVIDER_ID="world-bank"
+PROVIDER_ID="${PROVIDER_ID:-world-bank}"
 REMOTE_BASE="AreaStatistics/statistics"
 UPLOAD_SCRIPT=".github/scripts/lftp-upload.sh"
 
@@ -40,4 +40,4 @@ done
 "$UPLOAD_SCRIPT" "$PROVIDER_INDEX" "${REMOTE_BASE}/${PROVIDER_ID}/index.json"
 "$UPLOAD_SCRIPT" "$GLOBAL_INDEX" "${REMOTE_BASE}/index.json"
 
-echo "Deployed ${#RELEASE_FILES[@]} World Bank statistics files and manifests to /${REMOTE_BASE}/"
+echo "Deployed ${#RELEASE_FILES[@]} ${PROVIDER_ID} statistics files and manifests to /${REMOTE_BASE}/"
