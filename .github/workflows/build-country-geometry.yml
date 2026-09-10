@@ -12,8 +12,8 @@ on:
   pull_request:
     paths:
       - "scripts/build_countries.py"
-      - "scripts/inspect_overture_countries.py"
       - "config/country-code-overrides.json"
+      - "config/overture-excluded-country-codes.json"
       - "requirements.txt"
       - ".github/workflows/build-country-geometry.yml"
   push:
@@ -21,8 +21,8 @@ on:
       - main
     paths:
       - "scripts/build_countries.py"
-      - "scripts/inspect_overture_countries.py"
       - "config/country-code-overrides.json"
+      - "config/overture-excluded-country-codes.json"
       - "requirements.txt"
       - ".github/workflows/build-country-geometry.yml"
 
@@ -54,9 +54,6 @@ jobs:
 
       - name: Install Python dependencies
         run: pip install --requirement requirements.txt
-
-      - name: Inspect synthetic Overture country codes
-        run: python scripts/inspect_overture_countries.py --release "${OVERTURE_RELEASE}"
 
       - name: Install Tippecanoe
         shell: bash
