@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import gettext
 import json
 import re
 import shutil
@@ -45,17 +46,17 @@ def parse_args() -> argparse.Namespace:
 		"--work-dir",
 		type=Path,
 		default=ROOT / "build" / "country-geometry",
-		help="Directory for temporary GeoJSONSeq files.",
+		help="Directory for temporary GeoJSONSeq files."
 	)
 	parser.add_argument(
 		"--tippecanoe",
 		default="tippecanoe",
-		help="Tippecanoe executable.",
+		help="Tippecanoe executable."
 	)
 	parser.add_argument(
 		"--skip-tiles",
 		action="store_true",
-		help="Only extract and validate Overture data; do not run Tippecanoe.",
+		help="Only extract and validate Overture data; do not run Tippecanoe."
 	)
 	return parser.parse_args()
 
@@ -93,6 +94,38 @@ def load_country_codes() -> dict[str, str]:
 		codes[iso2] = iso3
 
 	return codes
+
+
+def load_country_names(codes: dict[str, str]) -> dict[str, str]:
+	translation = gettext.translation(
+		"iso3166-1",
+		pycountry.LOCALES_DIR,
+		languages=["de"],
+		fallback=True,
+	)
+	names: dict[str, str] = {}
+	for iso2 in sorted(codes):
+		country = pycountry.countries.get(alpha_2=iso2)
+		if country is None:
+			continue
+		source_name = str(country.name).strip()
+		translated = str(translation.gettext(source_name)).strip()
+		names[iso2] = translated or source_name
+
+	override_path = ROOT / "config" / "country-code-overrides.json"
+	overrides = json.loads(override_path.read_text(encoding="utf-8"))
+	for raw_iso2, entry in overrides.items():
+		iso2 = str(raw_iso2).strip().upper()
+		name = str(entry.get("name", "")).strip()
+		if iso2 in codes and name:
+			names[iso2] = name
+
+	missing = sorted(set(codes) - set(names))
+	if missing:
+		raise RuntimeError("Missing country display names: " + ", ".join(missing))
+	if names.get("AT") == "Austria" or names.get("DE") == "Germany":
+		raise RuntimeError("German ISO-3166 country translations are unavailable.")
+	return names
 
 
 def load_country_compositions(codes: dict[str, str]) -> dict[str, dict]:
@@ -176,9 +209,19 @@ def open_duckdb() -> duckdb.DuckDBPyConnection:
 	return connection
 
 
-def create_iso_table(connection: duckdb.DuckDBPyConnection, codes: dict[str, str]) -> None:
-	connection.execute("CREATE TEMP TABLE iso_codes (iso2 VARCHAR PRIMARY KEY, iso3 VARCHAR NOT NULL);")
-	connection.executemany("INSERT INTO iso_codes VALUES (?, ?);", sorted(codes.items()))
+def create_iso_table(
+	connection: duckdb.DuckDBPyConnection,
+	codes: dict[str, str],
+	names: dict[str, str],
+) -> None:
+	connection.execute(
+		"CREATE TEMP TABLE iso_codes ("
+		"iso2 VARCHAR PRIMARY KEY, iso3 VARCHAR NOT NULL, name_de VARCHAR NOT NULL);"
+	)
+	connection.executemany(
+		"INSERT INTO iso_codes VALUES (?, ?, ?);",
+		[(iso2, iso3, names[iso2]) for iso2, iso3 in sorted(codes.items())],
+	)
 
 
 def create_composition_tables(
@@ -524,7 +567,8 @@ def create_country_tables(
 		CREATE TEMP TABLE country_features AS
 		SELECT
 			'country:' || c.iso3 AS area_id,
-			a.name,
+			c.name_de AS name,
+			a.name AS name_local,
 			a.iso2,
 			c.iso3,
 			a.wikidata,
@@ -537,7 +581,8 @@ def create_country_tables(
 		UNION ALL
 		SELECT
 			'country:' || c.iso3 AS area_id,
-			a.name,
+			c.name_de AS name,
+			a.name AS name_local,
 			a.iso2,
 			c.iso3,
 			a.wikidata,
@@ -555,7 +600,8 @@ def create_country_tables(
 		CREATE TEMP TABLE country_labels AS
 		SELECT
 			'country:' || c.iso3 AS area_id,
-			d.name,
+			c.name_de AS name,
+			d.name AS name_local,
 			d.iso2,
 			c.iso3,
 			d.wikidata,
@@ -568,7 +614,8 @@ def create_country_tables(
 		UNION ALL
 		SELECT
 			'country:' || c.iso3 AS area_id,
-			a.name,
+			c.name_de AS name,
+			a.name AS name_local,
 			a.iso2,
 			c.iso3,
 			a.wikidata,
@@ -624,6 +671,20 @@ def create_country_tables(
 		).fetchone()[0] != 1:
 			raise RuntimeError(f"Sanity check failed: {area_id} is missing or duplicated.")
 
+	for area_id, expected_name in (
+		("country:AUT", "Österreich"),
+		("country:DEU", "Deutschland"),
+		("country:XKX", "Kosovo"),
+	):
+		row = connection.execute(
+			"SELECT name FROM country_labels WHERE area_id = ?;",
+			[area_id],
+		).fetchone()
+		if row is None or row[0] != expected_name:
+			raise RuntimeError(
+				f"German display-name sanity check failed for {area_id}: {row[0] if row else None!r}."
+			)
+
 	if connection.execute(
 		"SELECT COUNT(*) FROM country_features WHERE area_id = 'country:PRI' AND overture_subtype = 'dependency';"
 	).fetchone()[0] != 1:
@@ -658,6 +719,7 @@ def export_geojsonseq(
 			SELECT
 				area_id,
 				name,
+				name_local,
 				iso2,
 				iso3,
 				wikidata,
@@ -715,7 +777,7 @@ def write_registry(
 ) -> None:
 	rows = connection.execute(
 		"""
-		SELECT area_id, name, iso2, iso3, wikidata, overture_id, overture_subtype, overture_parent_id
+		SELECT area_id, name, name_local, iso2, iso3, wikidata, overture_id, overture_subtype, overture_parent_id
 		FROM country_labels
 		ORDER BY iso3;
 		"""
@@ -723,14 +785,17 @@ def write_registry(
 	composition_components = resolved_composition_components(connection)
 
 	areas = []
-	for area_id, name, iso2, iso3, wikidata, overture_id, overture_subtype, overture_parent_id in rows:
+	for area_id, name, name_local, iso2, iso3, wikidata, overture_id, overture_subtype, overture_parent_id in rows:
 		codes = {"iso2": iso2, "iso3": iso3}
 		if overture_id:
 			codes["overture"] = overture_id
 		if wikidata:
 			codes["wikidata"] = wikidata
 
-		metadata = {"overtureSubtype": overture_subtype}
+		metadata = {
+			"overtureSubtype": overture_subtype,
+			"sourceName": name_local,
+		}
 		if overture_parent_id:
 			metadata["overtureParentId"] = overture_parent_id
 		if iso2 in composition_components:
@@ -740,7 +805,10 @@ def write_registry(
 			{
 				"area_id": area_id,
 				"level": "country",
-				"name": {"default": name},
+				"name": {
+					"default": name,
+					"de": name,
+				},
 				"codes": codes,
 				"metadata": metadata,
 			}
@@ -813,6 +881,8 @@ def write_metadata(
 			"sourceLayers": ["country", "country_label"],
 			"directSourceSubtypes": list(DIRECT_SUBTYPES),
 			"compositionTargets": sorted(compositions),
+			"displayNameLanguage": "de",
+			"sourceNameProperty": "name_local",
 			"policy": (
 				"Complete ISO-3166-1 area-code set plus explicitly reviewed mappings. "
 				"Direct Overture country/dependency representations are preferred; configured composite "
@@ -860,13 +930,14 @@ def main() -> int:
 	pmtiles_path = output_dir / "world-admin.pmtiles"
 
 	codes = load_country_codes()
+	names = load_country_names(codes)
 	compositions = load_country_compositions(codes)
 
 	print(f"Overture release: {release}", flush=True)
 	print("Configured composite ISO areas: " + ", ".join(sorted(compositions)), flush=True)
 	connection = open_duckdb()
 	try:
-		create_iso_table(connection, codes)
+		create_iso_table(connection, codes, names)
 		counts, excluded_entities = create_country_tables(
 			connection,
 			release,
