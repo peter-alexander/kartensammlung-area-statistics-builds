@@ -112,6 +112,13 @@ jobs:
           PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
           BROWSER_ORIGIN="https://fahrrad.lima-city.de"
           CACHE_BUST="cors=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(
+          	--connect-timeout 10
+          	--max-time 30
+          	--retry 2
+          	--retry-delay 2
+          	--retry-all-errors
+          )
 
           check_cors() {
           	local url="$1"
@@ -123,6 +130,7 @@ jobs:
           	headers="$(mktemp)"
           	if [ -n "$range" ]; then
           		curl --fail --silent --show-error --location \
+          			"${CURL_RETRY[@]}" \
           			--header "Origin: ${BROWSER_ORIGIN}" \
           			--range "$range" \
           			--dump-header "$headers" \
@@ -130,6 +138,7 @@ jobs:
           			"${url}?${CACHE_BUST}"
           	else
           		curl --fail --silent --show-error --location \
+          			"${CURL_RETRY[@]}" \
           			--header "Origin: ${BROWSER_ORIGIN}" \
           			--dump-header "$headers" \
           			--output "$output" \
@@ -179,19 +188,29 @@ jobs:
           set -euo pipefail
           PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
           CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(
+          	--connect-timeout 10
+          	--max-time 30
+          	--retry 2
+          	--retry-delay 2
+          	--retry-all-errors
+          )
 
           curl --fail --silent --show-error --location \
+            "${CURL_RETRY[@]}" \
             "${PUBLIC_BASE}/index.json?${CACHE_BUST}" \
             --output /tmp/public-statistics-index.json
           cmp dist/statistics/index.json /tmp/public-statistics-index.json
 
           curl --fail --silent --show-error --location \
+            "${CURL_RETRY[@]}" \
             "${PUBLIC_BASE}/eurostat/index.json?${CACHE_BUST}" \
             --output /tmp/public-eurostat-index.json
           cmp dist/statistics/eurostat/index.json /tmp/public-eurostat-index.json
 
           while IFS= read -r path; do
             curl --fail --silent --show-error --location \
+              "${CURL_RETRY[@]}" \
               --range 0-0 \
               --output /dev/null \
               "${PUBLIC_BASE}/eurostat/${path}?${CACHE_BUST}"
