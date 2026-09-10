@@ -86,6 +86,6 @@ trap 'rm -f "$LFTP_CMDS"' EXIT
 	fi
 
 	echo 'bye'
-done > "$LFTP_CMDS"
+} > "$LFTP_CMDS"
 
 lftp -f "$LFTP_CMDS"
