@@ -18,11 +18,15 @@ STAC_URL = "https://stac.overturemaps.org/catalog.json"
 S3_BASE = "s3://overturemaps-us-west-2/release"
 RELEASE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}\.\d+$")
 ATTRIBUTION = "© OpenStreetMap contributors, Overture Maps Foundation"
+SUPPORTED_OVERTURE_SUBTYPES = ("country", "dependency")
 
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
-		description="Build country polygons, label points and the country area registry from Overture Maps."
+		description=(
+			"Build ISO-3166-1 country/dependency polygons, label points and the country area registry "
+			"from Overture Maps."
+		)
 	)
 	parser.add_argument(
 		"--release",
@@ -133,7 +137,7 @@ def validate_overture_country_policy(
 			d.name,
 			d.wikidata,
 			d.overture_id
-		FROM country_divisions d
+		FROM overture_country_divisions d
 		LEFT JOIN iso_codes c USING (iso2)
 		WHERE c.iso3 IS NULL
 		ORDER BY d.iso2;
@@ -182,22 +186,18 @@ def create_country_tables(
 
 	connection.execute(
 		f"""
-		CREATE TEMP TABLE country_divisions AS
+		CREATE TEMP TABLE overture_country_divisions AS
 		SELECT
 			overture_id,
 			iso2,
 			name,
-			wikidata,
-			label_geometry,
-			has_perspective
+			wikidata
 		FROM (
 			SELECT
 				id AS overture_id,
 				country AS iso2,
 				names.primary AS name,
 				wikidata,
-				geometry AS label_geometry,
-				perspectives IS NOT NULL AS has_perspective,
 				ROW_NUMBER() OVER (
 					PARTITION BY country
 					ORDER BY
@@ -214,13 +214,76 @@ def create_country_tables(
 	excluded_entities = validate_overture_country_policy(connection, excluded_codes)
 
 	connection.execute(
-		"""
+		f"""
 		CREATE TEMP TABLE statistics_country_divisions AS
-		SELECT d.*
-		FROM country_divisions d
-		INNER JOIN iso_codes c USING (iso2);
+		SELECT
+			overture_id,
+			iso2,
+			name,
+			wikidata,
+			label_geometry,
+			overture_subtype,
+			parent_division_id,
+			has_perspective
+		FROM (
+			SELECT
+				d.id AS overture_id,
+				d.country AS iso2,
+				d.names.primary AS name,
+				d.wikidata,
+				d.geometry AS label_geometry,
+				d.subtype AS overture_subtype,
+				d.parent_division_id,
+				d.perspectives IS NOT NULL AS has_perspective,
+				ROW_NUMBER() OVER (
+					PARTITION BY d.country
+					ORDER BY
+						CASE WHEN d.perspectives IS NULL THEN 0 ELSE 1 END,
+						CASE WHEN d.subtype = 'country' THEN 0 ELSE 1 END,
+						d.id
+				) AS choice_rank
+			FROM read_parquet('{division_path}', hive_partitioning=1) d
+			INNER JOIN iso_codes c
+				ON c.iso2 = d.country
+			WHERE d.subtype IN ('country', 'dependency')
+		)
+		WHERE choice_rank = 1;
 		"""
 	)
+
+	missing_divisions = [
+		row[0]
+		for row in connection.execute(
+			"""
+			SELECT c.iso2
+			FROM iso_codes c
+			LEFT JOIN statistics_country_divisions d USING (iso2)
+			WHERE d.iso2 IS NULL
+			ORDER BY c.iso2;
+			"""
+		).fetchall()
+	]
+	if missing_divisions:
+		raise RuntimeError(
+			"ISO/statistics area code(s) not covered by Overture country/dependency divisions: "
+			+ ", ".join(missing_divisions)
+		)
+
+	missing_labels = [
+		row[0]
+		for row in connection.execute(
+			"""
+			SELECT iso2
+			FROM statistics_country_divisions
+			WHERE label_geometry IS NULL
+			ORDER BY iso2;
+			"""
+		).fetchall()
+	]
+	if missing_labels:
+		raise RuntimeError(
+			"Statistics area division(s) without label geometry: " + ", ".join(missing_labels)
+		)
 
 	connection.execute(
 		f"""
@@ -230,13 +293,14 @@ def create_country_tables(
 			d.iso2,
 			d.name,
 			d.wikidata,
+			d.overture_subtype,
+			d.parent_division_id,
 			a.geometry
 		FROM read_parquet('{area_path}', hive_partitioning=1) a
 		INNER JOIN statistics_country_divisions d
 			ON a.division_id = d.overture_id
-		WHERE
-			a.subtype = 'country'
-			AND a.is_land = TRUE;
+			AND a.subtype = d.overture_subtype
+		WHERE a.is_land = TRUE;
 		"""
 	)
 
@@ -251,7 +315,7 @@ def create_country_tables(
 	).fetchall()
 	if duplicate_areas:
 		details = ", ".join(f"{iso2}={count}" for iso2, count in duplicate_areas)
-		raise RuntimeError(f"Expected exactly one land polygon per statistics country: {details}")
+		raise RuntimeError(f"Expected exactly one land polygon per statistics area: {details}")
 
 	missing_areas = [
 		row[0]
@@ -267,7 +331,7 @@ def create_country_tables(
 	]
 	if missing_areas:
 		raise RuntimeError(
-			"Statistics country division(s) without land polygon: " + ", ".join(missing_areas)
+			"Statistics area division(s) without land polygon: " + ", ".join(missing_areas)
 		)
 
 	connection.execute(
@@ -280,6 +344,8 @@ def create_country_tables(
 			c.iso3,
 			a.wikidata,
 			a.overture_id,
+			a.overture_subtype,
+			a.parent_division_id AS overture_parent_id,
 			a.geometry
 		FROM country_areas a
 		INNER JOIN iso_codes c USING (iso2);
@@ -296,23 +362,38 @@ def create_country_tables(
 			c.iso3,
 			d.wikidata,
 			d.overture_id,
+			d.overture_subtype,
+			d.parent_division_id AS overture_parent_id,
 			d.label_geometry AS geometry
 		FROM statistics_country_divisions d
 		INNER JOIN iso_codes c USING (iso2);
 		"""
 	)
 
+	target_count = connection.execute("SELECT COUNT(*) FROM iso_codes;").fetchone()[0]
 	country_count = connection.execute("SELECT COUNT(*) FROM country_features;").fetchone()[0]
 	label_count = connection.execute("SELECT COUNT(*) FROM country_labels;").fetchone()[0]
+	source_country_count = connection.execute(
+		"SELECT COUNT(*) FROM statistics_country_divisions WHERE overture_subtype = 'country';"
+	).fetchone()[0]
+	source_dependency_count = connection.execute(
+		"SELECT COUNT(*) FROM statistics_country_divisions WHERE overture_subtype = 'dependency';"
+	).fetchone()[0]
 	perspective_fallbacks = connection.execute(
 		"SELECT COUNT(*) FROM statistics_country_divisions WHERE has_perspective;"
 	).fetchone()[0]
 
-	if not 180 <= country_count <= 260:
-		raise RuntimeError(f"Unexpected statistics-country count: {country_count}")
+	if country_count != target_count:
+		raise RuntimeError(
+			f"Statistics-area count mismatch: expected={target_count}, polygons={country_count}"
+		)
 	if country_count != label_count:
 		raise RuntimeError(
 			f"Country/label count mismatch: polygons={country_count}, labels={label_count}"
+		)
+	if source_country_count + source_dependency_count != country_count:
+		raise RuntimeError(
+			"Overture source-subtype counts do not add up to the statistics-area count."
 		)
 	if connection.execute(
 		"SELECT COUNT(*) FROM country_features WHERE area_id = 'country:AUT';"
@@ -322,11 +403,21 @@ def create_country_tables(
 		"SELECT COUNT(*) FROM country_features WHERE area_id = 'country:XKX';"
 	).fetchone()[0] != 1:
 		raise RuntimeError("Sanity check failed: reviewed Kosovo mapping country:XKX is missing.")
+	if connection.execute(
+		"SELECT COUNT(*) FROM country_features WHERE area_id = 'country:PRI' AND overture_subtype = 'dependency';"
+	).fetchone()[0] != 1:
+		raise RuntimeError(
+			"Sanity check failed: country:PRI is not present as an Overture dependency."
+		)
 
 	return (
 		{
 			"countries": country_count,
 			"labels": label_count,
+			"iso3166Countries": len(list(pycountry.countries)),
+			"reviewedAdditionalAreas": target_count - len(list(pycountry.countries)),
+			"overtureCountrySources": source_country_count,
+			"overtureDependencySources": source_dependency_count,
 			"excludedSyntheticCountries": len(excluded_entities),
 			"perspectiveFallbacks": perspective_fallbacks,
 		},
@@ -350,6 +441,8 @@ def export_geojsonseq(
 				iso3,
 				wikidata,
 				overture_id,
+				overture_subtype,
+				overture_parent_id,
 				geometry
 			FROM {table_name}
 			ORDER BY iso3
@@ -371,14 +464,31 @@ def write_registry(
 ) -> None:
 	rows = connection.execute(
 		"""
-		SELECT area_id, name, iso2, iso3, wikidata, overture_id
+		SELECT
+			area_id,
+			name,
+			iso2,
+			iso3,
+			wikidata,
+			overture_id,
+			overture_subtype,
+			overture_parent_id
 		FROM country_labels
 		ORDER BY iso3;
 		"""
 	).fetchall()
 
 	areas = []
-	for area_id, name, iso2, iso3, wikidata, overture_id in rows:
+	for (
+		area_id,
+		name,
+		iso2,
+		iso3,
+		wikidata,
+		overture_id,
+		overture_subtype,
+		overture_parent_id,
+	) in rows:
 		codes = {
 			"iso2": iso2,
 			"iso3": iso3,
@@ -386,12 +496,20 @@ def write_registry(
 		}
 		if wikidata:
 			codes["wikidata"] = wikidata
+
+		metadata = {
+			"overtureSubtype": overture_subtype,
+		}
+		if overture_parent_id:
+			metadata["overtureParentId"] = overture_parent_id
+
 		areas.append(
 			{
 				"area_id": area_id,
 				"level": "country",
 				"name": {"default": name},
 				"codes": codes,
+				"metadata": metadata,
 			}
 		)
 
@@ -431,7 +549,7 @@ def build_pmtiles(
 		"--no-feature-limit",
 		"--no-tile-size-limit",
 		"--name=Kartensammlung world admin",
-		"--description=Statistics-compatible country geometries and label points",
+		"--description=ISO-3166-1 country/dependency geometries and label points for statistics",
 		f"--attribution={ATTRIBUTION}",
 		"-L",
 		f"country:{country_path}",
@@ -460,7 +578,11 @@ def write_metadata(
 			"level": "country",
 			"areaId": "country:<ISO-3166-1 alpha-3>",
 			"sourceLayers": ["country", "country_label"],
-			"policy": "ISO-compatible statistics countries plus explicitly reviewed mappings only",
+			"sourceSubtypes": list(SUPPORTED_OVERTURE_SUBTYPES),
+			"policy": (
+				"Complete ISO-3166-1 area-code set plus explicitly reviewed mappings, "
+				"using Overture country/dependency representations"
+			),
 		},
 		"counts": counts,
 		"excludedOvertureCountryEntities": excluded_entities,
@@ -534,8 +656,10 @@ def main() -> int:
 
 	print(
 		"Built "
-		f"{counts['countries']} statistics countries and {counts['labels']} labels; "
-		f"excluded {counts['excludedSyntheticCountries']} reviewed Overture synthetic entities"
+		f"{counts['countries']} statistics areas and {counts['labels']} labels "
+		f"({counts['overtureCountrySources']} Overture country + "
+		f"{counts['overtureDependencySources']} dependency); "
+		f"excluded {counts['excludedSyntheticCountries']} reviewed Overture synthetic country entities"
 		+ (
 			f"; PMTiles: {pmtiles_path.stat().st_size:,} bytes"
 			if final_pmtiles_path
