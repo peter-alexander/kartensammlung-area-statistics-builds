@@ -18,6 +18,7 @@ on:
       - "config/overture-excluded-country-codes.json"
       - "requirements.txt"
       - ".github/scripts/deploy-area-statistics.sh"
+      - ".github/scripts/lftp-upload.sh"
       - ".github/workflows/build-country-geometry.yml"
   push:
     branches:
@@ -30,6 +31,7 @@ on:
       - "config/overture-excluded-country-codes.json"
       - "requirements.txt"
       - ".github/scripts/deploy-area-statistics.sh"
+      - ".github/scripts/lftp-upload.sh"
       - ".github/workflows/build-country-geometry.yml"
 
 permissions:
@@ -52,8 +54,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate deployment script
-        run: bash -n .github/scripts/deploy-area-statistics.sh
+      - name: Validate deployment scripts
+        run: |
+          bash -n .github/scripts/deploy-area-statistics.sh
+          bash -n .github/scripts/lftp-upload.sh
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -104,12 +108,6 @@ jobs:
           path: dist/
           if-no-files-found: error
           retention-days: 30
-
-      - name: Install deployment dependency
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes lftp
 
       - name: Deploy to tiles.radlobby.at
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
