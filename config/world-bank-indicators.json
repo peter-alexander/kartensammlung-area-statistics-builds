@@ -22,6 +22,18 @@
 				"id": "persons",
 				"label": "Personen"
 			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [
+					100000,
+					1000000,
+					10000000,
+					50000000,
+					100000000,
+					500000000
+				]
+			},
 			"minAreasWithAnyValue": 180,
 			"maxDefaultYearAge": 3,
 			"requiredAreas": [
@@ -42,6 +54,18 @@
 				"id": "usd-current",
 				"label": "US-Dollar (laufende Preise)",
 				"symbol": "$"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [
+					1000000000,
+					10000000000,
+					100000000000,
+					1000000000000,
+					5000000000000,
+					20000000000000
+				]
 			},
 			"minAreasWithAnyValue": 180,
 			"maxDefaultYearAge": 3,
