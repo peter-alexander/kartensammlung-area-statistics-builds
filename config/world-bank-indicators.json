@@ -1,0 +1,96 @@
+{
+	"schema": "kartensammlung.world-bank-statistics/v1",
+	"apiBase": "https://api.worldbank.org/v2",
+	"sourceId": 2,
+	"provider": {
+		"id": "world-bank",
+		"name": "World Bank",
+		"dataset": "World Development Indicators",
+		"license": "CC BY 4.0",
+		"licenseUrl": "https://datacatalog.worldbank.org/public-licenses",
+		"attribution": "World Bank"
+	},
+	"broadCoverageFraction": 0.75,
+	"indicators": [
+		{
+			"id": "population.total",
+			"slug": "population-total",
+			"sourceIndicator": "SP.POP.TOTL",
+			"title": "Bevölkerung",
+			"description": "Gesamtbevölkerung",
+			"unit": {
+				"id": "persons",
+				"label": "Personen"
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND",
+				"country:XKX"
+			]
+		},
+		{
+			"id": "gdp.current-usd",
+			"slug": "gdp-current-usd",
+			"sourceIndicator": "NY.GDP.MKTP.CD",
+			"title": "Bruttoinlandsprodukt",
+			"description": "Bruttoinlandsprodukt zu laufenden Preisen in US-Dollar",
+			"unit": {
+				"id": "usd-current",
+				"label": "US-Dollar (laufende Preise)",
+				"symbol": "$"
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "gdp-per-capita.current-usd",
+			"slug": "gdp-per-capita-current-usd",
+			"sourceIndicator": "NY.GDP.PCAP.CD",
+			"title": "BIP pro Kopf",
+			"description": "Bruttoinlandsprodukt pro Einwohner zu laufenden Preisen in US-Dollar",
+			"unit": {
+				"id": "usd-current-per-person",
+				"label": "US-Dollar pro Einwohner (laufende Preise)",
+				"symbol": "$"
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "inflation.cpi-annual-percent",
+			"slug": "inflation-cpi-annual-percent",
+			"sourceIndicator": "FP.CPI.TOTL.ZG",
+			"title": "Inflation",
+			"description": "Jährliche Veränderung des Verbraucherpreisindex",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"minAreasWithAnyValue": 160,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		}
+	]
+}
