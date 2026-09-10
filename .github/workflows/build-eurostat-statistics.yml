@@ -10,7 +10,6 @@ on:
       - "config/eurostat-indicators.json"
       - "scripts/build_eurostat.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
-      - ".github/scripts/lftp-upload.sh"
       - ".github/workflows/build-eurostat-statistics.yml"
   push:
     branches:
@@ -20,15 +19,14 @@ on:
       - "config/eurostat-indicators.json"
       - "scripts/build_eurostat.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
-      - ".github/scripts/lftp-upload.sh"
       - ".github/workflows/build-eurostat-statistics.yml"
 
 permissions:
   contents: read
 
 concurrency:
-  group: eurostat-statistics-${{ github.ref }}
-  cancel-in-progress: true
+  group: area-statistics-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -47,7 +45,6 @@ jobs:
       - name: Validate scripts
         run: |
           bash -n .github/scripts/deploy-world-bank-statistics.sh
-          bash -n .github/scripts/lftp-upload.sh
           python -m py_compile scripts/build_eurostat.py
 
       - name: Build Eurostat statistics
@@ -89,6 +86,12 @@ jobs:
           path: dist/statistics/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
 
       - name: Deploy to tiles.radlobby.at
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

@@ -10,7 +10,6 @@ on:
       - "config/world-bank-indicators.json"
       - "scripts/build_world_bank.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
-      - ".github/scripts/lftp-upload.sh"
       - ".github/workflows/build-world-bank-statistics.yml"
   push:
     branches:
@@ -20,15 +19,14 @@ on:
       - "config/world-bank-indicators.json"
       - "scripts/build_world_bank.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
-      - ".github/scripts/lftp-upload.sh"
       - ".github/workflows/build-world-bank-statistics.yml"
 
 permissions:
   contents: read
 
 concurrency:
-  group: world-bank-statistics-${{ github.ref }}
-  cancel-in-progress: true
+  group: area-statistics-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -47,7 +45,6 @@ jobs:
       - name: Validate scripts
         run: |
           bash -n .github/scripts/deploy-world-bank-statistics.sh
-          bash -n .github/scripts/lftp-upload.sh
           python -m py_compile scripts/build_world_bank.py
 
       - name: Build World Bank statistics
@@ -55,7 +52,8 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p diagnostics
-          python scripts/build_world_bank.py 2>&1 | tee diagnostics/world-bank.log
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_world_bank.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/world-bank.log
 
       - name: Show statistics summary
         run: |
@@ -88,6 +86,12 @@ jobs:
           path: dist/statistics/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
 
       - name: Deploy to tiles.radlobby.at
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
