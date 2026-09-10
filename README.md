@@ -18,21 +18,11 @@ Die Kartensammlung selbst enthält nur Runtime, Panel, Styling und Interaktion. 
 
 Der erste Build erzeugt einen globalen, für Statistik-Joins geeigneten Länder-Geometriesatz aus dem Overture-Maps-Theme `divisions`.
 
-Der Zielbestand ist bewusst nicht mit Overtures politischer Klassifizierung `subtype=country` gleichgesetzt. Für statistische Daten ist der stabile Codesatz entscheidend: enthalten werden alle ISO-3166-1-Gebiete, unabhängig davon, ob Overture sie als `country` oder `dependency` klassifiziert, plus ausdrücklich geprüfte zusätzliche Gebiete wie Kosovo (`XK -> XKX`).
+Der Zielbestand ist bewusst nicht mit Overtures politischer Klassifizierung `subtype=country` gleichgesetzt. Für Statistik-Joins ist der stabile Codesatz entscheidend: enthalten werden alle 249 ISO-3166-1-Gebiete plus ausdrücklich geprüfte zusätzliche Gebiete, derzeit Kosovo (`XK -> XKX`). Der erwartete Gesamtbestand beträgt damit 250 Gebiete.
 
-### Eingaben
+### Direkte Overture-Zuordnungen
 
-- `division_area`, `subtype IN (country, dependency)`, `is_land=true` für Polygone
-- `division`, `subtype IN (country, dependency)` für Labelpunkte und zusätzliche Metadaten
-- ISO-3166-Codes aus `pycountry`
-- explizit freigegebene Sonderfälle aus `config/country-code-overrides.json`
-- explizit geprüfte, aber nicht als Statistikgebiete verwendete synthetische Overture-Codes aus `config/overture-excluded-country-codes.json`
-
-Der Overture-Release wird standardmäßig dynamisch aus dem STAC-Katalog ermittelt. Für reproduzierbare Tests kann ein bestimmter Release mit `--release` vorgegeben werden.
-
-### Statistikgebiete und Overture-Subtypes
-
-Für jedes ISO-3166-1-alpha-2-Gebiet wird genau eine Overture-`division` gewählt. Der Build akzeptiert dafür die Subtypes `country` und `dependency`.
+Die meisten Gebiete können direkt aus genau einer Overture-`division` übernommen werden. Der Build akzeptiert dafür die Subtypes `country` und `dependency`.
 
 Beispiele:
 
@@ -47,18 +37,30 @@ Der Overture-Subtype ist ausschließlich Quellmetadatum. Er bestimmt nicht, ob e
 
 Wenn mehrere Overture-Varianten derselben Länderkennung vorhanden sind, wird zuerst eine Variante ohne politische Perspektivmarkierung gewählt. Bei gleicher Perspektivlage wird `country` vor `dependency` bevorzugt; danach entscheidet deterministisch die Overture-ID. Die Zahl tatsächlich notwendiger Perspective-Fallbacks wird in den Build-Metadaten ausgewiesen.
 
+### Zusammengesetzte ISO-Gebiete
+
+Vier ISO-Gebiete entsprechen im aktuellen Overture-Datenmodell nicht genau einer geeigneten `country`-/`dependency`-Geometrie. Sie werden deshalb explizit in `config/country-compositions.json` definiert und ausschließlich aus überprüften Overture-Geometrien zusammengesetzt:
+
+```text
+BQ / BES = Bonaire (BQ) + Sint Eustatius (XE) + Saba (XS)
+SJ / SJM = Svalbard (SJ) + Jan Mayen (XJ)
+PS / PSE = Gaza Strip (XG) + West Bank (XW)
+EH / ESH = Western Sahara, Overture region MA / Wikidata Q6250
+```
+
+Für diese Gebiete wird die Polygongeometrie mit `ST_Union_Agg` aus den Komponenten aufgebaut. Der Labelpunkt wird mit `ST_PointOnSurface` aus der fertigen Geometrie erzeugt. Dadurch bleibt auch bei MultiPolygon-Geometrien gewährleistet, dass der Punkt auf einer zugehörigen Landfläche liegt. DuckDB Spatial stellt beide Operationen direkt bereit.
+
+Die Registry speichert bei zusammengesetzten Gebieten nicht nur `overtureSubtype=composite`, sondern auch die tatsächlich aufgelösten Overture-Komponenten mit ID, Subtype, Quellcode, Name, Wikidata und gegebenenfalls Parent-ID. Damit bleibt ein späterer Build nachvollziehbar, selbst wenn sich Overture-IDs oder die Klassifizierung ändern.
+
 ### Overture-Sondergebiete
 
-Overture verwendet bei `subtype=country` neben ISO-Ländercodes auch eigene synthetische `X*`-Codes für umstrittene oder sonstige Sondergebiete. Diese Codes werden **nicht** automatisch in erfundene ISO-3-Codes übersetzt.
+Overture verwendet neben ISO-Ländercodes auch eigene synthetische `X*`-Codes für umstrittene oder sonstige Sondergebiete. Diese Codes werden **nicht** automatisch in erfundene ISO-3-Codes übersetzt.
 
-Der Layer `country` enthält daher nur:
+Die aktuell bekannten synthetischen `country`-Codes stehen in `config/overture-excluded-country-codes.json`. Sie werden nicht als eigenständige Statistikgebiete ausgegeben. Einzelne dieser Geometrien dürfen jedoch ausdrücklich als Komponenten eines ISO-Gebiets verwendet werden, beispielsweise `XG` und `XW` für `PSE`.
 
-- den vollständigen ISO-3166-1-Codesatz, soweit er über Overture `country` oder `dependency` repräsentiert wird
-- ausdrücklich geprüfte zusätzliche Zuordnungen, derzeit `XK -> XKX` für Kosovo
+Wenn Overture einen neuen synthetischen `country`-Code einführt, einen bekannten entfernt oder ein bisher synthetisches Gebiet künftig ISO-kompatibel wird, bricht der Build ab und verlangt eine bewusste Prüfung der Policy.
 
-Die übrigen aktuell bekannten synthetischen Overture-Codes werden bewusst vom Statistik-Ländersatz ausgeschlossen. Die Liste steht in `config/overture-excluded-country-codes.json`. Wenn Overture einen neuen solchen Code einführt, einen bekannten entfernt oder ein bisher synthetisches Gebiet künftig ISO-kompatibel wird, bricht der Build ab und verlangt eine bewusste Prüfung der Policy.
-
-`scripts/inspect_overture_countries.py` zeigt die aktuellen synthetischen Overture-Ländereinträge und die `dependency`-Abdeckung mit Name, Wikidata-ID, Parent-ID und vorhandenen Landflächen an.
+`scripts/inspect_overture_countries.py` zeigt die synthetischen Overture-Ländereinträge, die `dependency`-Abdeckung sowie gezielte Kandidaten für derzeit nicht direkt abgedeckte ISO-Gebiete.
 
 ### Gebietsschlüssel
 
@@ -75,10 +77,25 @@ country:AUT
 country:DEU
 country:PRI
 country:GRL
+country:BES
+country:SJM
+country:PSE
+country:ESH
 country:XKX
 ```
 
-Die gleiche `area_id` wird sowohl im Polygon- als auch im Label-Layer verwendet. Ein abhängiges Gebiet bleibt damit eine eigenständig joinbare Statistikfläche; die Overture-Abhängigkeit wird nur als Metadatum geführt.
+Die gleiche `area_id` wird sowohl im Polygon- als auch im Label-Layer verwendet.
+
+### Eingaben
+
+- Overture Maps `division` und `division_area`
+- `is_land=true` für alle Polygonkomponenten
+- ISO-3166-Codes aus `pycountry`
+- `config/country-code-overrides.json` für ausdrücklich freigegebene Zusatzcodes
+- `config/country-compositions.json` für überprüfte Zusammensetzungen
+- `config/overture-excluded-country-codes.json` für synthetische Overture-`country`-Codes, die nicht eigenständig ausgegeben werden
+
+Der Overture-Release wird standardmäßig dynamisch aus dem STAC-Katalog ermittelt. Für reproduzierbare Tests kann ein bestimmter Release mit `--release` vorgegeben werden.
 
 ### Ausgaben
 
@@ -91,7 +108,7 @@ country
 country_label
 ```
 
-Beide Layer enthalten derzeit:
+Beide Layer enthalten:
 
 ```text
 area_id
@@ -104,6 +121,8 @@ overture_subtype
 overture_parent_id
 ```
 
+Bei zusammengesetzten Gebieten ist `overture_id` leer und `overture_subtype` gleich `composite`; die Einzelkomponenten stehen vollständig in der Registry.
+
 Zusätzlich werden erzeugt:
 
 ```text
@@ -111,39 +130,37 @@ dist/area-registry-countries.json
 dist/build-metadata.json
 ```
 
-Das Länderregister verwendet bereits den Vertrag:
+Das Länderregister verwendet den Vertrag:
 
 ```text
 kartensammlung.area-registry/v1
 ```
 
-Jeder Registry-Eintrag enthält zusätzlich `metadata.overtureSubtype` und, falls vorhanden, `metadata.overtureParentId`. Die Build-Metadaten dokumentieren außerdem die Anzahl der aus `country` bzw. `dependency` übernommenen Statistikgebiete und die überprüften, ausgeschlossenen synthetischen Overture-Ländereinträge.
-
 ## Aktualisierung
 
 `.github/workflows/build-country-geometry.yml` läuft automatisch am 28. jedes Monats und kann zusätzlich manuell gestartet werden. Overture veröffentlicht das Divisions-Theme monatlich; der Workflow fragt jeweils den aktuellen Release ab.
 
-Der Workflow baut Tippecanoe reproduzierbar aus einer festgelegten Version und prüft den Download per SHA-256. Die eigentlichen Overture-Daten werden mit DuckDB direkt aus den cloud-gehosteten GeoParquet-Dateien gelesen, sodass nicht das vollständige globale Dataset heruntergeladen werden muss.
+Der Workflow baut Tippecanoe reproduzierbar aus einer festgelegten Version und prüft den Download per SHA-256. Die Overture-Daten werden mit DuckDB direkt aus den cloud-gehosteten GeoParquet-Dateien gelesen, sodass nicht das vollständige globale Dataset heruntergeladen werden muss.
 
-Die fertigen Dateien werden vorerst als GitHub-Actions-Artefakt gespeichert. Die dauerhafte öffentliche Auslieferung wird separat festgelegt, damit Build und Hosting nicht unnötig gekoppelt werden.
+Die fertigen Dateien werden vorerst als GitHub-Actions-Artefakt gespeichert. Bei einem fehlgeschlagenen Lauf werden die Coverage- und Build-Diagnosen separat als Actions-Artefakt hochgeladen.
+
+Die dauerhafte öffentliche Auslieferung wird separat festgelegt, damit Build und Hosting nicht unnötig gekoppelt werden.
 
 ## Validierung
 
 Der Länderbuild bricht unter anderem ab, wenn:
 
-- ein ISO-3166-1-Code plus die ausdrücklich freigegebenen Zusatzcodes nicht über Overture `country` oder `dependency` abgedeckt ist,
-- ein nicht ausdrücklich behandelter synthetischer Overture-`country`-Code keine ISO-3-Zuordnung besitzt,
-- sich die überprüfte Menge der ausgeschlossenen synthetischen Overture-Codes ändert,
-- für ein Statistikgebiet kein Landpolygon vorhanden ist,
-- mehrere Landpolygone für dieselbe kanonische Länder-ID entstehen,
-- eine Labelgeometrie fehlt,
+- ein erwartetes direktes ISO-/Zusatzgebiet keine Overture-`country`-/`dependency`-Division besitzt,
+- eine konfigurierte Komponente eines zusammengesetzten Gebiets nicht mehr gefunden wird,
+- eine direkte Division oder eine Komponente nicht genau eine `is_land=true`-Geometrie besitzt,
+- ein nicht ausdrücklich behandelter synthetischer Overture-`country`-Code auftaucht,
+- sich die überprüfte Menge der synthetischen Overture-`country`-Codes ändert,
+- eine direkte Labelgeometrie fehlt,
 - Polygon- und Labelanzahl voneinander abweichen,
-- die erzeugte Anzahl nicht exakt dem erwarteten ISO-/Override-Codesatz entspricht,
-- `country:AUT` fehlt,
-- der explizit freigegebene Kosovo-Schlüssel `country:XKX` fehlt,
-- `country:PRI` nicht als Overture-`dependency` übernommen wird.
+- der fertige Bestand nicht exakt dem ISO-/Override-Codesatz entspricht,
+- einer der Sanity-Checks `AUT`, `XKX`, `BES`, `SJM`, `PSE`, `ESH` oder `PRI` fehlschlägt.
 
-Damit bemerken wir Änderungen am Overture-Datenmodell oder an der Länderabdeckung früh, statt stillschweigend Statistikwerte ohne Geometrie zu erzeugen.
+Damit bemerken wir Änderungen am Overture-Datenmodell oder an der Länderabdeckung früh, statt stillschweigend Statistikwerte ohne passende Geometrie zu erzeugen.
 
 ## Lokaler Build
 
@@ -168,7 +185,7 @@ Bestimmten Overture-Release verwenden:
 python scripts/build_countries.py --release 2026-08-19.0
 ```
 
-Country-/Dependency-Abdeckung und synthetische Overture-Ländereinträge prüfen:
+Coverage und Sonderfälle prüfen:
 
 ```bash
 python scripts/inspect_overture_countries.py --release 2026-08-19.0
