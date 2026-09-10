@@ -173,7 +173,8 @@
 			"timeMode": "annual",
 			"filters": {
 				"freq": "A",
-				"unit": "PC",
+				"indic_em": "EMP_LFS",
+				"unit": "PC_POP",
 				"sex": "T",
 				"age": "Y20-64"
 			},
