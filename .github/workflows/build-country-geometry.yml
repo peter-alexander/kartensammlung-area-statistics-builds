@@ -1,0 +1,85 @@
+name: Build country geometry
+
+on:
+  workflow_dispatch:
+    inputs:
+      overture_release:
+        description: "Overture release (z. B. 2026-08-19.0) oder latest"
+        required: false
+        default: "latest"
+  schedule:
+    - cron: "17 3 28 * *"
+  pull_request:
+    paths:
+      - "scripts/build_countries.py"
+      - "config/country-code-overrides.json"
+      - "requirements.txt"
+      - ".github/workflows/build-country-geometry.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/build_countries.py"
+      - "config/country-code-overrides.json"
+      - "requirements.txt"
+      - ".github/workflows/build-country-geometry.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: country-geometry-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TIPPECANOE_VERSION: "2.79.0"
+      TIPPECANOE_SHA256: "b0fd9df49b6efc988288ea48774822c6de19eb48428017f27ee0b3b01d44f05d"
+      OVERTURE_RELEASE: ${{ inputs.overture_release || 'latest' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install --requirement requirements.txt
+
+      - name: Install Tippecanoe
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes gcc g++ make libsqlite3-dev zlib1g-dev
+          curl --fail --location --silent --show-error \
+            "https://github.com/felt/tippecanoe/archive/refs/tags/${TIPPECANOE_VERSION}.tar.gz" \
+            --output /tmp/tippecanoe.tar.gz
+          echo "${TIPPECANOE_SHA256}  /tmp/tippecanoe.tar.gz" | sha256sum --check --strict
+          tar --extract --gzip --file /tmp/tippecanoe.tar.gz --directory /tmp
+          make --directory "/tmp/tippecanoe-${TIPPECANOE_VERSION}" --jobs "$(nproc)"
+          sudo make --directory "/tmp/tippecanoe-${TIPPECANOE_VERSION}" install
+          tippecanoe --version
+
+      - name: Build country geometry
+        run: python scripts/build_countries.py --release "${OVERTURE_RELEASE}"
+
+      - name: Show build metadata
+        run: |
+          cat dist/build-metadata.json
+          du -h dist/*
+
+      - name: Upload country geometry artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: country-geometry-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
