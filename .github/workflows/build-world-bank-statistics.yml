@@ -99,6 +99,73 @@ jobs:
           chmod +x .github/scripts/deploy-world-bank-statistics.sh
           .github/scripts/deploy-world-bank-statistics.sh dist/statistics
 
+      - name: Verify browser access to public statistics
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="cors=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          check_cors() {
+          	local url="$1"
+          	local output="$2"
+          	local range="${3:-}"
+          	local headers
+          	local allow_origin
+
+          	headers="$(mktemp)"
+          	if [ -n "$range" ]; then
+          		curl --fail --silent --show-error --location \
+          			--header "Origin: ${BROWSER_ORIGIN}" \
+          			--range "$range" \
+          			--dump-header "$headers" \
+          			--output "$output" \
+          			"${url}?${CACHE_BUST}"
+          	else
+          		curl --fail --silent --show-error --location \
+          			--header "Origin: ${BROWSER_ORIGIN}" \
+          			--dump-header "$headers" \
+          			--output "$output" \
+          			"${url}?${CACHE_BUST}"
+          	fi
+
+          	allow_origin="$(awk '
+          		BEGIN { IGNORECASE = 1 }
+          		tolower($1) == "access-control-allow-origin:" {
+          			value = $0
+          			sub(/^[^:]+:[[:space:]]*/, "", value)
+          			gsub(/\r/, "", value)
+          			print value
+          		}
+          	' "$headers" | tail -n 1)"
+          	rm -f "$headers"
+
+          	if [ "$allow_origin" != "*" ] && [ "$allow_origin" != "$BROWSER_ORIGIN" ]; then
+          		echo "CORS check failed for ${url}: Access-Control-Allow-Origin='${allow_origin:-<missing>}'" >&2
+          		exit 1
+          	fi
+          	echo "CORS OK: ${url} -> ${allow_origin}"
+          }
+
+          check_cors "${PUBLIC_BASE}/index.json" /tmp/browser-statistics-index.json
+          check_cors "${PUBLIC_BASE}/world-bank/index.json" /tmp/browser-world-bank-index.json
+
+          while IFS= read -r path; do
+          	check_cors "${PUBLIC_BASE}/world-bank/${path}" /dev/null 0-0
+          done < <(
+          	python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(
+          	Path("/tmp/browser-world-bank-index.json").read_text(encoding="utf-8")
+          )
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
+          PY
+          )
+
       - name: Verify public statistics
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         shell: bash
