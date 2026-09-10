@@ -55,7 +55,8 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p diagnostics
-          python scripts/build_eurostat.py 2>&1 | tee diagnostics/eurostat.log
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_eurostat.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/eurostat.log
 
       - name: Show statistics summary
         run: |
