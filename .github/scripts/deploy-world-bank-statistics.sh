@@ -66,17 +66,17 @@ trap 'rm -f "$LFTP_CMDS"' EXIT
 	echo "set net:reconnect-interval-multiplier 1"
 	echo "open \"$FTP_HOST\""
 	echo "user \"$FTP_USER\" \"$FTP_PASS\""
-	echo "mkdir -p \"${REMOTE_BASE}/${PROVIDER_ID}/releases\""
+	echo "mkdir -p -f \"${REMOTE_BASE}/${PROVIDER_ID}/releases\""
 
 	for local_dir in "${RELEASE_DIRS[@]}"; do
 		snapshot="$(basename -- "$local_dir")"
 		remote_dir="${REMOTE_BASE}/${PROVIDER_ID}/releases/${snapshot}"
-		echo "mkdir -p \"$remote_dir\""
+		echo "mkdir -p -f \"$remote_dir\""
 		echo "mirror -R --delete --verbose \"$local_dir\" \"$remote_dir\""
 	done
 
 	# Publish manifests only after every release file is in place.
-	echo "mkdir -p \"${REMOTE_BASE}/${PROVIDER_ID}\""
+	echo "mkdir -p -f \"${REMOTE_BASE}/${PROVIDER_ID}\""
 	echo "put \"$PROVIDER_INDEX\" -o \"${REMOTE_BASE}/${PROVIDER_ID}/index.json\""
 	echo "put \"$GLOBAL_INDEX\" -o \"${REMOTE_BASE}/index.json\""
 	echo "bye"
