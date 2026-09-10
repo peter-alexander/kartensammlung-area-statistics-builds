@@ -1,0 +1,10 @@
+{
+	"schema": "kartensammlung.statistics-providers/v1",
+	"providers": [
+		{
+			"id": "world-bank",
+			"name": "World Bank",
+			"index": "world-bank/index.json"
+		}
+	]
+}
