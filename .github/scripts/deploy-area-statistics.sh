@@ -21,6 +21,8 @@ if ! command -v lftp >/dev/null 2>&1; then
 	exit 1
 fi
 
+export LFTP_PASSWORD="${EASYNAME_FTP_PASSWORD}"
+
 LFTP_CMDS=$(mktemp)
 trap 'rm -f "$LFTP_CMDS"' EXIT
 
@@ -33,8 +35,7 @@ trap 'rm -f "$LFTP_CMDS"' EXIT
 	echo "set net:timeout 30"
 	echo "set net:reconnect-interval-base 30"
 	echo "set net:reconnect-interval-multiplier 1"
-	echo "open \"${EASYNAME_FTP_HOST}\""
-	echo "user \"${EASYNAME_FTP_USER}\" \"${EASYNAME_FTP_PASSWORD}\""
+	echo "open --user \"${EASYNAME_FTP_USER}\" --env-password \"${EASYNAME_FTP_HOST}\""
 	echo "mkdir -p \"${REMOTE_DIR}\""
 	echo "put \"${DIST_DIR}/area-registry-countries.json\" -o \"${REMOTE_DIR}/.area-registry-countries.json.${UPLOAD_ID}.tmp\""
 	echo "put \"${DIST_DIR}/build-metadata.json\" -o \"${REMOTE_DIR}/.build-metadata.json.${UPLOAD_ID}.tmp\""
