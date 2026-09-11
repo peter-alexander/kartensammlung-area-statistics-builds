@@ -1,0 +1,77 @@
+name: Inspect UNESCO UIS education API
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/inspect-unesco-uis-api.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Inspect UIS API
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.parse
+          import urllib.request
+
+          base = "https://data.unesco.org/api/explore/v2.1/catalog/datasets"
+          datasets = ["uis001", "uis006"]
+          keywords = [
+          	"literacy",
+          	"completion rate",
+          	"out-of-school rate",
+          	"enrolment",
+          	"enrollment",
+          	"pupil-teacher",
+          	"pupil teacher",
+          	"teacher ratio",
+          	"expenditure on education",
+          	"minimum proficiency",
+          	"school life expectancy",
+          	"repetition rate",
+          ]
+
+          def request_json(url):
+          	req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1"})
+          	with urllib.request.urlopen(req, timeout=60) as response:
+          		return json.load(response)
+
+          for dataset in datasets:
+          	print(f"=== DATASET {dataset} ===")
+          	url = f"{base}/{dataset}/records?limit=1"
+          	payload = request_json(url)
+          	print(f"total_count={payload.get('total_count')}")
+          	if payload.get("results"):
+          		print(f"fields={sorted(payload['results'][0])}")
+          		print(f"sample={payload['results'][0]}")
+
+          	for keyword in keywords:
+          		where = f'search(indicator_label_en, "{keyword}")'
+          		params = urllib.parse.urlencode({
+          			"select": "indicator_id,indicator_label_en,count(*) as rows",
+          			"where": where,
+          			"group_by": "indicator_id,indicator_label_en",
+          			"order_by": "indicator_id",
+          			"limit": 100,
+          		})
+          		url = f"{base}/{dataset}/records?{params}"
+          		try:
+          			payload = request_json(url)
+          		except Exception as error:
+          			print(f"QUERY FAILED {dataset} keyword={keyword!r}: {error}")
+          			continue
+          		results = payload.get("results", [])
+          		print(f"KEYWORD {keyword!r}: {len(results)} series")
+          		for item in results:
+          			print(f"  {item.get('indicator_id')!r} rows={item.get('rows')} label={item.get('indicator_label_en')!r}")
+          PY
