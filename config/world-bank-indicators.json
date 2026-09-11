@@ -162,6 +162,78 @@
 			"minAreasWithAnyValue": 180,
 			"maxDefaultYearAge": 5,
 			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "climate.ghg-total-excluding-lulucf-mtco2e",
+			"slug": "climate-ghg-total-excluding-lulucf-mtco2e",
+			"sourceIndicator": "EN.GHG.ALL.MT.CE.AR5",
+			"title": "Treibhausgasemissionen gesamt",
+			"description": "Gesamte Treibhausgasemissionen ohne Landnutzung, Landnutzungsänderungen und Forstwirtschaft (LULUCF), nach IPCC AR5 in CO₂-Äquivalente umgerechnet.",
+			"unit": {"id": "mt-co2e", "label": "Mt CO₂e", "symbol": "Mt CO₂e"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [1, 10, 50, 200, 1000, 5000]},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "climate.ghg-total-excluding-lulucf-per-capita",
+			"slug": "climate-ghg-total-excluding-lulucf-per-capita",
+			"sourceIndicator": "EN.GHG.ALL.PC.CE.AR5",
+			"title": "Treibhausgasemissionen pro Kopf",
+			"description": "Gesamte Treibhausgasemissionen ohne LULUCF pro Einwohner, nach IPCC AR5 in CO₂-Äquivalente umgerechnet.",
+			"unit": {"id": "t-co2e-per-capita", "label": "t CO₂e pro Einwohner", "symbol": "t CO₂e"},
+			"classification": {"type": "fixed", "breaks": [1, 2, 5, 10, 20, 40]},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "climate.co2-total-excluding-lulucf-mtco2e",
+			"slug": "climate-co2-total-excluding-lulucf-mtco2e",
+			"sourceIndicator": "EN.GHG.CO2.MT.CE.AR5",
+			"title": "CO₂-Emissionen gesamt",
+			"description": "Gesamte Kohlendioxid-Emissionen ohne LULUCF, nach IPCC AR5 in Millionen Tonnen CO₂-Äquivalent.",
+			"unit": {"id": "mt-co2e", "label": "Mt CO₂e", "symbol": "Mt CO₂e"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [1, 10, 50, 200, 1000, 5000]},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "climate.methane-total-excluding-lulucf-mtco2e",
+			"slug": "climate-methane-total-excluding-lulucf-mtco2e",
+			"sourceIndicator": "EN.GHG.CH4.MT.CE.AR5",
+			"title": "Methanemissionen gesamt",
+			"description": "Gesamte Methanemissionen ohne LULUCF, nach IPCC AR5 in Millionen Tonnen CO₂-Äquivalent.",
+			"unit": {"id": "mt-co2e", "label": "Mt CO₂e", "symbol": "Mt CO₂e"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.5, 2, 10, 50, 200, 1000]},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "climate.n2o-total-excluding-lulucf-mtco2e",
+			"slug": "climate-n2o-total-excluding-lulucf-mtco2e",
+			"sourceIndicator": "EN.GHG.N2O.MT.CE.AR5",
+			"title": "Lachgasemissionen gesamt",
+			"description": "Gesamte Lachgasemissionen (N₂O) ohne LULUCF, nach IPCC AR5 in Millionen Tonnen CO₂-Äquivalent.",
+			"unit": {"id": "mt-co2e", "label": "Mt CO₂e", "symbol": "Mt CO₂e"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.2, 1, 5, 20, 100, 500]},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "climate.co2-intensity-gdp-ppp",
+			"slug": "climate-co2-intensity-gdp-ppp",
+			"sourceIndicator": "EN.GHG.CO2.RT.GDP.PP.KD",
+			"title": "CO₂-Intensität des BIP",
+			"description": "Kohlendioxid-Emissionen ohne LULUCF je Einheit Wirtschaftsleistung, in kg CO₂e pro 2021-PPP-Dollar des BIP.",
+			"unit": {"id": "kg-co2e-per-2021-ppp-usd", "label": "kg CO₂e je 2021-PPP-$", "symbol": "kg CO₂e/PPP-$"},
+			"classification": {"type": "fixed", "breaks": [0.05, 0.1, 0.2, 0.4, 0.8, 1.6]},
+			"minAreasWithAnyValue": 170,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		}
 	]
 }
