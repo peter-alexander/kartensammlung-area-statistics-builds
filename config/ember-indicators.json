@@ -209,6 +209,127 @@
 			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 25, 50, 75]},
 			"minAreasWithAnyValue": 200,
 			"minAreasInLatestYear": 190
+		},
+		{
+			"id": "electricity.capacity-clean-gw",
+			"slug": "electricity-capacity-clean-gw",
+			"source": {"category": "Capacity", "subcategory": "Aggregate fuel", "variable": "Clean", "unit": "GW"},
+			"title": "Installierte Leistung: sauberer Strom",
+			"description": "Installierte Stromerzeugungsleistung aus sauberen Energieträgern nach Ember-Definition; umfasst erneuerbare Energien und Kernkraft.",
+			"unit": {"id": "gw", "label": "GW"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.1, 1, 10, 50, 200, 1000]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInDefaultYear": 185
+		},
+		{
+			"id": "electricity.capacity-renewables-gw",
+			"slug": "electricity-capacity-renewables-gw",
+			"source": {"category": "Capacity", "subcategory": "Aggregate fuel", "variable": "Renewables", "unit": "GW"},
+			"title": "Installierte Leistung: erneuerbar",
+			"description": "Installierte Stromerzeugungsleistung aus erneuerbaren Energieträgern.",
+			"unit": {"id": "gw", "label": "GW"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.1, 1, 10, 50, 200, 1000]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInDefaultYear": 185
+		},
+		{
+			"id": "electricity.capacity-fossil-gw",
+			"slug": "electricity-capacity-fossil-gw",
+			"source": {"category": "Capacity", "subcategory": "Aggregate fuel", "variable": "Fossil", "unit": "GW"},
+			"title": "Installierte Leistung: fossil",
+			"description": "Installierte Stromerzeugungsleistung aus fossilen Energieträgern.",
+			"unit": {"id": "gw", "label": "GW"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.1, 1, 10, 50, 200, 1000]},
+			"minAreasWithAnyValue": 205,
+			"minAreasInDefaultYear": 190
+		},
+		{
+			"id": "electricity.capacity-coal-gw",
+			"slug": "electricity-capacity-coal-gw",
+			"source": {"category": "Capacity", "subcategory": "Fuel", "variable": "Coal", "unit": "GW"},
+			"title": "Installierte Leistung: Kohle",
+			"description": "Installierte Stromerzeugungsleistung aus Kohle.",
+			"unit": {"id": "gw", "label": "GW"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.1, 1, 5, 20, 50, 200]},
+			"minAreasWithAnyValue": 80,
+			"minAreasInDefaultYear": 80
+		},
+		{
+			"id": "electricity.capacity-gas-gw",
+			"slug": "electricity-capacity-gas-gw",
+			"source": {"category": "Capacity", "subcategory": "Fuel", "variable": "Gas", "unit": "GW"},
+			"title": "Installierte Leistung: Gas",
+			"description": "Installierte Stromerzeugungsleistung aus Gas.",
+			"unit": {"id": "gw", "label": "GW"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.1, 1, 5, 20, 50, 200]},
+			"minAreasWithAnyValue": 120,
+			"minAreasInDefaultYear": 115
+		},
+		{
+			"id": "electricity.capacity-nuclear-gw",
+			"slug": "electricity-capacity-nuclear-gw",
+			"source": {"category": "Capacity", "subcategory": "Fuel", "variable": "Nuclear", "unit": "GW"},
+			"title": "Installierte Leistung: Kernkraft",
+			"description": "Installierte Stromerzeugungsleistung aus Kernkraft.",
+			"unit": {"id": "gw", "label": "GW"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.1, 1, 5, 10, 25, 50]},
+			"minAreasWithAnyValue": 175,
+			"minAreasInDefaultYear": 170
+		},
+		{
+			"id": "electricity.capacity-hydro-gw",
+			"slug": "electricity-capacity-hydro-gw",
+			"source": {"category": "Capacity", "subcategory": "Fuel", "variable": "Hydro", "unit": "GW"},
+			"title": "Installierte Leistung: Wasserkraft",
+			"description": "Installierte Stromerzeugungsleistung aus Wasserkraft.",
+			"unit": {"id": "gw", "label": "GW"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.1, 1, 5, 20, 50, 200]},
+			"minAreasWithAnyValue": 195,
+			"minAreasInDefaultYear": 180
+		},
+		{
+			"id": "electricity.capacity-wind-gw",
+			"slug": "electricity-capacity-wind-gw",
+			"source": {"category": "Capacity", "subcategory": "Fuel", "variable": "Wind", "unit": "GW"},
+			"title": "Installierte Leistung: Windkraft",
+			"description": "Installierte Stromerzeugungsleistung aus Windkraft.",
+			"unit": {"id": "gw", "label": "GW"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.1, 1, 5, 20, 50, 200]},
+			"minAreasWithAnyValue": 195,
+			"minAreasInDefaultYear": 180
+		},
+		{
+			"id": "electricity.capacity-solar-gw",
+			"slug": "electricity-capacity-solar-gw",
+			"source": {"category": "Capacity", "subcategory": "Fuel", "variable": "Solar", "unit": "GW"},
+			"title": "Installierte Leistung: Solarenergie",
+			"description": "Installierte Stromerzeugungsleistung aus Solarenergie.",
+			"unit": {"id": "gw", "label": "GW"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.1, 1, 5, 20, 50, 200]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInDefaultYear": 185
+		},
+		{
+			"id": "electricity.capacity-bioenergy-gw",
+			"slug": "electricity-capacity-bioenergy-gw",
+			"source": {"category": "Capacity", "subcategory": "Fuel", "variable": "Bioenergy", "unit": "GW"},
+			"title": "Installierte Leistung: Bioenergie",
+			"description": "Installierte Stromerzeugungsleistung aus Bioenergie.",
+			"unit": {"id": "gw", "label": "GW"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.01, 0.1, 1, 5, 20, 50]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInDefaultYear": 185
+		},
+		{
+			"id": "electricity.capacity-wind-solar-gw",
+			"slug": "electricity-capacity-wind-solar-gw",
+			"source": {"category": "Capacity", "subcategory": "Aggregate fuel", "variable": "Wind and Solar", "unit": "GW"},
+			"title": "Installierte Leistung: Wind und Solar",
+			"description": "Gemeinsame installierte Stromerzeugungsleistung aus Wind- und Solarenergie.",
+			"unit": {"id": "gw", "label": "GW"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.1, 1, 10, 50, 200, 1000]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInDefaultYear": 185
 		}
 	]
 }
