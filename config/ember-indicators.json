@@ -1,0 +1,214 @@
+{
+	"schema": "kartensammlung.ember-statistics/v1",
+	"downloadUrl": "https://files.ember-energy.org/public-downloads/yearly_full_release_long_format.csv",
+	"expectedStartYear": 2000,
+	"minimumLatestYear": 2025,
+	"provider": {
+		"id": "ember",
+		"name": "Ember",
+		"dataset": "Yearly Electricity Data",
+		"license": "CC BY 4.0",
+		"licenseUrl": "https://ember-energy.org/creative-commons/",
+		"attribution": "Ember"
+	},
+	"indicators": [
+		{
+			"id": "electricity.generation-total-twh",
+			"slug": "electricity-generation-total-twh",
+			"source": {"category": "Electricity generation", "subcategory": "Total", "variable": "Total Generation", "unit": "TWh"},
+			"title": "Stromerzeugung",
+			"description": "Gesamte jährliche Stromerzeugung.",
+			"unit": {"id": "twh", "label": "TWh"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.1, 1, 10, 100, 500, 2000]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInLatestYear": 190
+		},
+		{
+			"id": "electricity.demand-twh",
+			"slug": "electricity-demand-twh",
+			"source": {"category": "Electricity demand", "subcategory": "Demand", "variable": "Demand", "unit": "TWh"},
+			"title": "Stromnachfrage",
+			"description": "Jährliche Stromnachfrage.",
+			"unit": {"id": "twh", "label": "TWh"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.1, 1, 10, 100, 500, 2000]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInLatestYear": 190
+		},
+		{
+			"id": "electricity.demand-per-capita-mwh",
+			"slug": "electricity-demand-per-capita-mwh",
+			"source": {"category": "Electricity demand", "subcategory": "Demand per capita", "variable": "Demand per capita", "unit": "MWh"},
+			"title": "Stromnachfrage pro Kopf",
+			"description": "Jährliche Stromnachfrage pro Einwohner.",
+			"unit": {"id": "mwh-per-capita", "label": "MWh pro Einwohner"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [0.5, 1, 2, 4, 8, 15]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInLatestYear": 190
+		},
+		{
+			"id": "electricity.net-imports-twh",
+			"slug": "electricity-net-imports-twh",
+			"source": {"category": "Electricity imports", "subcategory": "Electricity imports", "variable": "Net Imports", "unit": "TWh"},
+			"title": "Netto-Stromimporte",
+			"description": "Netto-Stromimporte in TWh. Positive Werte bedeuten Nettoimport, negative Werte Nettoexport.",
+			"unit": {"id": "twh", "label": "TWh"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [-50, -10, -1, 1, 10, 50]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInLatestYear": 190
+		},
+		{
+			"id": "electricity.net-imports-demand-percent",
+			"slug": "electricity-net-imports-demand-percent",
+			"derived": {"type": "ratio-percent", "numerator": "electricity.net-imports-twh", "denominator": "electricity.demand-twh"},
+			"title": "Netto-Stromimporte relativ zur Nachfrage",
+			"description": "Netto-Stromimporte als Anteil der Stromnachfrage; aus Ember-Nettoimporten und Ember-Stromnachfrage berechnet. Positive Werte bedeuten Nettoimport, negative Nettoexport.",
+			"unit": {"id": "percent", "label": "%", "symbol": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [-50, -20, -5, 5, 20, 50]},
+			"minAreasWithAnyValue": 195,
+			"minAreasInLatestYear": 185
+		},
+		{
+			"id": "electricity.co2-intensity-gco2-kwh",
+			"slug": "electricity-co2-intensity-gco2-kwh",
+			"source": {"category": "Power sector emissions", "subcategory": "CO2 intensity", "variable": "CO2 intensity", "unit": "gCO2/kWh"},
+			"title": "CO₂-Intensität der Stromerzeugung",
+			"description": "CO₂-Intensität des Strommixes in Gramm CO₂ pro Kilowattstunde.",
+			"unit": {"id": "gco2-per-kwh", "label": "g CO₂/kWh"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [50, 100, 250, 400, 600, 800]},
+			"minAreasWithAnyValue": 195,
+			"minAreasInLatestYear": 185
+		},
+		{
+			"id": "electricity.emissions-mtco2",
+			"slug": "electricity-emissions-mtco2",
+			"source": {"category": "Power sector emissions", "subcategory": "Total", "variable": "Total emissions", "unit": "mtCO2"},
+			"title": "CO₂-Emissionen des Stromsektors",
+			"description": "Jährliche CO₂-Emissionen des Stromsektors.",
+			"unit": {"id": "mtco2", "label": "Mt CO₂"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.1, 1, 10, 50, 200, 1000]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInLatestYear": 190
+		},
+		{
+			"id": "electricity.clean-share-percent",
+			"slug": "electricity-clean-share-percent",
+			"source": {"category": "Electricity generation", "subcategory": "Aggregate fuel", "variable": "Clean", "unit": "%"},
+			"title": "Stromerzeugung: sauberer Strom (%)",
+			"description": "Anteil sauberer Stromerzeugung nach Ember-Definition; umfasst erneuerbare Energien und Kernkraft.",
+			"unit": {"id": "percent", "label": "%", "symbol": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [10, 25, 50, 75, 90, 99]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInLatestYear": 190
+		},
+		{
+			"id": "electricity.renewables-share-percent",
+			"slug": "electricity-renewables-share-percent",
+			"source": {"category": "Electricity generation", "subcategory": "Aggregate fuel", "variable": "Renewables", "unit": "%"},
+			"title": "Stromerzeugung: erneuerbar (%)",
+			"description": "Anteil erneuerbarer Energien an der Stromerzeugung.",
+			"unit": {"id": "percent", "label": "%", "symbol": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [10, 25, 50, 75, 90, 99]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInLatestYear": 190
+		},
+		{
+			"id": "electricity.fossil-share-percent",
+			"slug": "electricity-fossil-share-percent",
+			"source": {"category": "Electricity generation", "subcategory": "Aggregate fuel", "variable": "Fossil", "unit": "%"},
+			"title": "Stromerzeugung: fossil (%)",
+			"description": "Anteil fossiler Energieträger an der Stromerzeugung.",
+			"unit": {"id": "percent", "label": "%", "symbol": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [10, 25, 50, 75, 90, 99]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInLatestYear": 190
+		},
+		{
+			"id": "electricity.coal-share-percent",
+			"slug": "electricity-coal-share-percent",
+			"source": {"category": "Electricity generation", "subcategory": "Fuel", "variable": "Coal", "unit": "%"},
+			"title": "Stromerzeugung: Kohle (%)",
+			"description": "Anteil von Kohle an der Stromerzeugung.",
+			"unit": {"id": "percent", "label": "%", "symbol": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 25, 50, 75]},
+			"minAreasWithAnyValue": 195,
+			"minAreasInLatestYear": 185
+		},
+		{
+			"id": "electricity.gas-share-percent",
+			"slug": "electricity-gas-share-percent",
+			"source": {"category": "Electricity generation", "subcategory": "Fuel", "variable": "Gas", "unit": "%"},
+			"title": "Stromerzeugung: Gas (%)",
+			"description": "Anteil von Gas an der Stromerzeugung.",
+			"unit": {"id": "percent", "label": "%", "symbol": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 25, 50, 75]},
+			"minAreasWithAnyValue": 190,
+			"minAreasInLatestYear": 180
+		},
+		{
+			"id": "electricity.nuclear-share-percent",
+			"slug": "electricity-nuclear-share-percent",
+			"source": {"category": "Electricity generation", "subcategory": "Fuel", "variable": "Nuclear", "unit": "%"},
+			"title": "Stromerzeugung: Kernkraft (%)",
+			"description": "Anteil von Kernkraft an der Stromerzeugung.",
+			"unit": {"id": "percent", "label": "%", "symbol": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 25, 50, 75]},
+			"minAreasWithAnyValue": 185,
+			"minAreasInLatestYear": 175
+		},
+		{
+			"id": "electricity.hydro-share-percent",
+			"slug": "electricity-hydro-share-percent",
+			"source": {"category": "Electricity generation", "subcategory": "Fuel", "variable": "Hydro", "unit": "%"},
+			"title": "Stromerzeugung: Wasserkraft (%)",
+			"description": "Anteil von Wasserkraft an der Stromerzeugung.",
+			"unit": {"id": "percent", "label": "%", "symbol": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 25, 50, 75]},
+			"minAreasWithAnyValue": 195,
+			"minAreasInLatestYear": 185
+		},
+		{
+			"id": "electricity.wind-share-percent",
+			"slug": "electricity-wind-share-percent",
+			"source": {"category": "Electricity generation", "subcategory": "Fuel", "variable": "Wind", "unit": "%"},
+			"title": "Stromerzeugung: Windkraft (%)",
+			"description": "Anteil von Windkraft an der Stromerzeugung.",
+			"unit": {"id": "percent", "label": "%", "symbol": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 25, 50, 75]},
+			"minAreasWithAnyValue": 195,
+			"minAreasInLatestYear": 185
+		},
+		{
+			"id": "electricity.solar-share-percent",
+			"slug": "electricity-solar-share-percent",
+			"source": {"category": "Electricity generation", "subcategory": "Fuel", "variable": "Solar", "unit": "%"},
+			"title": "Stromerzeugung: Solarenergie (%)",
+			"description": "Anteil von Solarenergie an der Stromerzeugung.",
+			"unit": {"id": "percent", "label": "%", "symbol": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 20, 40, 60]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInLatestYear": 190
+		},
+		{
+			"id": "electricity.bioenergy-share-percent",
+			"slug": "electricity-bioenergy-share-percent",
+			"source": {"category": "Electricity generation", "subcategory": "Fuel", "variable": "Bioenergy", "unit": "%"},
+			"title": "Stromerzeugung: Bioenergie (%)",
+			"description": "Anteil von Bioenergie an der Stromerzeugung.",
+			"unit": {"id": "percent", "label": "%", "symbol": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 2, 5, 10, 20, 40]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInLatestYear": 190
+		},
+		{
+			"id": "electricity.wind-solar-share-percent",
+			"slug": "electricity-wind-solar-share-percent",
+			"source": {"category": "Electricity generation", "subcategory": "Aggregate fuel", "variable": "Wind and Solar", "unit": "%"},
+			"title": "Stromerzeugung: Wind und Solar (%)",
+			"description": "Gemeinsamer Anteil von Wind- und Solarenergie an der Stromerzeugung.",
+			"unit": {"id": "percent", "label": "%", "symbol": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 25, 50, 75]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInLatestYear": 190
+		}
+	]
+}
