@@ -25,7 +25,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: area-statistics-${{ github.ref }}
+  group: area-statistics-un-wpp-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
