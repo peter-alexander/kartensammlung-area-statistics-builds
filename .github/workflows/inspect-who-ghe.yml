@@ -38,13 +38,39 @@ jobs:
           request = Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1"})
           with urlopen(request, timeout=90) as response:
           	data = response.read()
-          print(f"download_bytes={len(data)}")
           workbook = openpyxl.load_workbook(BytesIO(data), read_only=True, data_only=True)
-          print(f"sheets={workbook.sheetnames}")
-          for sheet in workbook.worksheets:
-          	print(f"SHEET {sheet.title!r} rows={sheet.max_row} cols={sheet.max_column}")
-          	for row_index, row in enumerate(sheet.iter_rows(values_only=True), start=1):
-          		if row_index > 18:
-          			break
-          		print(f"ROW {row_index}: {list(row[:20])!r}")
+          print(f"download_bytes={len(data)} sheets={workbook.sheetnames}")
+
+          sheet = workbook["ASDR 2021"]
+          iso_codes = [str(value).strip() if value else "" for value in next(sheet.iter_rows(min_row=8, max_row=8, values_only=True))]
+          mapped_iso = [code for code in iso_codes[7:] if len(code) == 3]
+          print(f"country_columns={len(mapped_iso)} first={mapped_iso[:8]} last={mapped_iso[-8:]}")
+
+          needles = (
+          	"all causes",
+          	"ischaemic heart",
+          	"cerebrovascular",
+          	"stroke",
+          	"chronic obstructive",
+          	"lower respiratory",
+          	"trachea, bronchus",
+          	"alzheimer",
+          	"diabetes mellitus",
+          	"kidney diseases",
+          	"tuberculosis",
+          	"road injury",
+          	"road traffic",
+          )
+          for row_index, row in enumerate(sheet.iter_rows(min_row=10, values_only=True), start=10):
+          	sex = str(row[0] or "").strip()
+          	cause = str(row[5] or row[4] or row[3] or "").strip()
+          	if sex != "Persons" or not cause:
+          		continue
+          	lower = cause.lower()
+          	if any(needle in lower for needle in needles):
+          		values = [value for value in row[7:] if isinstance(value, (int, float))]
+          		print(
+          			f"MATCH row={row_index} code={row[1]!r} cause={cause!r} "
+          			f"numericCountries={len(values)} min={min(values) if values else None} max={max(values) if values else None}"
+          		)
           PY
