@@ -1,4 +1,4 @@
-name: Inspect PIP Arrow response
+name: Inspect PIP version formats
 
 on:
   push:
@@ -15,25 +15,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Fetch all countries and years as Arrow
+      - name: Compare version endpoint formats
         run: |
-          set -euo pipefail
-          URL="https://api.worldbank.org/pip/v1/pip?country=all&year=all&ppp_version=2021&fill_gaps=true&reporting_level=national&version=20260324_2021_01_02_PROD&povline=3&format=arrow"
-          curl --fail --location --retry 2 --retry-delay 2 --connect-timeout 20 --max-time 240 \
-            --write-out 'http=%{http_code} bytes=%{size_download} seconds=%{time_total} type=%{content_type}\n' \
-            "$URL" --output /tmp/pip.arrow
-          ls -lh /tmp/pip.arrow
-          python -m pip install --quiet pyarrow
-          python - <<'PY'
-          import pyarrow.feather as feather
-          from collections import Counter
-
-          table = feather.read_table("/tmp/pip.arrow")
-          print("ROWS", table.num_rows)
-          print("COLUMNS", table.column_names)
-          frame = table.to_pandas()
-          print("COUNTRIES", frame["country_code"].nunique())
-          print("YEARS", int(frame["reporting_year"].min()), int(frame["reporting_year"].max()))
-          print("ESTIMATE_TYPES", Counter(frame["estimate_type"].astype(str)))
-          print("YEAR_COUNTS", frame.groupby("reporting_year")["country_code"].nunique().tail(10).to_dict())
-          PY
+          set -u
+          for format in arrow csv json; do
+            echo "=== ${format} ==="
+            curl --location --connect-timeout 10 --max-time 45 \
+              --write-out 'http=%{http_code} bytes=%{size_download} seconds=%{time_total} type=%{content_type}\n' \
+              "https://api.worldbank.org/pip/v1/versions?format=${format}" \
+              --output "/tmp/versions-${format}" || true
+            ls -lh "/tmp/versions-${format}" 2>/dev/null || true
+            head -c 300 "/tmp/versions-${format}" 2>/dev/null || true
+            echo
+          done
