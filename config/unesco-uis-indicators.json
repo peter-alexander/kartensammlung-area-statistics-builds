@@ -70,7 +70,7 @@
 			"description": "Gesamtzahl der Lernenden in der Primarstufe relativ zur Bevölkerung im offiziellen Primarschulalter; die Quote kann über 100 % liegen.",
 			"unit": {"id": "percent", "label": "%", "symbol": "%"},
 			"classification": {"type": "fixed", "scale": "linear", "breaks": [50, 75, 90, 100, 110, 125]},
-			"minAreasWithAnyValue": 210,
+			"minAreasWithAnyValue": 200,
 			"minAreasInDefaultYear": 150
 		},
 		{
@@ -83,8 +83,8 @@
 			"description": "Gesamtzahl der Lernenden in der unteren Sekundarstufe relativ zur Bevölkerung im offiziellen Alter dieser Bildungsstufe; die Quote kann über 100 % liegen.",
 			"unit": {"id": "percent", "label": "%", "symbol": "%"},
 			"classification": {"type": "fixed", "scale": "linear", "breaks": [50, 75, 90, 100, 110, 125]},
-			"minAreasWithAnyValue": 200,
-			"minAreasInDefaultYear": 150
+			"minAreasWithAnyValue": 190,
+			"minAreasInDefaultYear": 140
 		},
 		{
 			"id": "education.gross-enrolment-upper-secondary-percent",
@@ -96,8 +96,8 @@
 			"description": "Gesamtzahl der Lernenden in der oberen Sekundarstufe relativ zur Bevölkerung im offiziellen Alter dieser Bildungsstufe; die Quote kann über 100 % liegen.",
 			"unit": {"id": "percent", "label": "%", "symbol": "%"},
 			"classification": {"type": "fixed", "scale": "linear", "breaks": [50, 75, 90, 100, 110, 125]},
-			"minAreasWithAnyValue": 200,
-			"minAreasInDefaultYear": 140
+			"minAreasWithAnyValue": 190,
+			"minAreasInDefaultYear": 130
 		},
 		{
 			"id": "education.gross-enrolment-tertiary-percent",
@@ -135,8 +135,8 @@
 			"description": "Anteil der Kinder im offiziellen Primarschulalter, die in Primar- oder einer höheren Bildungsstufe eingeschrieben sind.",
 			"unit": {"id": "percent", "label": "%", "symbol": "%"},
 			"classification": {"type": "fixed", "scale": "linear", "breaks": [50, 70, 80, 90, 95, 100]},
-			"minAreasWithAnyValue": 210,
-			"minAreasInDefaultYear": 150
+			"minAreasWithAnyValue": 200,
+			"minAreasInDefaultYear": 140
 		},
 		{
 			"id": "education.net-enrolment-lower-secondary-percent",
@@ -148,8 +148,8 @@
 			"description": "Anteil der Jugendlichen im offiziellen Alter der unteren Sekundarstufe, die in dieser oder einer höheren Bildungsstufe eingeschrieben sind.",
 			"unit": {"id": "percent", "label": "%", "symbol": "%"},
 			"classification": {"type": "fixed", "scale": "linear", "breaks": [50, 70, 80, 90, 95, 100]},
-			"minAreasWithAnyValue": 190,
-			"minAreasInDefaultYear": 140
+			"minAreasWithAnyValue": 185,
+			"minAreasInDefaultYear": 130
 		},
 		{
 			"id": "education.government-expenditure-gdp-percent",
@@ -187,8 +187,8 @@
 			"description": "Erwartete Anzahl an Bildungsjahren von der Primarstufe bis zur Tertiärbildung auf Basis der aktuellen Einschulungsquoten.",
 			"unit": {"id": "years", "label": "Jahre"},
 			"classification": {"type": "fixed", "scale": "linear", "breaks": [8, 10, 12, 14, 16, 18]},
-			"minAreasWithAnyValue": 195,
-			"minAreasInDefaultYear": 100
+			"minAreasWithAnyValue": 185,
+			"minAreasInDefaultYear": 90
 		},
 		{
 			"id": "education.repetition-primary-percent",
@@ -200,8 +200,8 @@
 			"description": "Anteil der Schülerinnen und Schüler der Primarstufe, die eine Klassenstufe wiederholen.",
 			"unit": {"id": "percent", "label": "%", "symbol": "%"},
 			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 2, 5, 10, 20, 40]},
-			"minAreasWithAnyValue": 200,
-			"minAreasInDefaultYear": 120
+			"minAreasWithAnyValue": 195,
+			"minAreasInDefaultYear": 110
 		},
 		{
 			"id": "education.repetition-lower-secondary-percent",
@@ -213,8 +213,8 @@
 			"description": "Anteil der Schülerinnen und Schüler der allgemeinbildenden unteren Sekundarstufe, die eine Klassenstufe wiederholen.",
 			"unit": {"id": "percent", "label": "%", "symbol": "%"},
 			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 2, 5, 10, 20, 40]},
-			"minAreasWithAnyValue": 180,
-			"minAreasInDefaultYear": 120
+			"minAreasWithAnyValue": 175,
+			"minAreasInDefaultYear": 110
 		},
 		{
 			"id": "education.pupils-per-trained-primary-teacher",
