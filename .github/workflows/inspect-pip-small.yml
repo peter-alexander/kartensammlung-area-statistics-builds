@@ -1,0 +1,55 @@
+name: Inspect PIP response fields
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/inspect-pip-small.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Inspect selected countries
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.parse
+          import urllib.request
+          from collections import Counter
+
+          BASE = "https://api.worldbank.org/pip/v1/pip"
+          VERSION = "20260324_2021_01_02_PROD"
+          for country in ("ALB", "AUT", "DEU", "USA", "IND"):
+          	params = {
+          		"country": country,
+          		"year": "all",
+          		"ppp_version": "2021",
+          		"fill_gaps": "true",
+          		"reporting_level": "national",
+          		"version": VERSION,
+          		"povline": "3",
+          		"format": "json",
+          	}
+          	url = BASE + "?" + urllib.parse.urlencode(params)
+          	req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1", "Accept": "application/json"})
+          	with urllib.request.urlopen(req, timeout=120) as response:
+          		data = response.read()
+          	rows = json.loads(data)
+          	if isinstance(rows, dict):
+          		for key in ("data", "results", "result"):
+          			if isinstance(rows.get(key), list):
+          				rows = rows[key]
+          				break
+          	print("COUNTRY", country, "bytes", len(data), "rows", len(rows) if isinstance(rows, list) else "?")
+          	if isinstance(rows, list) and rows:
+          		print("FIELDS", sorted(rows[0]))
+          		print("TYPES", Counter(str(r.get("estimate_type", "")) for r in rows))
+          		print("INTERPOLATED", Counter(str(r.get("is_interpolated", "")) for r in rows))
+          		print("RECENT", json.dumps([r for r in rows if int(r.get("reporting_year", 0)) >= 2022], sort_keys=True)[:20000])
+          PY
