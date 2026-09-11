@@ -9,6 +9,7 @@ on:
       - "config/statistics-providers.json"
       - "config/unesco-uis-indicators.json"
       - "scripts/build_unesco_uis.py"
+      - "scripts/build_unesco_uis_entry.py"
       - "scripts/build_world_bank.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
       - ".github/workflows/build-unesco-uis-statistics.yml"
@@ -19,6 +20,7 @@ on:
       - "config/statistics-providers.json"
       - "config/unesco-uis-indicators.json"
       - "scripts/build_unesco_uis.py"
+      - "scripts/build_unesco_uis_entry.py"
       - "scripts/build_world_bank.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
       - ".github/workflows/build-unesco-uis-statistics.yml"
@@ -47,7 +49,7 @@ jobs:
       - name: Validate scripts
         run: |
           bash -n .github/scripts/deploy-world-bank-statistics.sh
-          python -m py_compile scripts/build_unesco_uis.py scripts/build_world_bank.py
+          python -m py_compile scripts/build_unesco_uis.py scripts/build_unesco_uis_entry.py scripts/build_world_bank.py
           python -m json.tool config/statistics-providers.json >/dev/null
           python -m json.tool config/unesco-uis-indicators.json >/dev/null
 
@@ -57,7 +59,7 @@ jobs:
           set -o pipefail
           mkdir -p diagnostics
           REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          python scripts/build_unesco_uis.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/unesco-uis.log
+          python scripts/build_unesco_uis_entry.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/unesco-uis.log
 
       - name: Show statistics summary
         run: |
