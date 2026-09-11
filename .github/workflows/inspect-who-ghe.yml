@@ -39,38 +39,18 @@ jobs:
           with urlopen(request, timeout=90) as response:
           	data = response.read()
           workbook = openpyxl.load_workbook(BytesIO(data), read_only=True, data_only=True)
-          print(f"download_bytes={len(data)} sheets={workbook.sheetnames}")
-
-          sheet = workbook["ASDR 2021"]
-          iso_codes = [str(value).strip() if value else "" for value in next(sheet.iter_rows(min_row=8, max_row=8, values_only=True))]
-          mapped_iso = [code for code in iso_codes[7:] if len(code) == 3]
-          print(f"country_columns={len(mapped_iso)} first={mapped_iso[:8]} last={mapped_iso[-8:]}")
-
-          needles = (
-          	"all causes",
-          	"ischaemic heart",
-          	"cerebrovascular",
-          	"stroke",
-          	"chronic obstructive",
-          	"lower respiratory",
-          	"trachea, bronchus",
-          	"alzheimer",
-          	"diabetes mellitus",
-          	"kidney diseases",
-          	"tuberculosis",
-          	"road injury",
-          	"road traffic",
-          )
-          for row_index, row in enumerate(sheet.iter_rows(min_row=10, values_only=True), start=10):
-          	sex = str(row[0] or "").strip()
-          	cause = str(row[5] or row[4] or row[3] or "").strip()
-          	if sex != "Persons" or not cause:
-          		continue
-          	lower = cause.lower()
-          	if any(needle in lower for needle in needles):
+          for sheet_name in ["ASDR 2021", "ASDR 2020", "ASDR 2019", "ASDR 2000"]:
+          	sheet = workbook[sheet_name]
+          	print(f"SHEET {sheet_name}")
+          	for row_index, row in enumerate(sheet.iter_rows(min_row=10, values_only=True), start=10):
+          		sex = str(row[0] or "").strip()
+          		cause = str(row[5] or row[4] or row[3] or "").strip()
+          		if sex != "Persons" or "covid" not in cause.lower():
+          			continue
           		values = [value for value in row[7:] if isinstance(value, (int, float))]
           		print(
-          			f"MATCH row={row_index} code={row[1]!r} cause={cause!r} "
-          			f"numericCountries={len(values)} min={min(values) if values else None} max={max(values) if values else None}"
+          			f"row={row_index} code={row[1]!r} cause={cause!r} "
+          			f"numericCountries={len(values)} nonzero={sum(value != 0 for value in values)} "
+          			f"min={min(values) if values else None} max={max(values) if values else None}"
           		)
           PY
