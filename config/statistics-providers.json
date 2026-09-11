@@ -25,6 +25,11 @@
 			"id": "who",
 			"name": "WHO",
 			"index": "who/index.json"
+		},
+		{
+			"id": "jmp",
+			"name": "WHO/UNICEF JMP",
+			"index": "jmp/index.json"
 		}
 	]
 }
