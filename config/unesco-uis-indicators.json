@@ -200,7 +200,7 @@
 			"description": "Anteil der Schülerinnen und Schüler der Primarstufe, die eine Klassenstufe wiederholen.",
 			"unit": {"id": "percent", "label": "%", "symbol": "%"},
 			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 2, 5, 10, 20, 40]},
-			"minAreasWithAnyValue": 195,
+			"minAreasWithAnyValue": 190,
 			"minAreasInDefaultYear": 110
 		},
 		{
