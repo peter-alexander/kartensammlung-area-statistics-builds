@@ -9,6 +9,7 @@ on:
       - "config/statistics-providers.json"
       - "config/ilostat-indicators.json"
       - "scripts/build_ilostat.py"
+      - "scripts/build_ilostat_entry.py"
       - "scripts/build_world_bank.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
       - ".github/workflows/build-ilostat-statistics.yml"
@@ -19,6 +20,7 @@ on:
       - "config/statistics-providers.json"
       - "config/ilostat-indicators.json"
       - "scripts/build_ilostat.py"
+      - "scripts/build_ilostat_entry.py"
       - "scripts/build_world_bank.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
       - ".github/workflows/build-ilostat-statistics.yml"
@@ -47,7 +49,7 @@ jobs:
       - name: Validate scripts
         run: |
           bash -n .github/scripts/deploy-world-bank-statistics.sh
-          python -m py_compile scripts/build_ilostat.py scripts/build_world_bank.py
+          python -m py_compile scripts/build_ilostat.py scripts/build_ilostat_entry.py scripts/build_world_bank.py
           python -m json.tool config/statistics-providers.json >/dev/null
           python -m json.tool config/ilostat-indicators.json >/dev/null
 
@@ -57,7 +59,7 @@ jobs:
           set -o pipefail
           mkdir -p diagnostics
           REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          python scripts/build_ilostat.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/ilostat.log
+          python scripts/build_ilostat_entry.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/ilostat.log
 
       - name: Show statistics summary
         run: |
