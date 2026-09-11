@@ -1,0 +1,40 @@
+{
+	"schema": "kartensammlung.imf-weo-statistics/v1",
+	"apiBase": "https://www.imf.org/external/datamapper/api/v1",
+	"sourcePage": "https://www.imf.org/external/datamapper/datasets/WEO",
+	"provider": {
+		"id": "imf-weo",
+		"name": "IMF World Economic Outlook",
+		"dataset": "World Economic Outlook (WEO)",
+		"license": "IMF Data Usage Terms",
+		"licenseUrl": "https://www.imf.org/en/about/copyright-and-terms",
+		"attribution": "International Monetary Fund (IMF), World Economic Outlook"
+	},
+	"minimumLatestYear": 2030,
+	"indicators": [
+		{
+			"id": "fiscal.general-government-gross-debt-percent-gdp",
+			"slug": "fiscal-general-government-gross-debt-percent-gdp",
+			"sourceIndicator": "GGXWDG_NGDP",
+			"title": "Staatsschulden",
+			"description": "Bruttoschulden des Gesamtstaats (General Government) in Prozent des BIP nach IMF World Economic Outlook.",
+			"unit": {"id": "percent-of-gdp", "label": "Prozent des BIP", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [20, 40, 60, 90, 120, 180]},
+			"minAreasWithAnyValue": 180,
+			"minAreasInDefaultYear": 170,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "fiscal.general-government-balance-percent-gdp",
+			"slug": "fiscal-general-government-balance-percent-gdp",
+			"sourceIndicator": "GGXCNL_NGDP",
+			"title": "Budgetsaldo des Gesamtstaats",
+			"description": "Net lending (+) / net borrowing (-) des Gesamtstaats (General Government) in Prozent des BIP nach IMF World Economic Outlook; positive Werte bedeuten Überschuss, negative Werte Defizit.",
+			"unit": {"id": "percent-of-gdp", "label": "Prozent des BIP", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [-10, -6, -3, 0, 3, 6]},
+			"minAreasWithAnyValue": 180,
+			"minAreasInDefaultYear": 170,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		}
+	]
+}
