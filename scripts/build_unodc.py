@@ -138,6 +138,12 @@ def validate_config(payload: Any) -> dict[str, Any]:
 			raise ValueError(f"Indicator {indicator_id} has invalid breaks.")
 		if classification.get("scale") == "logarithmic" and numbers[0] <= 0:
 			raise ValueError(f"Indicator {indicator_id} logarithmic breaks must be positive.")
+		indicator_fraction = indicator.get("broadCoverageFraction", fraction)
+		if not isinstance(indicator_fraction, (int, float)) or not 0 < float(indicator_fraction) <= 1:
+			raise ValueError(f"Indicator {indicator_id} has invalid broadCoverageFraction.")
+		required_areas = indicator.get("requiredAreas", [])
+		if not isinstance(required_areas, list):
+			raise ValueError(f"Indicator {indicator_id} has invalid requiredAreas.")
 	return payload
 
 
@@ -298,13 +304,14 @@ def build_indicator(config: dict[str, Any], indicator: dict[str, Any], values_by
 	areas = {area_id for year_values in values_by_year.values() for area_id in year_values}
 	if len(areas) < int(indicator["minAreasWithAnyValue"]):
 		raise RuntimeError(f"Coverage too small for {indicator_id}: {len(areas)} areas.")
-	for area_id in indicator["requiredAreas"]:
+	for area_id in indicator.get("requiredAreas", []):
 		if area_id not in areas:
 			raise RuntimeError(f"Required area {area_id} has no values for {indicator_id}.")
 	available_years = sorted(values_by_year)
 	if not available_years:
 		raise RuntimeError(f"UNODC returned no mapped values for {indicator_id}.")
-	broad_threshold = max(1, math.ceil(len(areas) * float(config["broadCoverageFraction"])))
+	coverage_fraction = float(indicator.get("broadCoverageFraction", config["broadCoverageFraction"]))
+	broad_threshold = max(1, math.ceil(len(areas) * coverage_fraction))
 	broad_years = [year for year in available_years if year <= now.year and len(values_by_year[year]) >= broad_threshold]
 	if not broad_years:
 		raise RuntimeError(f"No year reaches broad coverage for {indicator_id}.")
@@ -343,6 +350,7 @@ def build_indicator(config: dict[str, Any], indicator: dict[str, Any], values_by
 			"areasWithAnyValue": len(areas),
 			"latestYear": latest_year,
 			"areasInLatestYear": len(values_by_year[latest_year]),
+			"broadCoverageFraction": coverage_fraction,
 			"broadCoverageThreshold": broad_threshold,
 			"areasInDefaultYear": len(values_by_year[default_year]),
 		},
