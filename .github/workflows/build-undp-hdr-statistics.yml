@@ -1,0 +1,204 @@
+name: Build UNDP HDR statistics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "43 6 15 * *"
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "config/undp-hdr-indicators.json"
+      - "scripts/build_undp_hdr.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-undp-hdr-statistics.yml"
+  push:
+    branches:
+      - main
+      - test/undp-hdr
+    paths:
+      - "config/statistics-providers.json"
+      - "config/undp-hdr-indicators.json"
+      - "scripts/build_undp_hdr.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-undp-hdr-statistics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-undp-hdr-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate scripts
+        run: |
+          bash -n .github/scripts/deploy-world-bank-statistics.sh
+          python -m py_compile scripts/build_undp_hdr.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/undp-hdr-indicators.json >/dev/null
+
+      - name: Build UNDP HDR statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_undp_hdr.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/undp-hdr.log
+
+      - name: Show statistics summary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("dist/statistics/undp-hdr/index.json").read_text(encoding="utf-8"))
+          print(f"snapshot={payload['activeSnapshot']}")
+          print(f"retrievedAt={payload['retrievedAt']}")
+          print(f"sourceUrl={payload['dataset']['sourceUrl']}")
+          print(f"encoding={payload['dataset']['encoding']}")
+          print(f"lastModified={payload['dataset'].get('lastModified')}")
+          print(f"indicators={len(payload['indicators'])}")
+          for indicator in payload["indicators"]:
+          	coverage = indicator["coverage"]
+          	print(
+          		f"{indicator['id']}: defaultYear={indicator['defaultYear']} "
+          		f"areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+          		f"years={indicator['availableYears'][0]}-{indicator['availableYears'][-1]}"
+          	)
+          PY
+          du -h dist/statistics/undp-hdr/index.json
+          du -ch dist/statistics/undp-hdr/releases/*/*.json | tail -n 1
+
+      - name: Upload statistics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: undp-hdr-statistics-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Deploy to tiles.radlobby.at
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          PROVIDER_ID: undp-hdr
+        run: |
+          chmod +x .github/scripts/deploy-world-bank-statistics.sh
+          .github/scripts/deploy-world-bank-statistics.sh dist/statistics
+
+      - name: Verify browser access to public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="cors=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          check_cors() {
+          	local url="$1"
+          	local output="$2"
+          	local range="${3:-}"
+          	local headers
+          	local allow_origin
+          	headers="$(mktemp)"
+          	if [ -n "$range" ]; then
+          		curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          			--header "Origin: ${BROWSER_ORIGIN}" --range "$range" \
+          			--dump-header "$headers" --output "$output" "${url}?${CACHE_BUST}"
+          	else
+          		curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          			--header "Origin: ${BROWSER_ORIGIN}" \
+          			--dump-header "$headers" --output "$output" "${url}?${CACHE_BUST}"
+          	fi
+          	allow_origin="$(awk '
+          		BEGIN { IGNORECASE = 1 }
+          		tolower($1) == "access-control-allow-origin:" {
+          			value = $0
+          			sub(/^[^:]+:[[:space:]]*/, "", value)
+          			gsub(/\r/, "", value)
+          			print value
+          		}
+          	' "$headers" | tail -n 1)"
+          	rm -f "$headers"
+          	if [ "$allow_origin" != "*" ] && [ "$allow_origin" != "$BROWSER_ORIGIN" ]; then
+          		echo "CORS check failed for ${url}: Access-Control-Allow-Origin='${allow_origin:-<missing>}'" >&2
+          		exit 1
+          	fi
+          	echo "CORS OK: ${url} -> ${allow_origin}"
+          }
+
+          check_cors "${PUBLIC_BASE}/index.json" /tmp/browser-statistics-index.json
+          check_cors "${PUBLIC_BASE}/undp-hdr/index.json" /tmp/browser-undp-hdr-index.json
+          while IFS= read -r path; do
+          	check_cors "${PUBLIC_BASE}/undp-hdr/${path}" /dev/null 0-0
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("/tmp/browser-undp-hdr-index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
+          PY
+          )
+
+      - name: Verify public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          	"${PUBLIC_BASE}/index.json?${CACHE_BUST}" --output /tmp/public-statistics-index.json
+          cmp dist/statistics/index.json /tmp/public-statistics-index.json
+
+          curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          	"${PUBLIC_BASE}/undp-hdr/index.json?${CACHE_BUST}" --output /tmp/public-undp-hdr-index.json
+          cmp dist/statistics/undp-hdr/index.json /tmp/public-undp-hdr-index.json
+
+          while IFS= read -r path; do
+          	curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          		--range 0-0 --output /dev/null "${PUBLIC_BASE}/undp-hdr/${path}?${CACHE_BUST}"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/undp-hdr/index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
+          PY
+          )
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: undp-hdr-statistics-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30

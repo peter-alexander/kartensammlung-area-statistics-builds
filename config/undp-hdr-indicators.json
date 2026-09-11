@@ -1,0 +1,137 @@
+{
+	"schema": "kartensammlung.undp-hdr-statistics/v1",
+	"documentationUrl": "https://hdr.undp.org/data-center/documentation-and-downloads",
+	"downloadLinkPattern": "Composite_indices_complete_time_series.csv",
+	"minimumSourceLatestYear": 2023,
+	"provider": {
+		"id": "undp-hdr",
+		"name": "UNDP Human Development Reports",
+		"dataset": "Human Development Reports – Composite Indices and Components Time Series",
+		"license": "Creative Commons Attribution 3.0 IGO",
+		"licenseUrl": "https://creativecommons.org/licenses/by/3.0/igo/",
+		"attribution": "United Nations Development Programme (UNDP), Human Development Report Office (HDRO)"
+	},
+	"indicators": [
+		{
+			"id": "human-development.hdi",
+			"slug": "human-development-index",
+			"sourcePrefix": "hdi",
+			"title": "Human Development Index (HDI)",
+			"description": "Index der menschlichen Entwicklung aus Lebenserwartung, Bildung und kaufkraftbereinigtem Pro-Kopf-Einkommen. Höhere Werte bedeuten ein höheres durchschnittliches Niveau menschlicher Entwicklung.",
+			"unit": {
+				"id": "index-0-1",
+				"label": "Index (0–1)"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [0.4, 0.55, 0.7, 0.8, 0.9, 0.95]
+			},
+			"minAreasWithAnyValue": 190,
+			"minAreasInDefaultYear": 190,
+			"minimumDefaultYear": 2023,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"],
+			"valueRange": [0, 1]
+		},
+		{
+			"id": "human-development.ihdi",
+			"slug": "inequality-adjusted-human-development-index",
+			"sourcePrefix": "ihdi",
+			"title": "Ungleichheitsbereinigter HDI (IHDI)",
+			"description": "Human Development Index, bereinigt um Ungleichheit innerhalb eines Landes in den drei HDI-Dimensionen Gesundheit, Bildung und Einkommen. Bei vollständiger Gleichverteilung entspricht der IHDI dem HDI.",
+			"unit": {
+				"id": "index-0-1",
+				"label": "Index (0–1)"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [0.4, 0.55, 0.7, 0.8, 0.9, 0.95]
+			},
+			"minAreasWithAnyValue": 165,
+			"minAreasInDefaultYear": 165,
+			"minimumDefaultYear": 2023,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"],
+			"valueRange": [0, 1]
+		},
+		{
+			"id": "human-development.inequality-loss-percent",
+			"slug": "hdi-inequality-loss-percent",
+			"sourcePrefix": "loss",
+			"title": "HDI-Verlust durch Ungleichheit",
+			"description": "Prozentualer Verlust des Human Development Index durch Ungleichheit innerhalb eines Landes. Der Wert entspricht der relativen Differenz zwischen HDI und IHDI; kleinere Werte bedeuten geringere Verluste durch Ungleichheit.",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [5, 10, 15, 20, 30, 40]
+			},
+			"minAreasWithAnyValue": 165,
+			"minAreasInDefaultYear": 165,
+			"minimumDefaultYear": 2023,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"],
+			"valueRange": [0, 100]
+		},
+		{
+			"id": "gender-development.gdi",
+			"slug": "gender-development-index",
+			"sourcePrefix": "gdi",
+			"title": "Gender Development Index (GDI)",
+			"description": "Verhältnis des weiblichen zum männlichen Human Development Index. Ein Wert von 1 entspricht Geschlechterparität; Werte unter 1 bedeuten einen niedrigeren weiblichen, Werte über 1 einen niedrigeren männlichen HDI.",
+			"unit": {
+				"id": "ratio",
+				"label": "Verhältnis weiblicher zu männlichem HDI"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [0.8, 0.9, 0.95, 0.975, 1.0, 1.025]
+			},
+			"minAreasWithAnyValue": 180,
+			"minAreasInDefaultYear": 180,
+			"minimumDefaultYear": 2023,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"],
+			"valueRange": [0, 1.2]
+		},
+		{
+			"id": "gender-inequality.gii",
+			"slug": "gender-inequality-index",
+			"sourcePrefix": "gii",
+			"title": "Gender Inequality Index (GII)",
+			"description": "Index der geschlechtsspezifischen Ungleichheit in reproduktiver Gesundheit, Empowerment und Arbeitsmarkt. Kleinere Werte bedeuten geringere Ungleichheit.",
+			"unit": {
+				"id": "index-0-1",
+				"label": "Index (0–1)"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [0.05, 0.1, 0.2, 0.3, 0.5, 0.7]
+			},
+			"minAreasWithAnyValue": 168,
+			"minAreasInDefaultYear": 168,
+			"minimumDefaultYear": 2023,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"],
+			"valueRange": [0, 1]
+		},
+		{
+			"id": "human-development.phdi",
+			"slug": "planetary-pressures-adjusted-human-development-index",
+			"sourcePrefix": "phdi",
+			"title": "Planetary pressures-adjusted HDI (PHDI)",
+			"description": "Experimenteller Human Development Index, der den HDI um den Druck eines Landes auf den Planeten reduziert. Berücksichtigt werden unter anderem CO₂-Emissionen und materieller Fußabdruck pro Kopf.",
+			"unit": {
+				"id": "index-0-1",
+				"label": "Index (0–1)"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [0.4, 0.55, 0.7, 0.8, 0.9, 0.95]
+			},
+			"minAreasWithAnyValue": 150,
+			"minAreasInDefaultYear": 150,
+			"minimumDefaultYear": 2023,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"],
+			"valueRange": [0, 1]
+		}
+	]
+}

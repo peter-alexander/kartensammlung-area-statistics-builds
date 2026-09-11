@@ -27,6 +27,11 @@
 			"index": "un-wpp/index.json"
 		},
 		{
+			"id": "undp-hdr",
+			"name": "UNDP Human Development Reports",
+			"index": "undp-hdr/index.json"
+		},
+		{
 			"id": "unodc",
 			"name": "UNODC",
 			"index": "unodc/index.json"
