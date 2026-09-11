@@ -1,0 +1,91 @@
+{
+	"schema": "kartensammlung.unodc-statistics/v1",
+	"downloadUrls": [
+		"https://data.unodc.org/sites/dataportal.unodc.org/files/2026-07/data_cts_intentional_homicide.xlsx",
+		"https://data.unodc.org/sites/dataportal.unodc.org/files/2025-11/data_cts_intentional_homicide.xlsx"
+	],
+	"provider": {
+		"id": "unodc",
+		"name": "UNODC",
+		"dataset": "UNODC Intentional Homicide",
+		"license": "UNODC Terms of Use",
+		"licenseUrl": "https://data.unodc.org/termsofuse",
+		"attribution": "United Nations Office on Drugs and Crime (UNODC)"
+	},
+	"sourcePage": "https://data.unodc.org/datareport/hom-victim",
+	"broadCoverageFraction": 0.60,
+	"indicators": [
+		{
+			"id": "homicide.victims-rate",
+			"slug": "homicide-victims-rate",
+			"title": "Tötungsopfer",
+			"description": "Opfer vorsätzlicher Tötungen je 100.000 Einwohner. Verwaltungsdaten der nationalen Behörden nach UNODC/ICCS.",
+			"filters": {
+				"indicator": "Victims of intentional homicide",
+				"dimension": "Total",
+				"sex": "Total",
+				"age": "Total",
+				"unitContains": "Rate per 100,000"
+			},
+			"unit": {"id": "per-100000-population", "label": "je 100.000 Einwohner", "symbol": "je 100.000"},
+			"classification": {"type": "fixed", "breaks": [1, 2, 5, 10, 20, 50]},
+			"minAreasWithAnyValue": 120,
+			"maxDefaultYearAge": 6,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA"]
+		},
+		{
+			"id": "homicide.victims-count",
+			"slug": "homicide-victims-count",
+			"title": "Tötungsopfer – Anzahl",
+			"description": "Anzahl der Opfer vorsätzlicher Tötungen. Verwaltungsdaten der nationalen Behörden nach UNODC/ICCS.",
+			"filters": {
+				"indicator": "Victims of intentional homicide",
+				"dimension": "Total",
+				"sex": "Total",
+				"age": "Total",
+				"unit": "Counts"
+			},
+			"unit": {"id": "persons", "label": "Personen"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [10, 100, 1000, 5000, 20000, 100000]},
+			"minAreasWithAnyValue": 120,
+			"maxDefaultYearAge": 6,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA"]
+		},
+		{
+			"id": "homicide.victims-male-rate",
+			"slug": "homicide-victims-male-rate",
+			"title": "Tötungsopfer Männer",
+			"description": "Männliche Opfer vorsätzlicher Tötungen je 100.000 männliche Einwohner.",
+			"filters": {
+				"indicator": "Victims of intentional homicide",
+				"dimension": "Total",
+				"sex": "Male",
+				"age": "Total",
+				"unitContains": "Rate per 100,000"
+			},
+			"unit": {"id": "per-100000-male-population", "label": "je 100.000 Männer", "symbol": "je 100.000"},
+			"classification": {"type": "fixed", "breaks": [2, 5, 10, 20, 40, 80]},
+			"minAreasWithAnyValue": 100,
+			"maxDefaultYearAge": 6,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA"]
+		},
+		{
+			"id": "homicide.victims-female-rate",
+			"slug": "homicide-victims-female-rate",
+			"title": "Tötungsopfer Frauen",
+			"description": "Weibliche Opfer vorsätzlicher Tötungen je 100.000 weibliche Einwohner.",
+			"filters": {
+				"indicator": "Victims of intentional homicide",
+				"dimension": "Total",
+				"sex": "Female",
+				"age": "Total",
+				"unitContains": "Rate per 100,000"
+			},
+			"unit": {"id": "per-100000-female-population", "label": "je 100.000 Frauen", "symbol": "je 100.000"},
+			"classification": {"type": "fixed", "breaks": [0.5, 1, 2, 4, 8, 15]},
+			"minAreasWithAnyValue": 100,
+			"maxDefaultYearAge": 6,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA"]
+		}
+	]
+}
