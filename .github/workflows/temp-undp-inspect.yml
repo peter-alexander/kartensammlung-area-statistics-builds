@@ -40,29 +40,56 @@ jobs:
           req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1", "Accept": "text/csv,*/*"})
           with urllib.request.urlopen(req, timeout=120) as response:
           	data = response.read()
+          	content_type = response.headers.get("Content-Type")
+          	last_modified = response.headers.get("Last-Modified")
+          	etag = response.headers.get("ETag")
           print(f"url={url}")
-          print(f"bytes={len(data)} contentType={response.headers.get('Content-Type')} lastModified={response.headers.get('Last-Modified')} etag={response.headers.get('ETag')}")
+          print(f"bytes={len(data)} contentType={content_type} lastModified={last_modified} etag={etag}")
 
-          text = data.decode("utf-8-sig")
-          reader = csv.DictReader(io.StringIO(text))
+          decoded = None
+          for encoding in ("utf-8-sig", "cp1252", "latin-1"):
+          	try:
+          		decoded = data.decode(encoding)
+          		print(f"encoding={encoding}")
+          		break
+          	except UnicodeDecodeError:
+          		continue
+          if decoded is None:
+          	raise SystemExit("Could not decode UNDP CSV")
+
+          reader = csv.DictReader(io.StringIO(decoded))
           rows = list(reader)
-          print(f"columns={reader.fieldnames}")
-          print(f"rows={len(rows)}")
-          print("firstRows:")
-          for row in rows[:3]:
-          	print(row)
+          fields = reader.fieldnames or []
+          print(f"rows={len(rows)} columns={len(fields)}")
+          print(f"first40Columns={fields[:40]}")
+          if not rows or not fields:
+          	raise SystemExit("Empty UNDP CSV")
 
-          if not reader.fieldnames:
-          	raise SystemExit("No CSV fields")
+          print(f"firstRowIdentity={dict(list(rows[0].items())[:10])}")
 
-          # Inspect likely identity and indicator columns without assuming the final schema yet.
-          for field in reader.fieldnames:
+          annual = collections.defaultdict(list)
+          for field in fields:
+          	match = re.fullmatch(r"(.+)_([12][0-9]{3})", field)
+          	if match:
+          		annual[match.group(1)].append(int(match.group(2)))
+          nonannual = [field for field in fields if not re.fullmatch(r"(.+)_([12][0-9]{3})", field)]
+          print(f"nonAnnualColumns={nonannual}")
+          print("annualSeries:")
+          for prefix in sorted(annual):
+          	years = sorted(annual[prefix])
+          	latest = years[-1]
+          	latest_col = f"{prefix}_{latest}"
+          	latest_nonempty = sum(1 for row in rows if str(row.get(latest_col, "")).strip() not in {"", "..", "nan"})
+          	any_nonempty = sum(
+          		1 for row in rows
+          		if any(str(row.get(f"{prefix}_{year}", "")).strip() not in {"", "..", "nan"} for year in years)
+          	)
+          	print(f"  {prefix}: years={years[0]}-{years[-1]} count={len(years)} anyRows={any_nonempty} latestRows={latest_nonempty}")
+
+          print("nonAnnualCoverage:")
+          for field in nonannual:
           	values = [str(row.get(field, "")).strip() for row in rows]
-          	nonempty = [v for v in values if v]
+          	nonempty = [value for value in values if value not in {"", "..", "nan"}]
           	unique = list(dict.fromkeys(nonempty))
-          	print(f"field={field!r} nonempty={len(nonempty)} unique={len(set(nonempty))} sample={unique[:8]}")
-
-          # Long-format datasets usually expose an indicator code column; wide datasets expose code_year columns.
-          likely_codes = [f for f in reader.fieldnames if f.lower() in {"iso3", "iso_code", "country_code", "countryorarea", "country_code3"}]
-          print(f"likelyCountryCodeFields={likely_codes}")
+          	print(f"  {field}: nonempty={len(nonempty)} unique={len(set(nonempty))} sample={unique[:8]}")
           PY
