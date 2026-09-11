@@ -13,6 +13,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import pycountry
+
 import build_world_bank as common
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -93,31 +95,21 @@ def normalize_m49(value: Any) -> str:
 
 
 def load_registry_by_m49(source: str, timeout: int) -> tuple[dict[str, str], dict[str, Any]]:
-	payload = common.load_json_source(source, timeout)
-	if not isinstance(payload, dict) or payload.get("schema") != "kartensammlung.area-registry/v1":
-		raise ValueError("Invalid area registry.")
-	areas = payload.get("areas")
-	if not isinstance(areas, list) or not areas:
-		raise ValueError("Area registry has no areas.")
+	area_by_iso3, payload = common.load_registry(source, timeout)
 	area_by_m49: dict[str, str] = {}
-	for area in areas:
-		if not isinstance(area, dict) or area.get("level") != "country":
-			continue
-		area_id = str(area.get("area_id", "")).strip()
-		codes = area.get("codes")
-		if not area_id or not isinstance(codes, dict):
-			continue
-		m49 = normalize_m49(codes.get("m49"))
-		if not m49:
+	for country in pycountry.countries:
+		iso3 = str(getattr(country, "alpha_3", "")).strip().upper()
+		m49 = normalize_m49(getattr(country, "numeric", ""))
+		if not iso3 or not m49 or iso3 not in area_by_iso3:
 			continue
 		if m49 in area_by_m49:
-			raise ValueError(f"Duplicate M49 code in area registry: {m49}")
-		area_by_m49[m49] = area_id
-	if len(area_by_m49) < 240:
-		raise RuntimeError(f"Area registry unexpectedly small by M49: {len(area_by_m49)} country areas.")
+			raise ValueError(f"Duplicate M49 code from ISO-3166 mapping: {m49}")
+		area_by_m49[m49] = area_by_iso3[iso3]
+	if len(area_by_m49) < 245:
+		raise RuntimeError(f"ISO-3166/M49 mapping unexpectedly small: {len(area_by_m49)} country areas.")
 	for required in ("40", "276", "840", "356"):
 		if required not in area_by_m49:
-			raise RuntimeError(f"Area registry M49 sanity check failed: {required} is missing.")
+			raise RuntimeError(f"M49 sanity check failed: {required} is missing.")
 	return area_by_m49, payload
 
 
@@ -174,7 +166,6 @@ def normalize_indicator(
 	expected_year = int(config["expectedReferenceYear"])
 	values: dict[str, int | float] = {}
 	intervals: dict[str, dict[str, int | float]] = {}
-	country_names: dict[str, str] = {}
 	ignored_m49: set[str] = set()
 	for row in rows:
 		if str(row.get("IND_CODE", "")).strip() != str(indicator["sourceIndicator"]):
@@ -205,7 +196,6 @@ def normalize_indicator(
 			raise RuntimeError(f"Duplicate WHO country value for {indicator['id']} {area_id}.")
 		values[area_id] = value
 		intervals[area_id] = {"lower": lower, "upper": upper}
-		country_names[area_id] = str(row.get("GEO_NAME_SHORT", "")).strip()
 
 	minimum = int(indicator["minAreasWithAnyValue"])
 	if len(values) < minimum:
@@ -260,7 +250,6 @@ def normalize_indicator(
 			str(expected_year): {area_id: values[area_id] for area_id in sorted(values)},
 		},
 		"confidenceIntervals": {
-			"level": 95,
 			"values": {
 				str(expected_year): {area_id: intervals[area_id] for area_id in sorted(intervals)},
 			},
