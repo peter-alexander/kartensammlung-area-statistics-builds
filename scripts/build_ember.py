@@ -60,6 +60,13 @@ def selector_tuple(source: dict[str, Any]) -> tuple[str, str, str, str]:
 	)
 
 
+def minimum_default_coverage(indicator: dict[str, Any]) -> int:
+	value = indicator.get("minAreasInDefaultYear", indicator.get("minAreasInLatestYear"))
+	if not isinstance(value, int) or value <= 0:
+		raise ValueError(f"Ember indicator {indicator.get('id')} has invalid default-year coverage threshold.")
+	return value
+
+
 def validate_config(payload: Any) -> dict[str, Any]:
 	if not isinstance(payload, dict) or payload.get("schema") != "kartensammlung.ember-statistics/v1":
 		raise ValueError("Invalid Ember statistics config.")
@@ -124,10 +131,10 @@ def validate_config(payload: Any) -> dict[str, Any]:
 		if not isinstance(unit, dict) or not str(unit.get("id", "")).strip() or not str(unit.get("label", "")).strip():
 			raise ValueError(f"Ember indicator {indicator_id} has invalid unit metadata.")
 		common.validate_classification(indicator_id, indicator.get("classification"))
-		for key in ("minAreasWithAnyValue", "minAreasInLatestYear"):
-			value = indicator.get(key)
-			if not isinstance(value, int) or value <= 0:
-				raise ValueError(f"Ember indicator {indicator_id} has invalid {key}.")
+		any_value = indicator.get("minAreasWithAnyValue")
+		if not isinstance(any_value, int) or any_value <= 0:
+			raise ValueError(f"Ember indicator {indicator_id} has invalid minAreasWithAnyValue.")
+		minimum_default_coverage(indicator)
 
 	for indicator in indicators:
 		derived = indicator.get("derived")
@@ -173,7 +180,6 @@ def load_direct_values(
 	}
 	ignored_iso3: set[str] = set()
 	all_years: set[int] = set()
-	matched_rows = 0
 	request = Request(
 		str(config["downloadUrl"]),
 		headers={"User-Agent": "kartensammlung-area-statistics-builds/1"},
@@ -213,7 +219,6 @@ def load_direct_values(
 			if area_id in year_values:
 				raise RuntimeError(f"Duplicate Ember value for {indicator_id} {year} {area_id}.")
 			year_values[area_id] = parse_value(raw_value)
-			matched_rows += 1
 
 	if not all_years:
 		raise RuntimeError("Ember CSV contained no annual country rows.")
@@ -253,6 +258,25 @@ def source_label(indicator: dict[str, Any]) -> str:
 	return f"derived:{derived['type']}:{derived['numerator']}:{derived['denominator']}"
 
 
+def choose_default_year(
+	indicator: dict[str, Any],
+	available_years: list[int],
+	year_values: dict[int, dict[str, int | float]],
+) -> int:
+	minimum_coverage = minimum_default_coverage(indicator)
+	eligible_years = [
+		year
+		for year in available_years
+		if len(year_values[year]) >= minimum_coverage
+	]
+	if not eligible_years:
+		raise RuntimeError(
+			f"Ember has no sufficiently complete default year for {indicator['id']}: "
+			f"expected at least {minimum_coverage} areas."
+		)
+	return eligible_years[-1]
+
+
 def build_payloads(
 	config: dict[str, Any],
 	area_by_iso3: dict[str, str],
@@ -277,12 +301,9 @@ def build_payloads(
 				f"Ember coverage too small for {indicator_id}: {len(mapped_areas)} areas, "
 				f"expected at least {indicator['minAreasWithAnyValue']}."
 			)
+		default_year = choose_default_year(indicator, available_years, year_values)
 		latest_coverage = len(year_values[latest_year])
-		if latest_coverage < int(indicator["minAreasInLatestYear"]):
-			raise RuntimeError(
-				f"Ember latest-year coverage too small for {indicator_id}: {latest_coverage} areas, "
-				f"expected at least {indicator['minAreasInLatestYear']}."
-			)
+		default_coverage = len(year_values[default_year])
 
 		indicator_metadata = {
 			"id": indicator_id,
@@ -314,13 +335,13 @@ def build_payloads(
 			"indicator": indicator_metadata,
 			"source": source_metadata,
 			"availableYears": available_years,
-			"defaultYear": latest_year,
+			"defaultYear": default_year,
 			"coverage": {
 				"registryAreas": len(area_by_iso3),
 				"areasWithAnyValue": len(mapped_areas),
 				"latestYear": latest_year,
 				"areasInLatestYear": latest_coverage,
-				"areasInDefaultYear": latest_coverage,
+				"areasInDefaultYear": default_coverage,
 			},
 			"values": {
 				str(year): {
@@ -332,7 +353,7 @@ def build_payloads(
 		}
 		print(
 			f"{indicator_id}: mapped={len(mapped_areas)} years={available_years[0]}-{latest_year} "
-			f"defaultYear={latest_year} defaultCoverage={latest_coverage}"
+			f"latestCoverage={latest_coverage} defaultYear={default_year} defaultCoverage={default_coverage}"
 		)
 		result.append((indicator, payload))
 	return result
@@ -408,6 +429,7 @@ def main() -> None:
 		"indicators": index_indicators,
 		"notes": [
 			"Annual country/economy electricity data from Ember Yearly Electricity Data.",
+			"The newest source year may have partial country coverage; each indicator defaults to the newest year that reaches its configured coverage threshold.",
 			"Net Imports: positive values indicate net electricity imports; negative values indicate net exports.",
 			"The net-import share of demand is derived from Ember Net Imports divided by Ember Demand for the same country and year.",
 		],
