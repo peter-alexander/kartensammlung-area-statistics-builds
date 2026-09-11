@@ -15,7 +15,6 @@ on:
   push:
     branches:
       - main
-      - test/undp-hdr
     paths:
       - "config/statistics-providers.json"
       - "config/undp-hdr-indicators.json"
