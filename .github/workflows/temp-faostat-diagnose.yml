@@ -22,23 +22,26 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Inspect FAOSTAT bulk file
+      - name: Inspect FAOSTAT bulk file and registry mapping
         run: |
           python - <<'PY'
           import csv
           import io
+          import json
           import urllib.request
           import zipfile
           from collections import Counter, defaultdict
 
+          def get_bytes(url):
+          	request = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1"})
+          	with urllib.request.urlopen(request, timeout=120) as response:
+          		return response.read(), dict(response.headers.items())
+
           url = "https://bulks-faostat.fao.org/production/Food_Security_Data_E_All_Data_(Normalized).zip"
-          request = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1"})
-          with urllib.request.urlopen(request, timeout=120) as response:
-          	data = response.read()
-          	print("status", response.status)
-          	print("content-type", response.headers.get("Content-Type"))
-          	print("content-length", len(data))
-          	print("last-modified", response.headers.get("Last-Modified"))
+          data, headers = get_bytes(url)
+          print("content-type", headers.get("Content-Type"))
+          print("content-length", len(data))
+          print("last-modified", headers.get("Last-Modified"))
 
           with zipfile.ZipFile(io.BytesIO(data)) as archive:
           	names = archive.namelist()
@@ -93,4 +96,26 @@ jobs:
           	s = stats[key]
           	ordered_years = sorted(s["years"])
           	print(key[0], repr(key[1]), "rows", s["rows"], "areas", len(s["areas"]), "years", ordered_years[:2], "...", ordered_years[-3:], "units", sorted(s["units"]), "elements", sorted(s["elements"]))
+
+          registry_raw, _ = get_bytes("https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json")
+          registry = json.loads(registry_raw)
+          countries = [area for area in registry.get("areas", []) if area.get("level") == "country"]
+          code_keys = Counter()
+          m49 = {}
+          for area in countries:
+          	codes = area.get("codes") or {}
+          	for key in codes:
+          		code_keys[key] += 1
+          	for key in ("m49", "M49", "un_m49", "unM49"):
+          		value = str(codes.get(key, "")).strip()
+          		if value:
+          			m49[value.zfill(3)] = area.get("area_id")
+          print("registry-country-count", len(countries))
+          print("registry-code-keys", dict(code_keys))
+          print("registry-m49-count", len(m49))
+          for wanted in ("040", "276", "840", "356"):
+          	print("registry-m49-sample", wanted, m49.get(wanted))
+          for area in countries:
+          	if (area.get("codes") or {}).get("iso3") in {"AUT", "DEU", "USA", "IND"}:
+          		print("registry-sample", area.get("area_id"), area.get("codes"))
           PY
