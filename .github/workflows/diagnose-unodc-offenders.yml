@@ -1,4 +1,4 @@
-name: Diagnose UNODC offender rows
+name: Diagnose UNODC data rows
 
 on:
   workflow_dispatch:
@@ -8,6 +8,7 @@ on:
     paths:
       - "scripts/build_unodc.py"
       - "scripts/inspect_unodc_offenders.py"
+      - "scripts/inspect_unodc_violent.py"
       - ".github/workflows/diagnose-unodc-offenders.yml"
 
 permissions:
@@ -36,11 +37,17 @@ jobs:
           mkdir -p diagnostics
           python scripts/inspect_unodc_offenders.py 2>&1 | tee diagnostics/unodc-offenders.log
 
+      - name: Inspect violent crime rows
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/inspect_unodc_violent.py 2>&1 | tee diagnostics/unodc-violent.log
+
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: unodc-offender-diagnostics-${{ github.sha }}
+          name: unodc-diagnostics-${{ github.sha }}
           path: diagnostics/
           if-no-files-found: error
           retention-days: 7
