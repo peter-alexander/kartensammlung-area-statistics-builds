@@ -24,6 +24,7 @@ on:
   push:
     branches:
       - main
+      - test/faostat
     paths:
       - "scripts/build_countries.py"
       - "scripts/inspect_overture_countries.py"
