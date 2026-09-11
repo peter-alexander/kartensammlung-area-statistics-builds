@@ -25,24 +25,11 @@
 			"classification": {
 				"type": "fixed",
 				"scale": "logarithmic",
-				"breaks": [
-					100000,
-					1000000,
-					10000000,
-					50000000,
-					100000000,
-					500000000
-				]
+				"breaks": [100000, 1000000, 10000000, 50000000, 100000000, 500000000]
 			},
 			"minAreasWithAnyValue": 180,
 			"maxDefaultYearAge": 3,
-			"requiredAreas": [
-				"country:AUT",
-				"country:DEU",
-				"country:USA",
-				"country:IND",
-				"country:XKX"
-			]
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND", "country:XKX"]
 		},
 		{
 			"id": "gdp.current-usd",
@@ -50,31 +37,11 @@
 			"sourceIndicator": "NY.GDP.MKTP.CD",
 			"title": "Bruttoinlandsprodukt",
 			"description": "Bruttoinlandsprodukt zu laufenden Preisen in US-Dollar",
-			"unit": {
-				"id": "usd-current",
-				"label": "US-Dollar (laufende Preise)",
-				"symbol": "$"
-			},
-			"classification": {
-				"type": "fixed",
-				"scale": "logarithmic",
-				"breaks": [
-					1000000000,
-					10000000000,
-					100000000000,
-					1000000000000,
-					5000000000000,
-					20000000000000
-				]
-			},
+			"unit": {"id": "usd-current", "label": "US-Dollar (laufende Preise)", "symbol": "$"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [1000000000, 10000000000, 100000000000, 1000000000000, 5000000000000, 20000000000000]},
 			"minAreasWithAnyValue": 180,
 			"maxDefaultYearAge": 3,
-			"requiredAreas": [
-				"country:AUT",
-				"country:DEU",
-				"country:USA",
-				"country:IND"
-			]
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		},
 		{
 			"id": "gdp-per-capita.current-usd",
@@ -82,31 +49,11 @@
 			"sourceIndicator": "NY.GDP.PCAP.CD",
 			"title": "BIP pro Kopf",
 			"description": "Bruttoinlandsprodukt pro Einwohner zu laufenden Preisen in US-Dollar",
-			"unit": {
-				"id": "usd-current-per-person",
-				"label": "US-Dollar pro Einwohner (laufende Preise)",
-				"symbol": "$"
-			},
-			"classification": {
-				"type": "fixed",
-				"scale": "logarithmic",
-				"breaks": [
-					1000,
-					5000,
-					10000,
-					25000,
-					50000,
-					100000
-				]
-			},
+			"unit": {"id": "usd-current-per-person", "label": "US-Dollar pro Einwohner (laufende Preise)", "symbol": "$"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [1000, 5000, 10000, 25000, 50000, 100000]},
 			"minAreasWithAnyValue": 180,
 			"maxDefaultYearAge": 3,
-			"requiredAreas": [
-				"country:AUT",
-				"country:DEU",
-				"country:USA",
-				"country:IND"
-			]
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		},
 		{
 			"id": "inflation.cpi-annual-percent",
@@ -114,30 +61,11 @@
 			"sourceIndicator": "FP.CPI.TOTL.ZG",
 			"title": "Inflation",
 			"description": "Jährliche Veränderung des Verbraucherpreisindex",
-			"unit": {
-				"id": "percent",
-				"label": "Prozent",
-				"symbol": "%"
-			},
-			"classification": {
-				"type": "fixed",
-				"breaks": [
-					-2,
-					0,
-					2,
-					5,
-					10,
-					25
-				]
-			},
+			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [-2, 0, 2, 5, 10, 25]},
 			"minAreasWithAnyValue": 160,
 			"maxDefaultYearAge": 3,
-			"requiredAreas": [
-				"country:AUT",
-				"country:DEU",
-				"country:USA",
-				"country:IND"
-			]
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		},
 		{
 			"id": "unemployment.total-percent",
@@ -145,30 +73,11 @@
 			"sourceIndicator": "SL.UEM.TOTL.ZS",
 			"title": "Arbeitslosenquote",
 			"description": "Arbeitslose in Prozent der gesamten Erwerbsbevölkerung; modellierte Schätzung der Internationalen Arbeitsorganisation (ILO).",
-			"unit": {
-				"id": "percent",
-				"label": "Prozent",
-				"symbol": "%"
-			},
-			"classification": {
-				"type": "fixed",
-				"breaks": [
-					3,
-					5,
-					7,
-					10,
-					15,
-					25
-				]
-			},
+			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [3, 5, 7, 10, 15, 25]},
 			"minAreasWithAnyValue": 180,
 			"maxDefaultYearAge": 2,
-			"requiredAreas": [
-				"country:AUT",
-				"country:DEU",
-				"country:USA",
-				"country:IND"
-			]
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		},
 		{
 			"id": "life-expectancy.at-birth-years",
@@ -176,30 +85,11 @@
 			"sourceIndicator": "SP.DYN.LE00.IN",
 			"title": "Lebenserwartung bei Geburt",
 			"description": "Lebenserwartung bei Geburt, beide Geschlechter, in Jahren.",
-			"unit": {
-				"id": "years",
-				"label": "Jahre",
-				"symbol": "Jahre"
-			},
-			"classification": {
-				"type": "fixed",
-				"breaks": [
-					55,
-					65,
-					70,
-					75,
-					80,
-					85
-				]
-			},
+			"unit": {"id": "years", "label": "Jahre", "symbol": "Jahre"},
+			"classification": {"type": "fixed", "breaks": [55, 65, 70, 75, 80, 85]},
 			"minAreasWithAnyValue": 190,
 			"maxDefaultYearAge": 3,
-			"requiredAreas": [
-				"country:AUT",
-				"country:DEU",
-				"country:USA",
-				"country:IND"
-			]
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		},
 		{
 			"id": "fertility.total-births-per-woman",
@@ -207,29 +97,11 @@
 			"sourceIndicator": "SP.DYN.TFRT.IN",
 			"title": "Gesamtfertilitätsrate",
 			"description": "Durchschnittliche Zahl der Kinder je Frau bei den altersspezifischen Fertilitätsraten des jeweiligen Jahres.",
-			"unit": {
-				"id": "children-per-woman",
-				"label": "Kinder je Frau"
-			},
-			"classification": {
-				"type": "fixed",
-				"breaks": [
-					1.5,
-					2.1,
-					3,
-					4,
-					5,
-					6
-				]
-			},
+			"unit": {"id": "children-per-woman", "label": "Kinder je Frau"},
+			"classification": {"type": "fixed", "breaks": [1.5, 2.1, 3, 4, 5, 6]},
 			"minAreasWithAnyValue": 190,
 			"maxDefaultYearAge": 3,
-			"requiredAreas": [
-				"country:AUT",
-				"country:DEU",
-				"country:USA",
-				"country:IND"
-			]
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		},
 		{
 			"id": "urban-population.percent",
@@ -237,30 +109,11 @@
 			"sourceIndicator": "SP.URB.TOTL.IN.ZS",
 			"title": "Urbanisierungsgrad",
 			"description": "Anteil der in städtischen Gebieten lebenden Bevölkerung an der Gesamtbevölkerung.",
-			"unit": {
-				"id": "percent",
-				"label": "Prozent",
-				"symbol": "%"
-			},
-			"classification": {
-				"type": "fixed",
-				"breaks": [
-					20,
-					40,
-					60,
-					75,
-					90,
-					98
-				]
-			},
+			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [20, 40, 60, 75, 90, 98]},
 			"minAreasWithAnyValue": 190,
 			"maxDefaultYearAge": 2,
-			"requiredAreas": [
-				"country:AUT",
-				"country:DEU",
-				"country:USA",
-				"country:IND"
-			]
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		},
 		{
 			"id": "co2-emissions-excluding-lulucf.per-capita",
@@ -268,30 +121,11 @@
 			"sourceIndicator": "EN.GHG.CO2.PC.CE.AR5",
 			"title": "CO₂-Emissionen pro Kopf",
 			"description": "Kohlendioxid-Emissionen ohne Landnutzung, Landnutzungsänderungen und Forstwirtschaft (LULUCF) pro Einwohner, in Tonnen CO₂-Äquivalent.",
-			"unit": {
-				"id": "t-co2e-per-capita",
-				"label": "t CO₂e pro Einwohner",
-				"symbol": "t CO₂e"
-			},
-			"classification": {
-				"type": "fixed",
-				"breaks": [
-					0.5,
-					1,
-					2,
-					5,
-					10,
-					20
-				]
-			},
+			"unit": {"id": "t-co2e-per-capita", "label": "t CO₂e pro Einwohner", "symbol": "t CO₂e"},
+			"classification": {"type": "fixed", "breaks": [0.5, 1, 2, 5, 10, 20]},
 			"minAreasWithAnyValue": 180,
 			"maxDefaultYearAge": 3,
-			"requiredAreas": [
-				"country:AUT",
-				"country:DEU",
-				"country:USA",
-				"country:IND"
-			]
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		},
 		{
 			"id": "internet-users.percent",
@@ -299,30 +133,35 @@
 			"sourceIndicator": "IT.NET.USER.ZS",
 			"title": "Internetnutzung",
 			"description": "Anteil der Personen, die das Internet nutzen, an der Gesamtbevölkerung.",
-			"unit": {
-				"id": "percent",
-				"label": "Prozent",
-				"symbol": "%"
-			},
-			"classification": {
-				"type": "fixed",
-				"breaks": [
-					20,
-					40,
-					60,
-					80,
-					90,
-					98
-				]
-			},
+			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [20, 40, 60, 80, 90, 98]},
 			"minAreasWithAnyValue": 180,
 			"maxDefaultYearAge": 3,
-			"requiredAreas": [
-				"country:AUT",
-				"country:DEU",
-				"country:USA",
-				"country:IND"
-			]
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "energy.electricity-access-percent",
+			"slug": "energy-electricity-access-percent",
+			"sourceIndicator": "EG.ELC.ACCS.ZS",
+			"title": "Zugang zu Elektrizität",
+			"description": "Anteil der Bevölkerung mit Zugang zu Elektrizität.",
+			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [20, 40, 60, 80, 95, 99]},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 2,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "energy.renewable-final-consumption-percent",
+			"slug": "energy-renewable-final-consumption-percent",
+			"sourceIndicator": "EG.FEC.RNEW.ZS",
+			"title": "Erneuerbare Energie am Endenergieverbrauch",
+			"description": "Anteil erneuerbarer Energien am gesamten Endenergieverbrauch; umfasst damit nicht nur Elektrizität.",
+			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [5, 10, 20, 40, 60, 80]},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 5,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		}
 	]
 }
