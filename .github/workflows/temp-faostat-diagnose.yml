@@ -22,100 +22,41 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Inspect FAOSTAT bulk file and registry mapping
+      - name: Inspect FAOSTAT area codes
         run: |
           python - <<'PY'
           import csv
           import io
-          import json
           import urllib.request
           import zipfile
-          from collections import Counter, defaultdict
-
-          def get_bytes(url):
-          	request = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1"})
-          	with urllib.request.urlopen(request, timeout=120) as response:
-          		return response.read(), dict(response.headers.items())
 
           url = "https://bulks-faostat.fao.org/production/Food_Security_Data_E_All_Data_(Normalized).zip"
-          data, headers = get_bytes(url)
-          print("content-type", headers.get("Content-Type"))
-          print("content-length", len(data))
-          print("last-modified", headers.get("Last-Modified"))
+          request = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1"})
+          with urllib.request.urlopen(request, timeout=120) as response:
+          	data = response.read()
 
           with zipfile.ZipFile(io.BytesIO(data)) as archive:
-          	names = archive.namelist()
-          	print("zip-files", names)
-          	csv_names = [name for name in names if name.endswith("All_Data_(Normalized).csv")]
-          	if len(csv_names) != 1:
-          		raise RuntimeError(f"Expected one normalized data CSV, found {csv_names}")
-          	raw = archive.read(csv_names[0])
+          	name = "Food_Security_Data_E_AreaCodes.csv"
+          	raw = archive.read(name)
 
-          for encoding in ("utf-8-sig", "cp1252", "latin-1"):
-          	try:
-          		text = raw.decode(encoding)
-          		print("encoding", encoding)
-          		break
-          	except UnicodeDecodeError:
-          		continue
-          else:
-          	raise RuntimeError("Could not decode CSV")
-
+          text = raw.decode("utf-8-sig")
           reader = csv.DictReader(io.StringIO(text))
           rows = list(reader)
           print("columns", reader.fieldnames)
           print("rows", len(rows))
 
-          items = sorted({(row.get("Item Code", ""), row.get("Item", "")) for row in rows})
-          elements = sorted({(row.get("Element Code", ""), row.get("Element", "")) for row in rows})
-          units = Counter(row.get("Unit", "") for row in rows)
-          years = sorted({row.get("Year", "") for row in rows})
-          areas = {(row.get("Area Code (M49)", ""), row.get("Area", "")) for row in rows}
-
-          print("items-count", len(items))
-          for code, name in items:
-          	print("ITEM", code, repr(name))
-          print("elements-count", len(elements))
-          for code, name in elements:
-          	print("ELEMENT", code, repr(name))
-          print("units", dict(sorted(units.items())))
-          print("years-count", len(years), "first", years[:10], "last", years[-15:])
-          print("areas-count", len(areas))
-
-          stats = defaultdict(lambda: {"rows": 0, "areas": set(), "years": set(), "units": set(), "elements": set()})
+          wanted_names = {"Austria", "Germany", "India", "United States of America", "United States", "Kosovo"}
           for row in rows:
-          	key = (row.get("Item Code", ""), row.get("Item", ""))
-          	s = stats[key]
-          	s["rows"] += 1
-          	s["areas"].add(row.get("Area Code (M49)", ""))
-          	s["years"].add(row.get("Year", ""))
-          	s["units"].add(row.get("Unit", ""))
-          	s["elements"].add(row.get("Element", ""))
-          print("ITEM-STATS")
-          for key in items:
-          	s = stats[key]
-          	ordered_years = sorted(s["years"])
-          	print(key[0], repr(key[1]), "rows", s["rows"], "areas", len(s["areas"]), "years", ordered_years[:2], "...", ordered_years[-3:], "units", sorted(s["units"]), "elements", sorted(s["elements"]))
+          	if row.get("Area") in wanted_names:
+          		print("SAMPLE", row)
 
-          registry_raw, _ = get_bytes("https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json")
-          registry = json.loads(registry_raw)
-          countries = [area for area in registry.get("areas", []) if area.get("level") == "country"]
-          code_keys = Counter()
-          m49 = {}
-          for area in countries:
-          	codes = area.get("codes") or {}
-          	for key in codes:
-          		code_keys[key] += 1
-          	for key in ("m49", "M49", "un_m49", "unM49"):
-          		value = str(codes.get(key, "")).strip()
-          		if value:
-          			m49[value.zfill(3)] = area.get("area_id")
-          print("registry-country-count", len(countries))
-          print("registry-code-keys", dict(code_keys))
-          print("registry-m49-count", len(m49))
-          for wanted in ("040", "276", "840", "356"):
-          	print("registry-m49-sample", wanted, m49.get(wanted))
-          for area in countries:
-          	if (area.get("codes") or {}).get("iso3") in {"AUT", "DEU", "USA", "IND"}:
-          		print("registry-sample", area.get("area_id"), area.get("codes"))
+          print("FIRST")
+          for row in rows[:20]:
+          	print(row)
+
+          print("NON-THREE-DIGIT-M49")
+          for row in rows:
+          	m49 = str(row.get("M49 Code", row.get("Area Code (M49)", ""))).strip()
+          	if m49 and (not m49.isdigit() or len(m49) != 3):
+          		print(row)
           PY
