@@ -1,0 +1,42 @@
+name: Inspect JMP quality data
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/inspect_jmp_quality.py"
+      - ".github/workflows/inspect-jmp-quality.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Inspect JMP quality data
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          python scripts/inspect_jmp_quality.py 2>&1 | tee diagnostics/jmp-quality.log
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmp-quality-inspection-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 7
