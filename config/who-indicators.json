@@ -1,0 +1,42 @@
+{
+	"schema": "kartensammlung.who-statistics/v1",
+	"provider": {
+		"id": "who",
+		"name": "WHO",
+		"dataset": "WHO World Health Data Hub",
+		"license": "CC BY 4.0",
+		"licenseUrl": "https://data.who.int/about/data/terms-and-conditions",
+		"attribution": "World Health Organization (WHO)"
+	},
+	"expectedReferenceYear": 2018,
+	"indicators": [
+		{
+			"id": "violence.ipv-previous-12-months-percent",
+			"slug": "violence-ipv-previous-12-months-percent",
+			"sourceIndicator": "SDGIPV12M",
+			"sourceUuid": "F8524F2",
+			"sourceUrl": "https://data.who.int/indicators/i/BEDE3DB/F8524F2",
+			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/F8524F2_ALL_LATEST.csv",
+			"title": "Intimpartnergewalt – letzte 12 Monate",
+			"description": "WHO-Schätzung des Anteils jemals verpartnerter Frauen, die in den vorangegangenen 12 Monaten körperliche und/oder sexuelle Gewalt durch einen aktuellen oder früheren Intimpartner erfahren haben. Modellierte, international harmonisierte Prävalenzschätzung; kein Register- oder Polizeidatensatz.",
+			"unit": {"id": "percent", "label": "%", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [5, 10, 15, 20, 25, 30]},
+			"minAreasWithAnyValue": 140,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "violence.ipv-lifetime-percent",
+			"slug": "violence-ipv-lifetime-percent",
+			"sourceIndicator": "SDGIPVLT",
+			"sourceUuid": "E0D4E17",
+			"sourceUrl": "https://data.who.int/indicators/i/BEDE3DB/E0D4E17",
+			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/E0D4E17_ALL_LATEST.csv",
+			"title": "Intimpartnergewalt – Lebenszeit",
+			"description": "WHO-Schätzung des Anteils jemals verpartnerter Frauen, die seit dem Alter von 15 Jahren körperliche und/oder sexuelle Gewalt durch einen aktuellen oder früheren Intimpartner erfahren haben. Modellierte, international harmonisierte Prävalenzschätzung; kein Register- oder Polizeidatensatz.",
+			"unit": {"id": "percent", "label": "%", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [10, 20, 25, 30, 35, 40]},
+			"minAreasWithAnyValue": 135,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		}
+	]
+}
