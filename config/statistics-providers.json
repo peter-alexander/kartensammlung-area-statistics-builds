@@ -20,6 +20,11 @@
 			"id": "unodc",
 			"name": "UNODC",
 			"index": "unodc/index.json"
+		},
+		{
+			"id": "who",
+			"name": "WHO",
+			"index": "who/index.json"
 		}
 	]
 }
