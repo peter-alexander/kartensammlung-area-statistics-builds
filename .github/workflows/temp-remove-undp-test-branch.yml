@@ -1,0 +1,30 @@
+name: Remove completed UNDP test branch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/temp-remove-undp-test-branch.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove test branch and cleanup workflow
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git push origin --delete test/undp-hdr
+          git rm .github/workflows/temp-remove-undp-test-branch.yml
+          git commit -m "Remove temporary UNDP branch cleanup workflow"
+          git push
