@@ -1,4 +1,4 @@
-name: Add global PIP Gini indicator
+name: Inspect PIP inequality fields
 
 on:
   push:
@@ -8,18 +8,13 @@ on:
       - ".github/workflows/temp-pip-gini.yml"
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 jobs:
-  patch:
+  inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -27,105 +22,73 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install --disable-pip-version-check --quiet pyarrow
 
-      - name: Add Gini to PIP builder and config
+      - name: Inspect current PIP Arrow inequality fields
         run: |
           python - <<'PY'
-          import json
-          from pathlib import Path
+          import urllib.parse
+          import urllib.request
 
-          builder_path = Path("scripts/build_world_bank_pip.py")
-          builder = builder_path.read_text(encoding="utf-8")
+          import pyarrow as pa
+          import pyarrow.feather as feather
 
-          replacements = [
-          	(
-          		'if field and field not in {"headcount", "poverty_gap", "mean", "median", "spr", "spl", "pg"}:',
-          		'if field and field not in {"headcount", "poverty_gap", "mean", "median", "gini", "spr", "spl", "pg"}:',
-          	),
-          	(
-          		'\t\t"median",\n\t\t"reporting_pop",',
-          		'\t\t"median",\n\t\t"gini",\n\t\t"reporting_pop",',
-          	),
-          	(
-          		'for field in ("mean", "median", "reporting_pop", "spl", "spr", "pg"):',
-          		'for field in ("mean", "median", "gini", "reporting_pop", "spl", "spr", "pg"):',
-          	),
-          	(
-          		'if field in {"headcount", "poverty_gap", "spr"} and not 0 <= value <= 1:',
-          		'if field in {"headcount", "poverty_gap", "gini", "spr"} and not 0 <= value <= 1:',
-          	),
-          ]
-          for old, new in replacements:
-          	count = builder.count(old)
-          	if count != 1:
-          		raise SystemExit(f"Expected builder target once, found {count}: {old}")
-          	builder = builder.replace(old, new, 1)
-          builder_path.write_text(builder, encoding="utf-8")
+          BASE = "https://api.worldbank.org/pip/v1/pip"
+          VERSION = "20260324_2021_01_02_PROD"
 
-          config_path = Path("config/world-bank-pip-indicators.json")
-          config = config_path.read_text(encoding="utf-8")
-          marker = '\t\t{\n\t\t\t"id": "poverty.societal-rate-percent",'
-          if config.count(marker) != 1:
-          	raise SystemExit(f"Expected PIP config insertion marker once, found {config.count(marker)}")
-          gini = '''\t\t{
-          \t\t\t"id": "income-inequality.gini",
-          \t\t\t"slug": "income-inequality-gini",
-          \t\t\t"povertyLine": 3.0,
-          \t\t\t"field": "gini",
-          \t\t\t"scale": 100,
-          \t\t\t"title": "Gini-Koeffizient",
-          \t\t\t"description": "Gini-Koeffizient des in PIP verwendeten Wohlfahrtsmaßes (Einkommen oder Konsum). 0 bedeutet vollständige Gleichverteilung, 100 maximale Ungleichverteilung. Die Art des Wohlfahrtsmaßes wird je Land und Jahr als Metadatum mitgeführt.",
-          \t\t\t"unit": {"id": "gini-0-100", "label": "Gini-Koeffizient (0–100)"},
-          \t\t\t"classification": {"type": "fixed", "breaks": [20, 25, 30, 35, 40, 45]},
-          \t\t\t"minAreasWithAnyValue": 160,
-          \t\t\t"minAreasInDefaultYear": 160,
-          \t\t\t"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
-          \t\t},
-          '''
-          config = config.replace(marker, gini + marker, 1)
-          config_path.write_text(config, encoding="utf-8")
+          def load(fill_gaps: bool):
+          	params = urllib.parse.urlencode({
+          		"country": "all",
+          		"year": "all",
+          		"ppp_version": "2021",
+          		"fill_gaps": "true" if fill_gaps else "false",
+          		"reporting_level": "national",
+          		"version": VERSION,
+          		"povline": "3",
+          		"format": "arrow",
+          	})
+          	url = f"{BASE}?{params}"
+          	request = urllib.request.Request(
+          		url,
+          		headers={
+          			"User-Agent": "kartensammlung-area-statistics-builds/diagnostic",
+          			"Accept": "application/vnd.apache.arrow.file, application/octet-stream",
+          		},
+          	)
+          	with urllib.request.urlopen(request, timeout=120) as response:
+          		data = response.read()
+          	return feather.read_table(pa.BufferReader(data)), len(data), url
 
-          json.loads(config_path.read_text(encoding="utf-8"))
+          for fill_gaps in (True, False):
+          	table, size, url = load(fill_gaps)
+          	print()
+          	print("=" * 80)
+          	print(f"fill_gaps={str(fill_gaps).lower()} bytes={size} rows={table.num_rows}")
+          	print(f"url={url}")
+          	interesting = [
+          		name for name in table.column_names
+          		if any(token in name.lower() for token in ("gini", "mld", "polar", "decile", "quintile", "share"))
+          	]
+          	print(f"interesting_columns={interesting}")
+          	print(f"all_columns={table.column_names}")
+
+          	for name in interesting:
+          		values = table[name].to_pylist()
+          		non_null = [(index, value) for index, value in enumerate(values) if value is not None]
+          		print(f"{name}: non_null={len(non_null)}/{len(values)}")
+          		if not non_null:
+          			continue
+          		numeric = []
+          		for _index, value in non_null:
+          			try:
+          				numeric.append(float(value))
+          			except (TypeError, ValueError):
+          				pass
+          		if numeric:
+          			print(f"{name}: min={min(numeric)} max={max(numeric)}")
+          		for index, value in non_null[:8]:
+          			row = table.slice(index, 1).to_pylist()[0]
+          			print(
+          				f"sample {name}: country={row.get('country_code')} year={row.get('reporting_year')} "
+          				f"estimate_type={row.get('estimate_type')} estimation_type={row.get('estimation_type')} "
+          				f"welfare_type={row.get('welfare_type')} value={value}"
+          			)
           PY
-          python -m py_compile scripts/build_world_bank_pip.py
-          python -m json.tool config/world-bank-pip-indicators.json >/dev/null
-
-      - name: Validate against current PIP data
-        run: |
-          set -euo pipefail
-          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?temp-gini=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          python scripts/build_world_bank_pip.py --registry "$REGISTRY_URL"
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          index = json.loads(Path("dist/statistics/world-bank-pip/index.json").read_text(encoding="utf-8"))
-          indicators = {item["id"]: item for item in index["indicators"]}
-          if len(indicators) != 15:
-          	raise SystemExit(f"Expected 15 PIP indicators, got {len(indicators)}")
-          gini = indicators.get("income-inequality.gini")
-          if not gini:
-          	raise SystemExit("Global PIP Gini indicator missing from built index")
-          coverage = gini["coverage"]
-          if coverage["areasWithAnyValue"] < 160 or coverage["areasInDefaultYear"] < 160:
-          	raise SystemExit(f"Gini coverage unexpectedly low: {coverage}")
-          print(f"PIP version={index['dataset']['version']}")
-          print(f"snapshot={index['activeSnapshot']}")
-          print(f"Gini defaultYear={gini['defaultYear']}")
-          print(f"Gini coverage={coverage}")
-          print(f"Gini years={gini['availableYears'][0]}-{gini['availableYears'][-1]}")
-          PY
-
-      - name: Commit patch and remove temporary workflow
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/temp-pip-gini.yml
-          git add scripts/build_world_bank_pip.py config/world-bank-pip-indicators.json
-          git commit -m "Add global World Bank PIP Gini indicator"
-          git push
-
-      - name: Dispatch production PIP workflow
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh workflow run build-world-bank-pip-statistics.yml --ref main
