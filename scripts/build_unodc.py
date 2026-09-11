@@ -11,7 +11,7 @@ import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -66,50 +66,29 @@ def download_xlsx(urls: list[str], timeout: int) -> tuple[Path, str]:
 			path = Path(handle.name)
 			handle.close()
 			try:
-				request = Request(
-					url,
-					headers={
-						"Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/octet-stream, */*",
-						"User-Agent": USER_AGENT,
-					},
-				)
+				request = Request(url, headers={
+					"Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/octet-stream, */*",
+					"User-Agent": USER_AGENT,
+				})
 				with urlopen(request, timeout=timeout) as response, path.open("wb") as output:
 					shutil.copyfileobj(response, output, length=1024 * 1024)
 				if path.stat().st_size < 10_000:
 					raise RuntimeError(f"Downloaded file is unexpectedly small: {path.stat().st_size} bytes")
 				if not zipfile.is_zipfile(path):
 					raise RuntimeError("Downloaded UNODC file is not a valid XLSX/ZIP archive")
-				with openpyxl.load_workbook(path, read_only=True, data_only=True) as workbook:
+				workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
+				try:
 					if not workbook.sheetnames:
 						raise RuntimeError("Downloaded UNODC workbook contains no worksheets")
+				finally:
+					workbook.close()
 				print(f"Using UNODC source: {url}")
 				return path, url
 			except (HTTPError, URLError, TimeoutError, OSError, RuntimeError, zipfile.BadZipFile) as error:
 				last_error = error
 				path.unlink(missing_ok=True)
 				print(f"UNODC download/validation failed ({attempt}/3): {url}: {error}")
-	print("All configured UNODC download URLs failed.")
 	raise RuntimeError("Unable to download a valid UNODC workbook") from last_error
-
-
-def validate_classification(indicator: dict[str, Any]) -> None:
-	indicator_id = str(indicator["id"])
-	classification = indicator.get("classification")
-	if not isinstance(classification, dict) or classification.get("type") != "fixed":
-		raise ValueError(f"Indicator {indicator_id} requires fixed classification metadata.")
-	scale = str(classification.get("scale", "linear"))
-	if scale not in ("linear", "logarithmic"):
-		raise ValueError(f"Indicator {indicator_id} has invalid classification scale: {scale}.")
-	breaks = classification.get("breaks")
-	if not isinstance(breaks, list) or len(breaks) != 6:
-		raise ValueError(f"Indicator {indicator_id} requires exactly 6 classification breaks.")
-	numbers = [float(value) for value in breaks]
-	if not all(math.isfinite(value) for value in numbers):
-		raise ValueError(f"Indicator {indicator_id} has non-finite classification breaks.")
-	if any(numbers[index] <= numbers[index - 1] for index in range(1, len(numbers))):
-		raise ValueError(f"Indicator {indicator_id} classification breaks must be strictly ascending.")
-	if scale == "logarithmic" and numbers[0] <= 0:
-		raise ValueError(f"Indicator {indicator_id} logarithmic classification requires positive breaks.")
 
 
 def validate_config(payload: Any) -> dict[str, Any]:
@@ -126,7 +105,7 @@ def validate_config(payload: Any) -> dict[str, Any]:
 			raise ValueError(f"UNODC provider metadata is missing {key}.")
 	fraction = payload.get("broadCoverageFraction")
 	if not isinstance(fraction, (int, float)) or not 0 < float(fraction) <= 1:
-		raise ValueError("broadCoverageFraction must be greater than 0 and at most 1.")
+		raise ValueError("Invalid broadCoverageFraction.")
 	indicators = payload.get("indicators")
 	if not isinstance(indicators, list) or not indicators:
 		raise ValueError("UNODC config requires indicators.")
@@ -144,18 +123,21 @@ def validate_config(payload: Any) -> dict[str, Any]:
 			raise ValueError(f"Duplicate UNODC indicator id or slug: {indicator_id}.")
 		ids.add(indicator_id)
 		slugs.add(slug)
-		filters = indicator.get("filters")
-		if not isinstance(filters, dict) or not str(filters.get("indicator", "")).strip():
-			raise ValueError(f"Indicator {indicator_id} requires filters with an indicator name.")
-		unit = indicator.get("unit")
-		if not isinstance(unit, dict) or not unit.get("id") or not unit.get("label"):
-			raise ValueError(f"Indicator {indicator_id} has invalid unit metadata.")
-		for key in ("minAreasWithAnyValue", "maxDefaultYearAge"):
-			if not isinstance(indicator.get(key), int) or indicator[key] < (1 if key == "minAreasWithAnyValue" else 0):
-				raise ValueError(f"Indicator {indicator_id} has invalid {key}.")
-		if not isinstance(indicator.get("requiredAreas"), list) or not indicator["requiredAreas"]:
-			raise ValueError(f"Indicator {indicator_id} requires requiredAreas.")
-		validate_classification(indicator)
+		if not isinstance(indicator.get("filters"), dict):
+			raise ValueError(f"Indicator {indicator_id} requires filters.")
+		if not isinstance(indicator.get("unit"), dict):
+			raise ValueError(f"Indicator {indicator_id} requires unit metadata.")
+		classification = indicator.get("classification")
+		if not isinstance(classification, dict) or classification.get("type") != "fixed":
+			raise ValueError(f"Indicator {indicator_id} requires fixed classification.")
+		breaks = classification.get("breaks")
+		if not isinstance(breaks, list) or len(breaks) != 6:
+			raise ValueError(f"Indicator {indicator_id} requires exactly six breaks.")
+		numbers = [float(value) for value in breaks]
+		if any(not math.isfinite(value) for value in numbers) or any(numbers[index] <= numbers[index - 1] for index in range(1, 6)):
+			raise ValueError(f"Indicator {indicator_id} has invalid breaks.")
+		if classification.get("scale") == "logarithmic" and numbers[0] <= 0:
+			raise ValueError(f"Indicator {indicator_id} logarithmic breaks must be positive.")
 	return payload
 
 
@@ -175,11 +157,8 @@ def load_registry(source: str, timeout: int) -> tuple[dict[str, str], dict[str, 
 	payload = fetch_json(source, timeout)
 	if not isinstance(payload, dict) or payload.get("schema") != "kartensammlung.area-registry/v1":
 		raise ValueError("Invalid area registry.")
-	areas = payload.get("areas")
-	if not isinstance(areas, list):
-		raise ValueError("Area registry has no areas.")
 	area_by_iso3: dict[str, str] = {}
-	for area in areas:
+	for area in payload.get("areas", []):
 		if not isinstance(area, dict) or area.get("level") != "country":
 			continue
 		codes = area.get("codes")
@@ -187,11 +166,10 @@ def load_registry(source: str, timeout: int) -> tuple[dict[str, str], dict[str, 
 			continue
 		iso3 = str(codes.get("iso3", "")).strip().upper()
 		area_id = str(area.get("area_id", "")).strip()
-		if len(iso3) != 3 or not area_id:
-			continue
-		if iso3 in area_by_iso3:
-			raise ValueError(f"Duplicate ISO3 in area registry: {iso3}")
-		area_by_iso3[iso3] = area_id
+		if len(iso3) == 3 and area_id:
+			if iso3 in area_by_iso3:
+				raise ValueError(f"Duplicate ISO3 in area registry: {iso3}")
+			area_by_iso3[iso3] = area_id
 	if len(area_by_iso3) < 240:
 		raise RuntimeError(f"Area registry unexpectedly small: {len(area_by_iso3)} country areas.")
 	for iso3 in ("AUT", "DEU", "USA", "IND", "XKX"):
@@ -204,7 +182,7 @@ def text(value: Any) -> str:
 	return "" if value is None else " ".join(str(value).strip().split())
 
 
-def year_value(value: Any) -> int | None:
+def parse_year(value: Any) -> int | None:
 	try:
 		year = int(float(value))
 	except (TypeError, ValueError):
@@ -212,7 +190,7 @@ def year_value(value: Any) -> int | None:
 	return year if 1900 <= year <= 2200 else None
 
 
-def number_value(value: Any) -> int | float | None:
+def parse_number(value: Any) -> int | float | None:
 	if value is None or isinstance(value, bool):
 		return None
 	try:
@@ -226,26 +204,28 @@ def number_value(value: Any) -> int | float | None:
 	return int(number) if number.is_integer() else number
 
 
-def find_data_sheet(workbook: openpyxl.Workbook) -> str:
+def find_data_sheet(workbook: Any) -> str:
 	candidates = [name for name in workbook.sheetnames if "intentional_homicide" in name.lower() and "reg_est" not in name.lower()]
 	if len(candidates) != 1:
-		raise RuntimeError(f"Expected exactly one UNODC intentional-homicide data sheet, found: {workbook.sheetnames}")
+		raise RuntimeError(f"Expected one intentional-homicide sheet, found: {workbook.sheetnames}")
 	return candidates[0]
 
 
-def iter_records(path: Path) -> Iterator[dict[str, Any]]:
-	with openpyxl.load_workbook(path, read_only=True, data_only=True) as workbook:
+def read_records(path: Path) -> list[dict[str, Any]]:
+	workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
+	try:
 		worksheet = workbook[find_data_sheet(workbook)]
+		records: list[dict[str, Any]] = []
 		for row in worksheet.iter_rows(values_only=True):
 			if len(row) < 12:
 				continue
 			iso3 = text(row[0]).upper()
-			year = year_value(row[9])
-			value = number_value(row[11])
+			year = parse_year(row[9])
+			value = parse_number(row[11])
 			indicator = text(row[4])
 			if len(iso3) != 3 or not iso3.isalpha() or year is None or value is None or not indicator:
 				continue
-			yield {
+			records.append({
 				"iso3": iso3,
 				"country": text(row[1]),
 				"region": text(row[2]),
@@ -258,20 +238,21 @@ def iter_records(path: Path) -> Iterator[dict[str, Any]]:
 				"year": year,
 				"unit": text(row[10]),
 				"value": value,
-			}
+			})
+		return records
+	finally:
+		workbook.close()
 
 
-def equal_text(actual: str, expected: str) -> bool:
-	return actual.casefold() == expected.casefold()
+def equal_text(actual: Any, expected: Any) -> bool:
+	return str(actual).casefold() == str(expected).casefold()
 
 
 def matches(record: dict[str, Any], filters: dict[str, Any]) -> bool:
 	for key in ("indicator", "dimension", "category", "sex", "age", "unit"):
-		expected = filters.get(key)
-		if expected is not None and not equal_text(str(record.get(key, "")), str(expected)):
+		if key in filters and not equal_text(record.get(key, ""), filters[key]):
 			return False
-	unit_contains = filters.get("unitContains")
-	if unit_contains is not None and str(unit_contains).casefold() not in str(record.get("unit", "")).casefold():
+	if "unitContains" in filters and str(filters["unitContains"]).casefold() not in str(record.get("unit", "")).casefold():
 		return False
 	return True
 
@@ -280,50 +261,39 @@ def print_diagnostics(records: list[dict[str, Any]]) -> None:
 	print(f"UNODC parsed country-year rows: {len(records)}")
 	for field in ("indicator", "dimension", "sex", "age", "unit"):
 		values = sorted({str(record[field]) for record in records if record[field]})
-		print(f"UNODC {field} values ({len(values)}): {values[:80]}")
-	victim_records = [record for record in records if equal_text(record["indicator"], "Victims of intentional homicide")]
-	categories = sorted({record["category"] for record in victim_records if record["category"]})
-	print(f"UNODC homicide victim categories ({len(categories)}): {categories[:120]}")
+		print(f"UNODC {field} values ({len(values)}): {values[:100]}")
+	victims = [record for record in records if equal_text(record["indicator"], "Victims of intentional homicide")]
+	categories = sorted({record["category"] for record in victims if record["category"]})
+	print(f"UNODC homicide victim categories ({len(categories)}): {categories[:150]}")
+	for dimension in sorted({record["dimension"] for record in victims if record["dimension"]}):
+		dimension_categories = sorted({record["category"] for record in victims if record["dimension"] == dimension and record["category"]})
+		print(f"UNODC categories for dimension {dimension!r}: {dimension_categories[:100]}")
 
 
-def select_values(
-	records: list[dict[str, Any]],
-	indicator: dict[str, Any],
-	area_by_iso3: dict[str, str],
-) -> tuple[dict[int, dict[str, int | float]], set[str]]:
-	filters = indicator["filters"]
+def select_values(records: list[dict[str, Any]], indicator: dict[str, Any], area_by_iso3: dict[str, str]) -> tuple[dict[int, dict[str, int | float]], set[str]]:
 	values: dict[int, dict[str, int | float]] = {}
-	ignored_codes: set[str] = set()
-	matched_rows = 0
+	ignored: set[str] = set()
+	matched = 0
 	for record in records:
-		if not matches(record, filters):
+		if not matches(record, indicator["filters"]):
 			continue
-		matched_rows += 1
+		matched += 1
 		iso3 = record["iso3"]
 		if iso3 not in area_by_iso3:
-			ignored_codes.add(iso3)
+			ignored.add(iso3)
 			continue
 		year = int(record["year"])
 		area_id = area_by_iso3[iso3]
 		year_values = values.setdefault(year, {})
 		value = record["value"]
-		if area_id in year_values:
-			if year_values[area_id] == value:
-				continue
-			raise RuntimeError(f"Conflicting UNODC values for {indicator['id']} {year} {area_id}: {year_values[area_id]} vs {value}")
+		if area_id in year_values and year_values[area_id] != value:
+			raise RuntimeError(f"Conflicting UNODC values for {indicator['id']} {year} {area_id}.")
 		year_values[area_id] = value
-	print(f"{indicator['id']}: matchedRows={matched_rows}")
-	return values, ignored_codes
+	print(f"{indicator['id']}: matchedRows={matched}")
+	return values, ignored
 
 
-def build_indicator(
-	config: dict[str, Any],
-	indicator: dict[str, Any],
-	values_by_year: dict[int, dict[str, int | float]],
-	area_count: int,
-	now: datetime,
-	download_url: str,
-) -> dict[str, Any]:
+def build_indicator(config: dict[str, Any], indicator: dict[str, Any], values_by_year: dict[int, dict[str, int | float]], area_count: int, now: datetime, download_url: str) -> dict[str, Any]:
 	indicator_id = str(indicator["id"])
 	areas = {area_id for year_values in values_by_year.values() for area_id in year_values}
 	if len(areas) < int(indicator["minAreasWithAnyValue"]):
@@ -401,7 +371,7 @@ def main() -> None:
 	path, download_url = download_xlsx([str(url) for url in config["downloadUrls"]], args.timeout)
 	try:
 		print(f"Downloaded UNODC workbook: {path.stat().st_size} bytes")
-		records = list(iter_records(path))
+		records = read_records(path)
 	finally:
 		path.unlink(missing_ok=True)
 	if not records:
@@ -410,8 +380,8 @@ def main() -> None:
 	payloads: list[tuple[dict[str, Any], dict[str, Any]]] = []
 	ignored_codes: set[str] = set()
 	for indicator in config["indicators"]:
-		values, indicator_ignored = select_values(records, indicator, area_by_iso3)
-		ignored_codes.update(indicator_ignored)
+		values, ignored = select_values(records, indicator, area_by_iso3)
+		ignored_codes.update(ignored)
 		payload = build_indicator(config, indicator, values, len(area_by_iso3), now, download_url)
 		payloads.append((indicator, payload))
 		coverage = payload["coverage"]
@@ -452,20 +422,16 @@ def main() -> None:
 	}
 	if registry_source["url"] is None:
 		registry_source.pop("url")
-	provider_index = {
+	write_json(provider_dir / "index.json", {
 		"schema": "kartensammlung.statistics-provider-index/v1",
 		"provider": provider,
 		"retrievedAt": now.isoformat().replace("+00:00", "Z"),
 		"activeSnapshot": snapshot,
 		"areaRegistry": registry_source,
-		"dataset": {
-			"downloadUrl": download_url,
-			"sourcePage": config["sourcePage"],
-		},
+		"dataset": {"downloadUrl": download_url, "sourcePage": config["sourcePage"]},
 		"ignoredIso3Codes": sorted(ignored_codes),
 		"indicators": index_indicators,
-	}
-	write_json(provider_dir / "index.json", provider_index)
+	})
 	write_json(args.output_dir / "index.json", {
 		"schema": "kartensammlung.statistics-index/v1",
 		"areaRegistry": "../area-registry-countries.json",
