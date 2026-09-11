@@ -15,6 +15,11 @@
 			"id": "un-wpp",
 			"name": "UN World Population Prospects",
 			"index": "un-wpp/index.json"
+		},
+		{
+			"id": "unodc",
+			"name": "UNODC",
+			"index": "unodc/index.json"
 		}
 	]
 }
