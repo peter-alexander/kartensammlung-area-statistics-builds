@@ -30,6 +30,11 @@
 			"id": "jmp",
 			"name": "WHO/UNICEF JMP",
 			"index": "jmp/index.json"
+		},
+		{
+			"id": "ember",
+			"name": "Ember",
+			"index": "ember/index.json"
 		}
 	]
 }
