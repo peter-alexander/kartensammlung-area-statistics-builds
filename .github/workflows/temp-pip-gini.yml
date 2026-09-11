@@ -1,4 +1,4 @@
-name: Probe PIP Gini for India
+name: Inspect WDI Gini coverage
 
 on:
   push:
@@ -19,51 +19,64 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Python dependencies
-        run: python -m pip install --disable-pip-version-check --quiet pyarrow
-
-      - name: Probe India with and without gap filling
+      - name: Inspect mapped WDI Gini coverage
         run: |
           python - <<'PY'
+          import collections
+          import json
           import urllib.parse
           import urllib.request
 
-          import pyarrow as pa
-          import pyarrow.feather as feather
+          def get_json(url):
+          	request = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/diagnostic", "Accept": "application/json"})
+          	with urllib.request.urlopen(request, timeout=60) as response:
+          		return json.load(response)
 
-          base = "https://api.worldbank.org/pip/v1/pip"
-          version = "20260324_2021_01_02_PROD"
+          registry = get_json("https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?diagnostic=wdi-gini")
+          iso3 = {
+          	str(area.get("codes", {}).get("iso3", "")).upper()
+          	for area in registry.get("areas", [])
+          	if area.get("level") == "country"
+          }
+          iso3.discard("")
 
-          for fill_gaps in (True, False):
-          	params = urllib.parse.urlencode({
-          		"country": "IND",
-          		"year": "all",
-          		"ppp_version": "2021",
-          		"fill_gaps": "true" if fill_gaps else "false",
-          		"reporting_level": "national",
-          		"version": version,
-          		"povline": "3",
-          		"format": "arrow",
-          	})
-          	request = urllib.request.Request(
-          		f"{base}?{params}",
-          		headers={"User-Agent": "kartensammlung-area-statistics-builds/diagnostic"},
-          	)
-          	with urllib.request.urlopen(request, timeout=120) as response:
-          		data = response.read()
-          	table = feather.read_table(pa.BufferReader(data))
-          	print("=" * 80)
-          	print(f"fill_gaps={str(fill_gaps).lower()} bytes={len(data)} rows={table.num_rows}")
-          	interesting = [name for name in table.column_names if any(token in name.lower() for token in ("gini", "mld", "polar", "decile", "quintile"))]
-          	print(f"interesting_columns={interesting}")
-          	for name in interesting:
-          		values = table[name].to_pylist()
-          		non_null = [(i, v) for i, v in enumerate(values) if v is not None]
-          		print(f"{name}: non_null={len(non_null)}/{len(values)}")
-          		for index, value in non_null[:12]:
-          			row = table.slice(index, 1).to_pylist()[0]
-          			print(
-          				f"{name}: year={row.get('reporting_year')} estimate_type={row.get('estimate_type')} "
-          				f"estimation_type={row.get('estimation_type')} welfare_type={row.get('welfare_type')} value={value}"
-          			)
+          params = urllib.parse.urlencode({"format": "json", "source": "2", "per_page": "20000", "page": "1"})
+          url = f"https://api.worldbank.org/v2/country/all/indicator/SI.POV.GINI?{params}"
+          payload = get_json(url)
+          metadata, records = payload
+          print(f"pages={metadata.get('pages')} total={metadata.get('total')} registryCountries={len(iso3)}")
+          if int(metadata.get("pages", 1)) != 1:
+          	raise SystemExit("Diagnostic expected one WDI page")
+
+          countries = set()
+          by_year = collections.Counter()
+          required = {"AUT": [], "DEU": [], "USA": [], "IND": []}
+          values = []
+          for record in records:
+          	value = record.get("value")
+          	code = str(record.get("countryiso3code", "")).upper()
+          	year_text = str(record.get("date", ""))
+          	if value is None or code not in iso3 or len(year_text) != 4 or not year_text.isdigit():
+          		continue
+          	year = int(year_text)
+          	if year > 2026:
+          		continue
+          	countries.add(code)
+          	by_year[year] += 1
+          	values.append(float(value))
+          	if code in required:
+          		required[code].append((year, value))
+
+          print(f"mappedCountriesWithAnyValue={len(countries)}")
+          print(f"valueRange={min(values)}..{max(values)}")
+          print(f"broad75Threshold={int(-(-len(countries) * 75 // 100))}")
+          print("topCoverageYears:")
+          for year, count in sorted(by_year.items(), key=lambda item: (-item[1], -item[0]))[:20]:
+          	print(f"  {year}: {count}")
+          print("recentYears:")
+          for year in range(max(by_year), max(min(by_year), max(by_year) - 12) - 1, -1):
+          	print(f"  {year}: {by_year.get(year, 0)}")
+          for code, rows in required.items():
+          	rows.sort()
+          	print(f"{code}: count={len(rows)} latest={rows[-1] if rows else None}")
           PY
