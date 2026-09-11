@@ -1,4 +1,4 @@
-name: Inspect PIP version formats
+name: Inspect PIP poverty-line timings
 
 on:
   push:
@@ -15,16 +15,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Compare version endpoint formats
+      - name: Compare poverty-line Arrow responses
         run: |
           set -u
-          for format in arrow csv json; do
-            echo "=== ${format} ==="
-            curl --location --connect-timeout 10 --max-time 45 \
+          VERSION="20260324_2021_01_02_PROD"
+          for line in 3 4.2 8.3; do
+            echo "=== ${line} ==="
+            curl --fail --location --connect-timeout 10 --max-time 60 \
               --write-out 'http=%{http_code} bytes=%{size_download} seconds=%{time_total} type=%{content_type}\n' \
-              "https://api.worldbank.org/pip/v1/versions?format=${format}" \
-              --output "/tmp/versions-${format}" || true
-            ls -lh "/tmp/versions-${format}" 2>/dev/null || true
-            head -c 300 "/tmp/versions-${format}" 2>/dev/null || true
-            echo
+              "https://api.worldbank.org/pip/v1/pip?country=all&year=all&ppp_version=2021&fill_gaps=true&reporting_level=national&version=${VERSION}&povline=${line}&format=arrow" \
+              --output "/tmp/pip-${line}.arrow" || true
+            ls -lh "/tmp/pip-${line}.arrow" 2>/dev/null || true
           done
