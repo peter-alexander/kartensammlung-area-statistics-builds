@@ -43,9 +43,9 @@ jobs:
           with zipfile.ZipFile(io.BytesIO(data)) as archive:
           	names = archive.namelist()
           	print("zip-files", names)
-          	csv_names = [name for name in names if name.lower().endswith(".csv") and "Flags" not in name]
+          	csv_names = [name for name in names if name.endswith("All_Data_(Normalized).csv")]
           	if len(csv_names) != 1:
-          		raise RuntimeError(f"Expected one data CSV, found {csv_names}")
+          		raise RuntimeError(f"Expected one normalized data CSV, found {csv_names}")
           	raw = archive.read(csv_names[0])
 
           for encoding in ("utf-8-sig", "cp1252", "latin-1"):
