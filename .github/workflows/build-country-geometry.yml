@@ -19,6 +19,7 @@ on:
       - "requirements.txt"
       - ".github/scripts/deploy-area-statistics.sh"
       - ".github/scripts/lftp-upload.sh"
+      - ".github/scripts/tippecanoe-country-geometry.sh"
       - ".github/workflows/build-country-geometry.yml"
   push:
     branches:
@@ -32,6 +33,7 @@ on:
       - "requirements.txt"
       - ".github/scripts/deploy-area-statistics.sh"
       - ".github/scripts/lftp-upload.sh"
+      - ".github/scripts/tippecanoe-country-geometry.sh"
       - ".github/workflows/build-country-geometry.yml"
 
 permissions:
@@ -58,6 +60,7 @@ jobs:
         run: |
           bash -n .github/scripts/deploy-area-statistics.sh
           bash -n .github/scripts/lftp-upload.sh
+          bash -n .github/scripts/tippecanoe-country-geometry.sh
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -94,7 +97,65 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python scripts/build_countries.py --release "${OVERTURE_RELEASE}" 2>&1 | tee diagnostics/build.log
+          chmod +x .github/scripts/tippecanoe-country-geometry.sh
+          python scripts/build_countries.py \
+            --release "${OVERTURE_RELEASE}" \
+            --tippecanoe "$GITHUB_WORKSPACE/.github/scripts/tippecanoe-country-geometry.sh" \
+            2>&1 | tee diagnostics/build.log
+
+      - name: Verify country label retention
+        shell: bash
+        run: |
+          set -euo pipefail
+          tippecanoe-decode \
+            -c \
+            -Z0 \
+            -z8 \
+            -l country_label \
+            -y area_id \
+            dist/world-admin.pmtiles \
+            > diagnostics/country-labels.geojsonseq
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          registry = json.loads(
+          	Path("dist/area-registry-countries.json").read_text(encoding="utf-8")
+          )
+          expected_ids = {area["area_id"] for area in registry["areas"]}
+          ids_by_zoom = {zoom: set() for zoom in range(9)}
+
+          for raw_line in Path("diagnostics/country-labels.geojsonseq").read_text(
+          	encoding="utf-8"
+          ).splitlines():
+          	line = raw_line.strip().lstrip("\x1e")
+          	if not line:
+          		continue
+          	feature = json.loads(line)
+          	tippecanoe = feature.get("tippecanoe") or {}
+          	properties = feature.get("properties") or {}
+          	zoom = int(tippecanoe.get("zoom", -1))
+          	area_id = properties.get("area_id")
+          	if zoom in ids_by_zoom and area_id:
+          		ids_by_zoom[zoom].add(str(area_id))
+
+          problems = []
+          for zoom, area_ids in ids_by_zoom.items():
+          	missing = sorted(expected_ids - area_ids)
+          	extra = sorted(area_ids - expected_ids)
+          	print(
+          		f"country_label z{zoom}: {len(area_ids)}/{len(expected_ids)} unique areas"
+          	)
+          	if missing or extra:
+          		problems.append(
+          			f"z{zoom}: missing={missing[:10]} extra={extra[:10]}"
+          		)
+
+          if problems:
+          	raise SystemExit(
+          		"Country label PMTiles retention check failed: " + "; ".join(problems)
+          	)
+          PY
 
       - name: Show build metadata
         run: |
