@@ -6,17 +6,6 @@ from typing import Any
 import build_ilostat as builder
 
 _ORIGINAL_LOAD_SOURCE_ROWS = builder.load_source_rows
-_ORIGINAL_READ_JSON_PATH = builder.common.read_json_path
-
-
-def read_json_path_without_legacy_channel_alias(path):
-	payload = _ORIGINAL_READ_JSON_PATH(path)
-	if isinstance(payload, dict) and payload.get("schema") == "kartensammlung.ilostat-statistics/v1":
-		payload = dict(payload)
-		aliases = dict(payload.get("iso3Aliases", {}))
-		aliases.pop("CHA", None)
-		payload["iso3Aliases"] = aliases
-	return payload
 
 
 def load_source_rows_without_channel_islands(
@@ -37,7 +26,6 @@ def load_source_rows_without_channel_islands(
 	return rows_by_dataset, urls
 
 
-builder.common.read_json_path = read_json_path_without_legacy_channel_alias
 builder.load_source_rows = load_source_rows_without_channel_islands
 
 
