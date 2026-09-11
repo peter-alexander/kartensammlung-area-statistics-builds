@@ -1,0 +1,128 @@
+{
+	"schema": "kartensammlung.unodc-violent-statistics/v1",
+	"downloadUrls": [
+		"https://data.unodc.org/sites/dataportal.unodc.org/files/2026-07/data_cts_violent_and_sexual_crime.xlsx",
+		"https://data.unodc.org/sites/dataportal.unodc.org/files/2025-11/data_cts_violent_and_sexual_crime.xlsx"
+	],
+	"sourcePage": "https://data.unodc.org/datareport/violent-offences",
+	"metadataUrl": "https://data.unodc.org/sites/dataportal.unodc.org/files/2025-11/metadata_violent_and_sexual_crime.pdf",
+	"populationIndexUrl": "https://tiles.radlobby.at/AreaStatistics/statistics/un-wpp/index.json",
+	"broadCoverageFraction": 0.4,
+	"maxDefaultYearAge": 10,
+	"countryAliases": {
+		"Bolivia (Plurinational State of)": "BOL",
+		"China, Hong Kong Special Administrative Region": "HKG",
+		"China, Macao Special Administrative Region": "MAC",
+		"Holy See": "VAT",
+		"Kosovo under UNSCR 1244": "XKX",
+		"Netherlands (Kingdom of the)": "NLD",
+		"Republic of Korea": "KOR",
+		"Republic of Moldova": "MDA",
+		"Russian Federation": "RUS",
+		"State of Palestine": "PSE",
+		"Syrian Arab Republic": "SYR",
+		"Venezuela (Bolivarian Republic of)": "VEN"
+	},
+	"excludedCountryNames": {
+		"Iraq (Central Iraq)": "Nur Zentralirak; nicht mit der Landesfläche Irak vergleichbar."
+	},
+	"countryCompositions": {
+		"GBR": [
+			"United Kingdom (England and Wales)",
+			"United Kingdom (Northern Ireland)",
+			"United Kingdom (Scotland)"
+		]
+	},
+	"categories": [
+		{
+			"key": "fear",
+			"sourceCategory": "Acts intended to induce fear or emotional distress",
+			"title": "Handlungen zur Erzeugung von Angst oder emotionaler Belastung",
+			"description": "Von Polizei oder anderen Strafverfolgungsbehörden registrierte Straftaten in der UNODC-Kategorie „Acts intended to induce fear or emotional distress“.",
+			"minAreasWithAnyValue": 25,
+			"countBreaks": [100, 1000, 10000, 50000, 200000, 1000000],
+			"rateBreaks": [5, 10, 25, 50, 100, 250]
+		},
+		{
+			"key": "fear-cyber",
+			"sourceCategory": "Acts intended to induce fear or emotional distress: Cyber-related",
+			"title": "Cyberbezogene Handlungen zur Erzeugung von Angst oder emotionaler Belastung",
+			"description": "Von Polizei oder anderen Strafverfolgungsbehörden registrierte cyberbezogene Straftaten in der UNODC-Kategorie „Acts intended to induce fear or emotional distress“.",
+			"minAreasWithAnyValue": 20,
+			"countBreaks": [10, 100, 1000, 5000, 20000, 100000],
+			"rateBreaks": [0.5, 1, 2, 5, 10, 25]
+		},
+		{
+			"key": "kidnapping",
+			"sourceCategory": "Kidnapping",
+			"title": "Entführung",
+			"description": "Von Polizei oder anderen Strafverfolgungsbehörden registrierte Entführungsdelikte (UNODC/ICCS).",
+			"minAreasWithAnyValue": 90,
+			"countBreaks": [10, 100, 1000, 5000, 20000, 100000],
+			"rateBreaks": [0.1, 0.5, 1, 2, 5, 10]
+		},
+		{
+			"key": "robbery",
+			"sourceCategory": "Robbery",
+			"title": "Raub",
+			"description": "Von Polizei oder anderen Strafverfolgungsbehörden registrierte Raubdelikte (UNODC/ICCS).",
+			"minAreasWithAnyValue": 45,
+			"countBreaks": [100, 1000, 10000, 50000, 200000, 1000000],
+			"rateBreaks": [10, 25, 50, 100, 250, 500]
+		},
+		{
+			"key": "serious-assault",
+			"sourceCategory": "Serious assault",
+			"title": "Schwere Körperverletzung",
+			"description": "Von Polizei oder anderen Strafverfolgungsbehörden registrierte Delikte schwerer Körperverletzung (UNODC/ICCS 020111).",
+			"minAreasWithAnyValue": 40,
+			"countBreaks": [100, 1000, 10000, 50000, 200000, 1000000],
+			"rateBreaks": [10, 25, 50, 100, 250, 500]
+		},
+		{
+			"key": "sexual-exploitation",
+			"sourceCategory": "Sexual Exploitation",
+			"title": "Sexuelle Ausbeutung",
+			"description": "Von Polizei oder anderen Strafverfolgungsbehörden registrierte Delikte sexueller Ausbeutung (UNODC/ICCS).",
+			"minAreasWithAnyValue": 50,
+			"countBreaks": [10, 100, 1000, 5000, 20000, 100000],
+			"rateBreaks": [0.5, 1, 2, 5, 10, 25]
+		},
+		{
+			"key": "sexual-violence",
+			"sourceCategory": "Sexual violence",
+			"title": "Sexuelle Gewalt",
+			"description": "Von Polizei oder anderen Strafverfolgungsbehörden registrierte Delikte sexueller Gewalt (UNODC/ICCS 0301).",
+			"minAreasWithAnyValue": 40,
+			"countBreaks": [100, 1000, 5000, 20000, 100000, 500000],
+			"rateBreaks": [5, 10, 25, 50, 100, 200]
+		},
+		{
+			"key": "sexual-violence-other",
+			"sourceCategory": "Sexual violence: Other acts of sexual violence",
+			"title": "Sonstige sexuelle Gewalt",
+			"description": "Von Polizei oder anderen Strafverfolgungsbehörden registrierte sonstige Delikte sexueller Gewalt (UNODC/ICCS 03019).",
+			"minAreasWithAnyValue": 50,
+			"countBreaks": [100, 1000, 5000, 20000, 100000, 500000],
+			"rateBreaks": [2, 5, 10, 25, 50, 100]
+		},
+		{
+			"key": "rape",
+			"sourceCategory": "Sexual violence: Rape",
+			"title": "Vergewaltigung",
+			"description": "Von Polizei oder anderen Strafverfolgungsbehörden registrierte Vergewaltigungsdelikte (UNODC/ICCS 03011).",
+			"minAreasWithAnyValue": 55,
+			"countBreaks": [100, 1000, 5000, 20000, 100000, 500000],
+			"rateBreaks": [2, 5, 10, 25, 50, 100]
+		},
+		{
+			"key": "sexual-assault",
+			"sourceCategory": "Sexual violence: Sexual assault",
+			"title": "Sexuelle Übergriffe",
+			"description": "Von Polizei oder anderen Strafverfolgungsbehörden registrierte sexuelle Übergriffe ohne Vergewaltigung (UNODC/ICCS 03012).",
+			"minAreasWithAnyValue": 50,
+			"countBreaks": [100, 1000, 5000, 20000, 100000, 500000],
+			"rateBreaks": [2, 5, 10, 25, 50, 100]
+		}
+	]
+}
