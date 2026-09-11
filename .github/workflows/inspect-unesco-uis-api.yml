@@ -17,120 +17,41 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Inspect UIS candidate coverage
+      - name: Test filtered UIS CSV exports
         run: |
           python - <<'PY'
-          import json
+          import csv
+          import io
           import urllib.parse
           import urllib.request
 
           BASE = "https://data.unesco.org/api/explore/v2.1/catalog/datasets"
-          CANDIDATES = {
-          	"uis001": [
-          		"LR.AG15T24",
-          		"CR.1",
-          		"CR.2",
-          		"CR.3",
-          		"GER.5T8",
-          		"NER.02.CP",
-          		"NERA.AGM1.CP",
-          		"XGDP.FSGOV",
-          		"XGOVEXP.IMF",
-          		"PTRHC.1.TRAINED",
-          		"PTRHC.1.QUALIFIED",
-          		"READ.PRIMARY",
-          		"MATH.PRIMARY",
-          		"READ.LOWERSEC",
-          		"MATH.LOWERSEC",
-          	],
-          	"uis006": [
-          		"GER.1",
-          		"GER.2",
-          		"GER.2T3",
-          		"GER.3",
-          		"SLE.1T8",
-          		"REPR.1.CP",
-          		"REPR.2.CP",
-          	],
-          }
-          SEARCHES = {
-          	"uis001": [
-          		"Adult literacy rate",
-          		"Out of school rate",
-          		"Out-of-school",
-          		"Pupil-teacher ratio",
-          	],
-          	"uis006": [
-          		"Pupil-teacher ratio",
-          		"out of school",
-          	],
+          TESTS = {
+          	"uis001": ["ROFST.1.CP", "GER.5T8", "XGDP.FSGOV"],
+          	"uis006": ["GER.1", "NERT.1.CP", "SLE.1T8"],
           }
 
-          def request_json(dataset, params):
-          	query = urllib.parse.urlencode(params)
-          	url = f"{BASE}/{dataset}/records?{query}"
+          for dataset, indicators in TESTS.items():
+          	quoted = ",".join(f'"{indicator}"' for indicator in indicators)
+          	params = urllib.parse.urlencode({
+          		"where": f"indicator_id in ({quoted})",
+          		"select": "indicator_id,country_id,year,value,magnitude,qualifier,indicator_label_en,country_name_en,footnotes",
+          		"delimiter": ",",
+          	})
+          	url = f"{BASE}/{dataset}/exports/csv?{params}"
+          	print(f"URL {dataset}: {url}")
           	request = urllib.request.Request(
           		url,
           		headers={"User-Agent": "kartensammlung-area-statistics-builds/1"},
           	)
-          	with urllib.request.urlopen(request, timeout=60) as response:
-          		return json.load(response)
-
-          for dataset, searches in SEARCHES.items():
-          	print(f"=== SEARCH {dataset} ===")
-          	for phrase in searches:
-          		payload = request_json(dataset, {
-          			"select": "indicator_id,indicator_label_en,count(*) as rows",
-          			"where": f'search(indicator_label_en, "{phrase}")',
-          			"group_by": "indicator_id,indicator_label_en",
-          			"order_by": "indicator_id",
-          			"limit": 100,
-          		})
-          		print(f"SEARCH {phrase!r}: {len(payload.get('results', []))}")
-          		for item in payload.get("results", []):
-          			print(
-          				f"  {item.get('indicator_id')!r} rows={item.get('rows')} "
-          				f"label={item.get('indicator_label_en')!r}"
-          			)
-
-          for dataset, indicators in CANDIDATES.items():
-          	print(f"=== COVERAGE {dataset} ===")
-          	for indicator_id in indicators:
-          		where = f'indicator_id="{indicator_id}"'
-          		metadata = request_json(dataset, {
-          			"select": "indicator_id,indicator_label_en,count(*) as rows",
-          			"where": where,
-          			"group_by": "indicator_id,indicator_label_en",
-          			"limit": 10,
-          		}).get("results", [])
-          		if not metadata:
-          			print(f"{indicator_id}: MISSING")
-          			continue
-          		item = metadata[0]
-          		print(
-          			f"INDICATOR {indicator_id} rows={item.get('rows')} "
-          			f"label={item.get('indicator_label_en')!r}"
-          		)
-
-          		years = request_json(dataset, {
-          			"select": "year,count(*) as areas",
-          			"where": where,
-          			"group_by": "year",
-          			"order_by": "year desc",
-          			"limit": 100,
-          		}).get("results", [])
-          		parsed = []
-          		for year_item in years:
-          			year_text = str(year_item.get("year", "")).strip()
-          			if not year_text.isdigit():
-          				continue
-          			parsed.append((int(year_text), int(year_item.get("areas", 0))))
-          		if not parsed:
-          			print("  no numeric years")
-          			continue
-          		print(f"  range={min(y for y, _ in parsed)}-{max(y for y, _ in parsed)}")
-          		print("  recent=" + ", ".join(f"{y}:{n}" for y, n in parsed if y >= 2018))
-          		for threshold in (100, 125, 150, 175):
-          			eligible = [year for year, areas in parsed if areas >= threshold]
-          			print(f"  newest>={threshold}: {max(eligible) if eligible else None}")
+          	with urllib.request.urlopen(request, timeout=120) as response:
+          		data = response.read()
+          		print(f"status={response.status} type={response.headers.get('Content-Type')} bytes={len(data)}")
+          	text = data.decode("utf-8-sig")
+          	reader = csv.DictReader(io.StringIO(text))
+          	rows = list(reader)
+          	print(f"fields={reader.fieldnames}")
+          	print(f"rows={len(rows)}")
+          	print(f"indicators={sorted({row.get('indicator_id') for row in rows})}")
+          	print(f"sample={rows[0] if rows else None}")
           PY
