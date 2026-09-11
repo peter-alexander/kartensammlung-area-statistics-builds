@@ -69,7 +69,9 @@ jobs:
           cache: pip
 
       - name: Install Python dependencies
-        run: pip install --requirement requirements.txt
+        run: |
+          pip install --requirement requirements.txt
+          pip install pmtiles==3.7.0
 
       - name: Inspect country and dependency coverage
         shell: bash
@@ -107,13 +109,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python - <<'PY'
+          from pmtiles.convert import pmtiles_to_mbtiles
+
+          pmtiles_to_mbtiles(
+          	"dist/world-admin.pmtiles",
+          	"/tmp/world-admin.mbtiles",
+          )
+          PY
+          test -s /tmp/world-admin.mbtiles
           tippecanoe-decode \
             -c \
             -Z0 \
             -z8 \
             -l country_label \
             -y area_id \
-            dist/world-admin.pmtiles \
+            /tmp/world-admin.mbtiles \
             > diagnostics/country-labels.geojsonseq
           python - <<'PY'
           import json
