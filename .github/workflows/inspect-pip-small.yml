@@ -1,4 +1,4 @@
-name: Inspect PIP response fields
+name: Inspect PIP Arrow response
 
 on:
   push:
@@ -15,41 +15,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Inspect selected countries
+      - name: Fetch all countries and years as Arrow
         run: |
+          set -euo pipefail
+          URL="https://api.worldbank.org/pip/v1/pip?country=all&year=all&ppp_version=2021&fill_gaps=true&reporting_level=national&version=20260324_2021_01_02_PROD&povline=3&format=arrow"
+          curl --fail --location --retry 2 --retry-delay 2 --connect-timeout 20 --max-time 240 \
+            --write-out 'http=%{http_code} bytes=%{size_download} seconds=%{time_total} type=%{content_type}\n' \
+            "$URL" --output /tmp/pip.arrow
+          ls -lh /tmp/pip.arrow
+          python -m pip install --quiet pyarrow
           python - <<'PY'
-          import json
-          import urllib.parse
-          import urllib.request
+          import pyarrow.feather as feather
           from collections import Counter
 
-          BASE = "https://api.worldbank.org/pip/v1/pip"
-          VERSION = "20260324_2021_01_02_PROD"
-          for country in ("ALB", "AUT", "DEU", "USA", "IND"):
-          	params = {
-          		"country": country,
-          		"year": "all",
-          		"ppp_version": "2021",
-          		"fill_gaps": "true",
-          		"reporting_level": "national",
-          		"version": VERSION,
-          		"povline": "3",
-          		"format": "json",
-          	}
-          	url = BASE + "?" + urllib.parse.urlencode(params)
-          	req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1", "Accept": "application/json"})
-          	with urllib.request.urlopen(req, timeout=120) as response:
-          		data = response.read()
-          	rows = json.loads(data)
-          	if isinstance(rows, dict):
-          		for key in ("data", "results", "result"):
-          			if isinstance(rows.get(key), list):
-          				rows = rows[key]
-          				break
-          	print("COUNTRY", country, "bytes", len(data), "rows", len(rows) if isinstance(rows, list) else "?")
-          	if isinstance(rows, list) and rows:
-          		print("FIELDS", sorted(rows[0]))
-          		print("TYPES", Counter(str(r.get("estimate_type", "")) for r in rows))
-          		print("INTERPOLATED", Counter(str(r.get("is_interpolated", "")) for r in rows))
-          		print("RECENT", json.dumps([r for r in rows if int(r.get("reporting_year", 0)) >= 2022], sort_keys=True)[:20000])
+          table = feather.read_table("/tmp/pip.arrow")
+          print("ROWS", table.num_rows)
+          print("COLUMNS", table.column_names)
+          frame = table.to_pandas()
+          print("COUNTRIES", frame["country_code"].nunique())
+          print("YEARS", int(frame["reporting_year"].min()), int(frame["reporting_year"].max()))
+          print("ESTIMATE_TYPES", Counter(frame["estimate_type"].astype(str)))
+          print("YEAR_COUNTS", frame.groupby("reporting_year")["country_code"].nunique().tail(10).to_dict())
           PY
