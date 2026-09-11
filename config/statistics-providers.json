@@ -7,6 +7,11 @@
 			"index": "world-bank/index.json"
 		},
 		{
+			"id": "world-bank-pip",
+			"name": "World Bank PIP",
+			"index": "world-bank-pip/index.json"
+		},
+		{
 			"id": "imf-weo",
 			"name": "IMF World Economic Outlook",
 			"index": "imf-weo/index.json"
