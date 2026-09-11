@@ -1,0 +1,201 @@
+{
+	"schema": "kartensammlung.jmp-statistics/v1",
+	"apiUrl": "https://sdmx.data.unicef.org/ws/public/sdmxapi/rest/data/UNICEF,WASH_HOUSEHOLDS,1.0/all?format=sdmx-json",
+	"dataflow": {
+		"agency": "UNICEF",
+		"id": "WASH_HOUSEHOLDS",
+		"version": "1.0"
+	},
+	"expectedStartYear": 2000,
+	"minimumLatestYear": 2024,
+	"provider": {
+		"id": "jmp",
+		"name": "WHO/UNICEF JMP",
+		"dataset": "WASH Households – WHO/UNICEF Joint Monitoring Programme",
+		"license": "CC BY 3.0 IGO",
+		"licenseUrl": "https://creativecommons.org/licenses/by/3.0/igo/",
+		"attribution": "WHO/UNICEF Joint Monitoring Programme (JMP)"
+	},
+	"indicators": [
+		{
+			"id": "wash.water.at-least-basic-percent",
+			"slug": "wash-water-at-least-basic-percent",
+			"sourceIndicator": "WS_PPL_W-ALB",
+			"serviceType": "WAT",
+			"title": "Trinkwasser: mindestens Basisversorgung (%)",
+			"description": "Anteil der Bevölkerung mit mindestens grundlegender Trinkwasserversorgung; umfasst grundlegende und sicher bewirtschaftete Dienste.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [50, 70, 85, 90, 95, 99]},
+			"minAreasWithAnyValue": 220,
+			"minAreasInLatestYear": 200
+		},
+		{
+			"id": "wash.water.safely-managed-percent",
+			"slug": "wash-water-safely-managed-percent",
+			"sourceIndicator": "WS_PPL_W-SM",
+			"serviceType": "WAT",
+			"title": "Trinkwasser: sicher bewirtschaftet (%)",
+			"description": "Anteil der Bevölkerung mit sicher bewirtschafteter Trinkwasserversorgung nach JMP-Definition.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [20, 40, 60, 75, 90, 98]},
+			"minAreasWithAnyValue": 155,
+			"minAreasInLatestYear": 150
+		},
+		{
+			"id": "wash.water.basic-percent",
+			"slug": "wash-water-basic-percent",
+			"sourceIndicator": "WS_PPL_W-B",
+			"serviceType": "WAT",
+			"title": "Trinkwasser: Basisversorgung (%)",
+			"description": "Anteil der Bevölkerung mit grundlegender Trinkwasserversorgung als eigene Stufe der JMP-Serviceleiter.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [10, 25, 50, 70, 85, 95]},
+			"minAreasWithAnyValue": 155,
+			"minAreasInLatestYear": 150
+		},
+		{
+			"id": "wash.water.limited-percent",
+			"slug": "wash-water-limited-percent",
+			"sourceIndicator": "WS_PPL_W-L",
+			"serviceType": "WAT",
+			"title": "Trinkwasser: eingeschränkte Versorgung (%)",
+			"description": "Anteil der Bevölkerung mit eingeschränkter Trinkwasserversorgung nach JMP-Serviceleiter.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 20, 40, 60]},
+			"minAreasWithAnyValue": 220,
+			"minAreasInLatestYear": 200
+		},
+		{
+			"id": "wash.water.unimproved-percent",
+			"slug": "wash-water-unimproved-percent",
+			"sourceIndicator": "WS_PPL_W-UI",
+			"serviceType": "WAT",
+			"title": "Trinkwasser: nicht verbesserte Quellen (%)",
+			"description": "Anteil der Bevölkerung, der nicht verbesserte Trinkwasserquellen nutzt.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 20, 40, 60]},
+			"minAreasWithAnyValue": 220,
+			"minAreasInLatestYear": 200
+		},
+		{
+			"id": "wash.water.surface-water-percent",
+			"slug": "wash-water-surface-water-percent",
+			"sourceIndicator": "WS_PPL_W-SW",
+			"serviceType": "WAT",
+			"title": "Trinkwasser: Oberflächenwasser (%)",
+			"description": "Anteil der Bevölkerung, der Oberflächenwasser als Trinkwasserquelle nutzt.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 2, 5, 10, 20, 40]},
+			"minAreasWithAnyValue": 220,
+			"minAreasInLatestYear": 195
+		},
+		{
+			"id": "wash.sanitation.at-least-basic-percent",
+			"slug": "wash-sanitation-at-least-basic-percent",
+			"sourceIndicator": "WS_PPL_S-ALB",
+			"serviceType": "SAN",
+			"title": "Sanitärversorgung: mindestens Basisversorgung (%)",
+			"description": "Anteil der Bevölkerung mit mindestens grundlegender Sanitärversorgung; umfasst grundlegende und sicher bewirtschaftete Dienste.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [40, 60, 75, 85, 95, 99]},
+			"minAreasWithAnyValue": 220,
+			"minAreasInLatestYear": 195
+		},
+		{
+			"id": "wash.sanitation.safely-managed-percent",
+			"slug": "wash-sanitation-safely-managed-percent",
+			"sourceIndicator": "WS_PPL_S-SM",
+			"serviceType": "SAN",
+			"title": "Sanitärversorgung: sicher bewirtschaftet (%)",
+			"description": "Anteil der Bevölkerung mit sicher bewirtschafteter Sanitärversorgung nach JMP-Definition.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [10, 25, 50, 70, 85, 95]},
+			"minAreasWithAnyValue": 140,
+			"minAreasInLatestYear": 135
+		},
+		{
+			"id": "wash.sanitation.basic-percent",
+			"slug": "wash-sanitation-basic-percent",
+			"sourceIndicator": "WS_PPL_S-B",
+			"serviceType": "SAN",
+			"title": "Sanitärversorgung: Basisversorgung (%)",
+			"description": "Anteil der Bevölkerung mit grundlegender Sanitärversorgung als eigene Stufe der JMP-Serviceleiter.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [10, 25, 50, 70, 85, 95]},
+			"minAreasWithAnyValue": 140,
+			"minAreasInLatestYear": 135
+		},
+		{
+			"id": "wash.sanitation.limited-percent",
+			"slug": "wash-sanitation-limited-percent",
+			"sourceIndicator": "WS_PPL_S-L",
+			"serviceType": "SAN",
+			"title": "Sanitärversorgung: eingeschränkt (%)",
+			"description": "Anteil der Bevölkerung mit eingeschränkter Sanitärversorgung nach JMP-Serviceleiter.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 20, 40, 60]},
+			"minAreasWithAnyValue": 220,
+			"minAreasInLatestYear": 195
+		},
+		{
+			"id": "wash.sanitation.unimproved-percent",
+			"slug": "wash-sanitation-unimproved-percent",
+			"sourceIndicator": "WS_PPL_S-UI",
+			"serviceType": "SAN",
+			"title": "Sanitärversorgung: nicht verbesserte Anlagen (%)",
+			"description": "Anteil der Bevölkerung, der nicht verbesserte Sanitäranlagen nutzt.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 20, 40, 60]},
+			"minAreasWithAnyValue": 220,
+			"minAreasInLatestYear": 195
+		},
+		{
+			"id": "wash.sanitation.open-defecation-percent",
+			"slug": "wash-sanitation-open-defecation-percent",
+			"sourceIndicator": "WS_PPL_S-OD",
+			"serviceType": "SAN",
+			"title": "Sanitärversorgung: offene Defäkation (%)",
+			"description": "Anteil der Bevölkerung, der offene Defäkation praktiziert.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 2, 5, 10, 20, 40]},
+			"minAreasWithAnyValue": 220,
+			"minAreasInLatestYear": 190
+		},
+		{
+			"id": "wash.hygiene.basic-percent",
+			"slug": "wash-hygiene-basic-percent",
+			"sourceIndicator": "WS_PPL_H-B",
+			"serviceType": "HYG",
+			"title": "Hygiene: Handwaschmöglichkeit mit Wasser und Seife (%)",
+			"description": "Anteil der Bevölkerung mit einer Handwaschmöglichkeit mit Wasser und Seife zu Hause; grundlegender Hygienedienst nach JMP.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [20, 40, 60, 75, 90, 98]},
+			"minAreasWithAnyValue": 115,
+			"minAreasInLatestYear": 85
+		},
+		{
+			"id": "wash.hygiene.limited-percent",
+			"slug": "wash-hygiene-limited-percent",
+			"sourceIndicator": "WS_PPL_H-L",
+			"serviceType": "HYG",
+			"title": "Hygiene: eingeschränkte Handwaschmöglichkeit (%)",
+			"description": "Anteil der Bevölkerung mit einer eingeschränkten Handwaschmöglichkeit zu Hause.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 20, 40, 60]},
+			"minAreasWithAnyValue": 110,
+			"minAreasInLatestYear": 75
+		},
+		{
+			"id": "wash.hygiene.no-facility-percent",
+			"slug": "wash-hygiene-no-facility-percent",
+			"sourceIndicator": "WS_PPL_H-N",
+			"serviceType": "HYG",
+			"title": "Hygiene: keine Handwaschmöglichkeit (%)",
+			"description": "Anteil der Bevölkerung ohne Handwaschmöglichkeit zu Hause.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 20, 40, 60]},
+			"minAreasWithAnyValue": 120,
+			"minAreasInLatestYear": 85
+		}
+	]
+}
