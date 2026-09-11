@@ -23,6 +23,8 @@ DEFAULT_PROVIDERS = ROOT / "config" / "statistics-providers.json"
 DEFAULT_OUTPUT_DIR = ROOT / "dist" / "statistics"
 DEFAULT_REGISTRY = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
 
+IGNORED_SOURCE_AREAS = {"CHI": "Channel Islands"}
+
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
@@ -273,6 +275,8 @@ def collect_rows_by_area_year(
 			continue
 		source_code = str(row.get("country_code", "")).strip().upper()
 		if not source_code:
+			continue
+		if source_code in IGNORED_SOURCE_AREAS:
 			continue
 		iso3 = mapped_iso3(source_code, aliases)
 		area_id = area_by_iso3.get(iso3)
@@ -544,7 +548,9 @@ def main() -> None:
 	for line in (4.2, 8.3):
 		validate_cross_line_consistency(base_rows, rows_by_line[line], line)
 	if all_unresolved:
-		print(f"Unmapped World Bank PIP source country codes: {sorted(all_unresolved)}")
+		raise RuntimeError(
+			f"Unexpected unmapped World Bank PIP source country codes: {sorted(all_unresolved)}"
+		)
 	if len({area_id for _year, area_id in base_rows}) < 160:
 		raise RuntimeError("World Bank PIP mapped country coverage is unexpectedly low.")
 
