@@ -22,13 +22,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Inspect FAOSTAT area codes
+      - name: Inspect selected FAOSTAT food security values
         run: |
           python - <<'PY'
           import csv
           import io
+          import re
           import urllib.request
           import zipfile
+          from collections import Counter, defaultdict
 
           url = "https://bulks-faostat.fao.org/production/Food_Security_Data_E_All_Data_(Normalized).zip"
           request = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1"})
@@ -36,27 +38,50 @@ jobs:
           	data = response.read()
 
           with zipfile.ZipFile(io.BytesIO(data)) as archive:
-          	name = "Food_Security_Data_E_AreaCodes.csv"
-          	raw = archive.read(name)
+          	raw = archive.read("Food_Security_Data_E_All_Data_(Normalized).csv")
 
           text = raw.decode("utf-8-sig")
-          reader = csv.DictReader(io.StringIO(text))
-          rows = list(reader)
-          print("columns", reader.fieldnames)
-          print("rows", len(rows))
+          rows = list(csv.DictReader(io.StringIO(text)))
 
-          wanted_names = {"Austria", "Germany", "India", "United States of America", "United States", "Kosovo"}
-          for row in rows:
-          	if row.get("Area") in wanted_names:
-          		print("SAMPLE", row)
+          selected = {
+          	"210041": "PoU prevalence",
+          	"210011": "Undernourished people",
+          	"210091": "Moderate/severe FIES prevalence",
+          	"210081": "Moderate/severe FIES people",
+          	"210401": "Severe FIES prevalence",
+          	"210071": "Severe FIES people",
+          }
+          numeric_re = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$")
+          latest = "2023-2025"
+          wanted_m49 = {"040": "AUT", "276": "DEU", "840": "USA", "356": "IND"}
 
-          print("FIRST")
-          for row in rows[:20]:
-          	print(row)
+          for item_code, label in selected.items():
+          	item_rows = [
+          		row for row in rows
+          		if row.get("Item Code") == item_code and row.get("Element") == "Value"
+          	]
+          	periods = sorted({row.get("Year", "") for row in item_rows})
+          	nonnumeric = Counter(
+          		str(row.get("Value", "")).strip()
+          		for row in item_rows
+          		if str(row.get("Value", "")).strip()
+          		and not numeric_re.fullmatch(str(row.get("Value", "")).strip())
+          	)
+          	print("INDICATOR", item_code, label)
+          	print("periods", periods[:3], "...", periods[-3:])
+          	print("rows", len(item_rows), "nonnumeric-count", sum(nonnumeric.values()), "nonnumeric-values", nonnumeric.most_common(30))
 
-          print("NON-THREE-DIGIT-M49")
-          for row in rows:
-          	m49 = str(row.get("M49 Code", row.get("Area Code (M49)", ""))).strip()
-          	if m49 and (not m49.isdigit() or len(m49) != 3):
-          		print(row)
+          	latest_rows = [row for row in item_rows if row.get("Year") == latest]
+          	print("latest-count", len(latest_rows), "units", sorted({row.get("Unit", "") for row in latest_rows}))
+          	for raw_m49, iso3 in wanted_m49.items():
+          		matches = []
+          		for row in latest_rows:
+          			m49 = str(row.get("Area Code (M49)", "")).strip().lstrip("'").zfill(3)
+          			if m49 == raw_m49:
+          				matches.append({key: row.get(key) for key in ("Area", "Year", "Unit", "Value", "Flag", "Note")})
+          		print("sample", iso3, matches)
+
+          	flags = Counter(row.get("Flag", "") for row in item_rows)
+          	print("flags", dict(sorted(flags.items())))
+          	print()
           PY
