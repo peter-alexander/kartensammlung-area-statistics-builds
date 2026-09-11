@@ -1,0 +1,61 @@
+name: Add M49 codes to country registry test branch
+
+on:
+  push:
+    branches:
+      - test/faostat
+    paths:
+      - ".github/workflows/temp-add-m49-registry.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test/faostat
+
+      - name: Patch country registry builder
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/build_countries.py")
+          text = path.read_text(encoding="utf-8")
+
+          marker = "\n\ndef load_country_names(codes: dict[str, str]) -> dict[str, str]:\n"
+          addition = '''\n\ndef country_m49_code(iso2: str) -> str | None:\n\tcountry = pycountry.countries.get(alpha_2=iso2)\n\tif country is None:\n\t\treturn None\n\tm49 = str(getattr(country, "numeric", "")).strip()\n\tif not re.fullmatch(r"\\d{3}", m49):\n\t\traise RuntimeError(f"Invalid M49 code for {iso2}: {m49!r}")\n\treturn m49\n'''
+          if "def country_m49_code(" not in text:
+          	if marker not in text:
+          		raise RuntimeError("Could not locate country-name insertion point")
+          	text = text.replace(marker, addition + marker, 1)
+
+          old = '''\t\tcodes = {"iso2": iso2, "iso3": iso3}\n\t\tif overture_id:\n'''
+          new = '''\t\tcodes = {"iso2": iso2, "iso3": iso3}\n\t\tm49 = country_m49_code(iso2)\n\t\tif m49:\n\t\t\tcodes["m49"] = m49\n\t\tif overture_id:\n'''
+          if old not in text:
+          	raise RuntimeError("Could not locate registry code block")
+          text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+
+          workflow = Path(".github/workflows/build-country-geometry.yml")
+          workflow_text = workflow.read_text(encoding="utf-8")
+          old_branches = '''  push:\n    branches:\n      - main\n    paths:\n'''
+          new_branches = '''  push:\n    branches:\n      - main\n      - test/faostat\n    paths:\n'''
+          if old_branches not in workflow_text:
+          	raise RuntimeError("Could not locate country workflow push branches")
+          workflow.write_text(workflow_text.replace(old_branches, new_branches, 1), encoding="utf-8")
+          PY
+
+          python -m py_compile scripts/build_countries.py
+          git diff --check
+          git diff -- scripts/build_countries.py .github/workflows/build-country-geometry.yml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/build_countries.py .github/workflows/build-country-geometry.yml
+          git commit -m "Add M49 codes to country registry"
+          git push origin HEAD:test/faostat
