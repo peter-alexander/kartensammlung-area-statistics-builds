@@ -50,6 +50,11 @@
 			"id": "unesco-uis",
 			"name": "UNESCO UIS",
 			"index": "unesco-uis/index.json"
+		},
+		{
+			"id": "ilostat",
+			"name": "ILOSTAT",
+			"index": "ilostat/index.json"
 		}
 	]
 }
