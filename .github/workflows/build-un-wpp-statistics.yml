@@ -8,7 +8,9 @@ on:
     paths:
       - "config/statistics-providers.json"
       - "config/un-wpp-indicators.json"
+      - "config/un-wpp-age-indicators.json"
       - "scripts/build_un_wpp.py"
+      - "scripts/extend_un_wpp_age.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
       - ".github/workflows/build-un-wpp-statistics.yml"
   push:
@@ -17,7 +19,9 @@ on:
     paths:
       - "config/statistics-providers.json"
       - "config/un-wpp-indicators.json"
+      - "config/un-wpp-age-indicators.json"
       - "scripts/build_un_wpp.py"
+      - "scripts/extend_un_wpp_age.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
       - ".github/workflows/build-un-wpp-statistics.yml"
 
@@ -46,7 +50,9 @@ jobs:
         run: |
           bash -n .github/scripts/deploy-world-bank-statistics.sh
           python -m py_compile scripts/build_un_wpp.py
+          python -m py_compile scripts/extend_un_wpp_age.py
           python -m json.tool config/un-wpp-indicators.json >/dev/null
+          python -m json.tool config/un-wpp-age-indicators.json >/dev/null
 
       - name: Build UN WPP statistics
         shell: bash
@@ -55,6 +61,7 @@ jobs:
           mkdir -p diagnostics
           REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           python scripts/build_un_wpp.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/un-wpp.log
+          python scripts/extend_un_wpp_age.py --registry "$REGISTRY_URL" 2>&1 | tee -a diagnostics/un-wpp.log
 
       - name: Show statistics summary
         run: |
