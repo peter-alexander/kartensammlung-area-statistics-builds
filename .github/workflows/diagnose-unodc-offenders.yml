@@ -6,8 +6,8 @@ on:
     branches:
       - main
     paths:
-      - "config/unodc-offender-diagnostics.json"
       - "scripts/build_unodc.py"
+      - "scripts/inspect_unodc_offenders.py"
       - ".github/workflows/diagnose-unodc-offenders.yml"
 
 permissions:
@@ -29,16 +29,12 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install --disable-pip-version-check openpyxl
 
-      - name: Run offender diagnostics
+      - name: Inspect offender rows
         shell: bash
         run: |
           set -o pipefail
           mkdir -p diagnostics
-          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?diagnostic=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          python scripts/build_unodc.py \
-          	--config config/unodc-offender-diagnostics.json \
-          	--output-dir diagnostics/statistics \
-          	--registry "$REGISTRY_URL" 2>&1 | tee diagnostics/unodc-offenders.log
+          python scripts/inspect_unodc_offenders.py 2>&1 | tee diagnostics/unodc-offenders.log
 
       - name: Upload diagnostics
         if: always()
