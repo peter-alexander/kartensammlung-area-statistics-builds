@@ -8,8 +8,13 @@ on:
     paths:
       - "config/statistics-providers.json"
       - "config/eurostat-indicators.json"
+      - "config/country-code-overrides.json"
+      - "config/country-compositions.json"
+      - "config/overture-excluded-country-codes.json"
       - "scripts/build_eurostat.py"
+      - "scripts/build_countries.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-country-geometry.yml"
       - ".github/workflows/build-eurostat-statistics.yml"
   push:
     branches:
@@ -17,8 +22,13 @@ on:
     paths:
       - "config/statistics-providers.json"
       - "config/eurostat-indicators.json"
+      - "config/country-code-overrides.json"
+      - "config/country-compositions.json"
+      - "config/overture-excluded-country-codes.json"
       - "scripts/build_eurostat.py"
+      - "scripts/build_countries.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-country-geometry.yml"
       - ".github/workflows/build-eurostat-statistics.yml"
 
 permissions:
