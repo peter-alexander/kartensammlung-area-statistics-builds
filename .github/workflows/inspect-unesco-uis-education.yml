@@ -17,59 +17,130 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Inspect UIS archives
+      - name: Inspect UIS candidate year coverage
         run: |
           python - <<'PY'
+          import collections
           import csv
           import io
-          import re
           import urllib.request
           import zipfile
 
-          archives = {
-          	"SDG": "https://download.uis.unesco.org/bdds/202602/SDG.zip",
-          	"OPRI": "https://download.uis.unesco.org/bdds/202602/OPRI.zip",
+          ARCHIVES = {
+          	"SDG": {
+          		"url": "https://download.uis.unesco.org/bdds/202602/SDG.zip",
+          		"dataMember": "SDG_DATA_NATIONAL.csv",
+          		"labelMember": "SDG_LABEL.csv",
+          		"indicators": [
+          			"LR.AG15T99",
+          			"LR.AG15T24",
+          			"CR.1",
+          			"CR.2",
+          			"CR.3",
+          			"ROFST.1.CP",
+          			"ROFST.2.CP",
+          			"ROFST.3.CP",
+          			"GER.5T8",
+          			"NER.02.CP",
+          			"XGDP.FSGOV",
+          			"XGOVEXP.IMF",
+          			"PTRHC.1.TRAINED",
+          			"PTRHC.1.QUALIFIED",
+          		],
+          	},
+          	"OPRI": {
+          		"url": "https://download.uis.unesco.org/bdds/202602/OPRI.zip",
+          		"dataMember": "OPRI_DATA_NATIONAL.csv",
+          		"labelMember": "OPRI_LABEL.csv",
+          		"indicators": [
+          			"GER.1",
+          			"GER.2",
+          			"GER.3",
+          			"NERT.1.CP",
+          			"NERT.2.CP",
+          			"SLE.1T8",
+          			"REPR.1.CP",
+          			"REPR.2.CP",
+          		],
+          	},
           }
-          keywords = re.compile(
-          	r"literacy|completion|out.of.school|enrol|enroll|pupil|teacher|expenditure|proficiency|school life expectancy|survival|repetition",
-          	re.I,
-          )
 
-          for archive_name, url in archives.items():
-          	print(f"=== {archive_name} {url} ===")
-          	request = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1"})
+          for archive_name, config in ARCHIVES.items():
+          	print(f"=== {archive_name} ===")
+          	request = urllib.request.Request(
+          		config["url"],
+          		headers={"User-Agent": "kartensammlung-area-statistics-builds/1"},
+          	)
           	with urllib.request.urlopen(request, timeout=120) as response:
           		data = response.read()
-          	print(f"bytes={len(data)}")
+          	print(f"downloaded={len(data)} bytes")
+
           	with zipfile.ZipFile(io.BytesIO(data)) as archive:
-          		members = archive.namelist()
-          		print("members:")
-          		for member in members:
-          			print(f"  {member}")
-          		for member in members:
-          			if not member.lower().endswith(".csv"):
+          		members = set(archive.namelist())
+          		for required in (config["dataMember"], config["labelMember"]):
+          			if required not in members:
+          				raise RuntimeError(f"Missing {required} in {archive_name}: {sorted(members)}")
+
+          		labels = {}
+          		print("PTR LABELS:")
+          		with archive.open(config["labelMember"]) as raw:
+          			reader = csv.DictReader(io.TextIOWrapper(raw, encoding="utf-8-sig", newline=""))
+          			for row in reader:
+          				code = str(row.get("INDICATOR_ID", "")).strip()
+          				label = str(row.get("INDICATOR_LABEL_EN", "")).strip()
+          				if code:
+          					labels[code] = label
+          				if code.startswith("PTR"):
+          					print(f"  {code}: {label}")
+
+          		selected = set(config["indicators"])
+          		by_indicator_year = {
+          			indicator: collections.defaultdict(set)
+          			for indicator in config["indicators"]
+          		}
+          		all_countries = {indicator: set() for indicator in config["indicators"]}
+          		duplicates = collections.Counter()
+          		seen = set()
+
+          		with archive.open(config["dataMember"]) as raw:
+          			reader = csv.DictReader(io.TextIOWrapper(raw, encoding="utf-8-sig", newline=""))
+          			required_fields = {"INDICATOR_ID", "COUNTRY_ID", "YEAR", "VALUE"}
+          			missing = required_fields - set(reader.fieldnames or [])
+          			if missing:
+          				raise RuntimeError(f"{config['dataMember']} missing fields {sorted(missing)}")
+          			for row in reader:
+          				indicator = str(row.get("INDICATOR_ID", "")).strip()
+          				if indicator not in selected:
+          					continue
+          				country = str(row.get("COUNTRY_ID", "")).strip().upper()
+          				year_text = str(row.get("YEAR", "")).strip()
+          				value_text = str(row.get("VALUE", "")).strip()
+          				if not country or not year_text.isdigit() or not value_text:
+          					continue
+          				year = int(year_text)
+          				key = (indicator, country, year)
+          				if key in seen:
+          					duplicates[indicator] += 1
+          				seen.add(key)
+          				by_indicator_year[indicator][year].add(country)
+          				all_countries[indicator].add(country)
+
+          		for indicator in config["indicators"]:
+          			years = by_indicator_year[indicator]
+          			print(f"INDICATOR {indicator} label={labels.get(indicator)!r}")
+          			print(f"  countriesAnyYear={len(all_countries[indicator])} duplicates={duplicates[indicator]}")
+          			if not years:
+          				print("  NO DATA")
           				continue
-          			with archive.open(member) as raw:
-          				text = io.TextIOWrapper(raw, encoding="utf-8-sig", newline="")
-          				reader = csv.DictReader(text)
-          				print(f"CSV {member} fields={reader.fieldnames}")
-          				matches = {}
-          				for row_index, row in enumerate(reader, start=1):
-          					if row_index <= 3:
-          						print(f"sample[{row_index}]={row}")
-          					joined = " | ".join(str(value or "") for value in row.values())
-          					if not keywords.search(joined):
-          						continue
-          					indicator_key = next((key for key in row if "INDICATOR" in key.upper() and "LABEL" not in key.upper()), None)
-          					label_key = next((key for key in row if ("INDICATOR" in key.upper() and "LABEL" in key.upper()) or key.upper() in {"INDICATOR_NAME", "INDICATOR_LABEL"}), None)
-          					code = str(row.get(indicator_key, "") if indicator_key else "").strip()
-          					label = str(row.get(label_key, "") if label_key else "").strip()
-          					if not code:
-          						code = next((str(v).strip() for k, v in row.items() if "IND" in k.upper() and str(v).strip()), "")
-          					if not label:
-          						label = joined[:500]
-          					matches[(code, label)] = matches.get((code, label), 0) + 1
-          				print(f"matching series in {member}: {len(matches)}")
-          				for (code, label), count in list(sorted(matches.items()))[:300]:
-          					print(f"MATCH code={code!r} rows={count} label={label!r}")
+          			print(f"  range={min(years)}-{max(years)}")
+          			print(
+          				"  recent=" + ", ".join(
+          					f"{year}:{len(years[year])}"
+          					for year in sorted(years)
+          					if year >= 2018
+          				)
+          			)
+          			for threshold in (100, 125, 150, 175):
+          				eligible = [year for year, countries in years.items() if len(countries) >= threshold]
+          				print(f"  newest>={threshold}: {max(eligible) if eligible else None}")
           PY
