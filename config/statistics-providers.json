@@ -45,6 +45,11 @@
 			"id": "ember",
 			"name": "Ember",
 			"index": "ember/index.json"
+		},
+		{
+			"id": "unesco-uis",
+			"name": "UNESCO UIS",
+			"index": "unesco-uis/index.json"
 		}
 	]
 }
