@@ -20,6 +20,7 @@ def main() -> None:
 		subcategories: set[str] = set()
 		variables: dict[tuple[str, str, str], set[str]] = defaultdict(set)
 		coverage: dict[tuple[str, str, str, str], set[str]] = defaultdict(set)
+		coverage_by_year: dict[tuple[str, str, str, str, int], set[str]] = defaultdict(set)
 		years: set[int] = set()
 		rows = 0
 		for row in reader:
@@ -37,9 +38,13 @@ def main() -> None:
 			subcategories.add(subcategory)
 			variables[(category, subcategory, variable)].add(unit)
 			if year_text.isdigit():
-				years.add(int(year_text))
-			if area_type == "Country or economy" and year_text.isdigit() and value:
+				year = int(year_text)
+				years.add(year)
+			else:
+				year = None
+			if area_type == "Country or economy" and year is not None and value:
 				coverage[(category, subcategory, variable, unit)].add(area)
+				coverage_by_year[(category, subcategory, variable, unit, year)].add(area)
 
 	print(f"rows={rows}")
 	print(f"areaTypes={sorted(area_types)}")
@@ -51,7 +56,14 @@ def main() -> None:
 		category, subcategory, variable = key
 		units = sorted(variables[key])
 		country_count = max((len(coverage[(category, subcategory, variable, unit)]) for unit in units), default=0)
-		print(f"  {category} | {subcategory} | {variable} | units={units} | countries={country_count}")
+		year_counts = {
+			year: max((len(coverage_by_year[(category, subcategory, variable, unit, year)]) for unit in units), default=0)
+			for year in (2023, 2024, 2025)
+		}
+		print(
+			f"  {category} | {subcategory} | {variable} | units={units} | countries={country_count} "
+			f"| 2023={year_counts[2023]} 2024={year_counts[2024]} 2025={year_counts[2025]}"
+		)
 
 
 if __name__ == "__main__":
