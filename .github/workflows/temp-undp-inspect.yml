@@ -15,81 +15,108 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Inspect current UNDP HDR download
+      - name: Measure mapped UNDP HDR indicators
         run: |
           python - <<'PY'
-          import collections
           import csv
           import io
+          import json
+          import math
           import re
           import urllib.parse
           import urllib.request
 
-          docs = "https://hdr.undp.org/data-center/documentation-and-downloads"
-          req = urllib.request.Request(docs, headers={"User-Agent": "kartensammlung-area-statistics-builds/1"})
-          with urllib.request.urlopen(req, timeout=60) as response:
-          	html = response.read().decode("utf-8", errors="replace")
+          UA = {"User-Agent": "kartensammlung-area-statistics-builds/1"}
 
+          def get(url, accept=None):
+          	headers = dict(UA)
+          	if accept:
+          		headers["Accept"] = accept
+          	request = urllib.request.Request(url, headers=headers)
+          	with urllib.request.urlopen(request, timeout=120) as response:
+          		return response.read()
+
+          registry = json.loads(get("https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?undp=coverage").decode("utf-8"))
+          area_by_iso3 = {
+          	str(area.get("codes", {}).get("iso3", "")).strip().upper(): str(area.get("area_id", "")).strip()
+          	for area in registry.get("areas", [])
+          	if area.get("level") == "country" and str(area.get("codes", {}).get("iso3", "")).strip()
+          }
+          print(f"registryCountries={len(area_by_iso3)}")
+
+          docs = "https://hdr.undp.org/data-center/documentation-and-downloads"
+          html = get(docs).decode("utf-8", errors="replace")
           matches = re.findall(r'href=["\']([^"\']*Composite_indices_complete_time_series\.csv[^"\']*)["\']', html, flags=re.I)
           matches = list(dict.fromkeys(urllib.parse.urljoin(docs, value) for value in matches))
-          print(f"discovered={matches}")
           if len(matches) != 1:
-          	raise SystemExit(f"Expected exactly one composite time-series CSV link, found {len(matches)}")
-
+          	raise SystemExit(f"Expected one UNDP composite CSV, found {matches}")
           url = matches[0]
-          req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1", "Accept": "text/csv,*/*"})
-          with urllib.request.urlopen(req, timeout=120) as response:
-          	data = response.read()
-          	content_type = response.headers.get("Content-Type")
-          	last_modified = response.headers.get("Last-Modified")
-          	etag = response.headers.get("ETag")
-          print(f"url={url}")
-          print(f"bytes={len(data)} contentType={content_type} lastModified={last_modified} etag={etag}")
-
-          decoded = None
+          data = get(url, "text/csv,*/*")
+          text = None
           for encoding in ("utf-8-sig", "cp1252", "latin-1"):
           	try:
-          		decoded = data.decode(encoding)
+          		text = data.decode(encoding)
           		print(f"encoding={encoding}")
           		break
           	except UnicodeDecodeError:
           		continue
-          if decoded is None:
+          if text is None:
           	raise SystemExit("Could not decode UNDP CSV")
+          rows = list(csv.DictReader(io.StringIO(text)))
+          print(f"sourceRows={len(rows)} url={url}")
 
-          reader = csv.DictReader(io.StringIO(decoded))
-          rows = list(reader)
-          fields = reader.fieldnames or []
-          print(f"rows={len(rows)} columns={len(fields)}")
-          print(f"first40Columns={fields[:40]}")
-          if not rows or not fields:
-          	raise SystemExit("Empty UNDP CSV")
+          candidates = {
+          	"hdi": (1990, 2023),
+          	"ihdi": (2010, 2023),
+          	"loss": (2010, 2023),
+          	"gdi": (1990, 2023),
+          	"gii": (1990, 2023),
+          	"phdi": (1990, 2023),
+          }
 
-          print(f"firstRowIdentity={dict(list(rows[0].items())[:10])}")
+          source_codes = {str(row.get("iso3", "")).strip().upper() for row in rows if str(row.get("iso3", "")).strip()}
+          unmatched = sorted(source_codes - set(area_by_iso3))
+          print(f"unmatchedSourceIso3={unmatched}")
 
-          annual = collections.defaultdict(list)
-          for field in fields:
-          	match = re.fullmatch(r"(.+)_([12][0-9]{3})", field)
-          	if match:
-          		annual[match.group(1)].append(int(match.group(2)))
-          nonannual = [field for field in fields if not re.fullmatch(r"(.+)_([12][0-9]{3})", field)]
-          print(f"nonAnnualColumns={nonannual}")
-          print("annualSeries:")
-          for prefix in sorted(annual):
-          	years = sorted(annual[prefix])
-          	latest = years[-1]
-          	latest_col = f"{prefix}_{latest}"
-          	latest_nonempty = sum(1 for row in rows if str(row.get(latest_col, "")).strip() not in {"", "..", "nan"})
-          	any_nonempty = sum(
-          		1 for row in rows
-          		if any(str(row.get(f"{prefix}_{year}", "")).strip() not in {"", "..", "nan"} for year in years)
+          for prefix, (first_year, last_year) in candidates.items():
+          	areas = set()
+          	latest_values = {}
+          	all_values = []
+          	year_counts = {}
+          	for year in range(first_year, last_year + 1):
+          		column = f"{prefix}_{year}"
+          		mapped = {}
+          		for row in rows:
+          			iso3 = str(row.get("iso3", "")).strip().upper()
+          			area_id = area_by_iso3.get(iso3)
+          			if not area_id:
+          				continue
+          			raw = str(row.get(column, "")).strip()
+          			if raw in {"", "..", "nan"}:
+          				continue
+          			try:
+          				value = float(raw)
+          			except ValueError:
+          				raise SystemExit(f"Non-numeric {prefix} value {raw!r} for {iso3} {year}")
+          			if not math.isfinite(value):
+          				raise SystemExit(f"Non-finite {prefix} value for {iso3} {year}")
+          			mapped[iso3] = value
+          			areas.add(iso3)
+          			all_values.append(value)
+          		year_counts[year] = len(mapped)
+          	if last_year in year_counts:
+          		column = f"{prefix}_{last_year}"
+          		for row in rows:
+          			iso3 = str(row.get("iso3", "")).strip().upper()
+          			if iso3 not in area_by_iso3:
+          				continue
+          			raw = str(row.get(column, "")).strip()
+          			if raw not in {"", "..", "nan"}:
+          				latest_values[iso3] = float(raw)
+          	print(
+          		f"{prefix}: mappedAny={len(areas)} years={first_year}-{last_year} "
+          		f"latestCoverage={year_counts[last_year]} range={min(all_values):g}..{max(all_values):g}"
           	)
-          	print(f"  {prefix}: years={years[0]}-{years[-1]} count={len(years)} anyRows={any_nonempty} latestRows={latest_nonempty}")
-
-          print("nonAnnualCoverage:")
-          for field in nonannual:
-          	values = [str(row.get(field, "")).strip() for row in rows]
-          	nonempty = [value for value in values if value not in {"", "..", "nan"}]
-          	unique = list(dict.fromkeys(nonempty))
-          	print(f"  {field}: nonempty={len(nonempty)} unique={len(set(nonempty))} sample={unique[:8]}")
+          	print(f"  recentCoverage={[(year, year_counts[year]) for year in range(last_year - 4, last_year + 1)]}")
+          	print(f"  samples={{'AUT': {latest_values.get('AUT')}, 'DEU': {latest_values.get('DEU')}, 'USA': {latest_values.get('USA')}, 'IND': {latest_values.get('IND')}}}")
           PY
