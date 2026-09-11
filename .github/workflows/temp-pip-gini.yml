@@ -1,4 +1,4 @@
-name: Inspect WDI Gini coverage
+name: Dispatch final PIP validation
 
 on:
   push:
@@ -8,75 +8,27 @@ on:
       - ".github/workflows/temp-pip-gini.yml"
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
 
 jobs:
-  inspect:
+  dispatch:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
         with:
-          python-version: "3.12"
+          fetch-depth: 0
 
-      - name: Inspect mapped WDI Gini coverage
+      - name: Remove temporary workflow
         run: |
-          python - <<'PY'
-          import collections
-          import json
-          import urllib.parse
-          import urllib.request
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/temp-pip-gini.yml
+          git commit -m "Remove temporary PIP Gini diagnostic workflow"
+          git push
 
-          def get_json(url):
-          	request = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/diagnostic", "Accept": "application/json"})
-          	with urllib.request.urlopen(request, timeout=60) as response:
-          		return json.load(response)
-
-          registry = get_json("https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?diagnostic=wdi-gini")
-          iso3 = {
-          	str(area.get("codes", {}).get("iso3", "")).upper()
-          	for area in registry.get("areas", [])
-          	if area.get("level") == "country"
-          }
-          iso3.discard("")
-
-          params = urllib.parse.urlencode({"format": "json", "source": "2", "per_page": "20000", "page": "1"})
-          url = f"https://api.worldbank.org/v2/country/all/indicator/SI.POV.GINI?{params}"
-          payload = get_json(url)
-          metadata, records = payload
-          print(f"pages={metadata.get('pages')} total={metadata.get('total')} registryCountries={len(iso3)}")
-          if int(metadata.get("pages", 1)) != 1:
-          	raise SystemExit("Diagnostic expected one WDI page")
-
-          countries = set()
-          by_year = collections.Counter()
-          required = {"AUT": [], "DEU": [], "USA": [], "IND": []}
-          values = []
-          for record in records:
-          	value = record.get("value")
-          	code = str(record.get("countryiso3code", "")).upper()
-          	year_text = str(record.get("date", ""))
-          	if value is None or code not in iso3 or len(year_text) != 4 or not year_text.isdigit():
-          		continue
-          	year = int(year_text)
-          	if year > 2026:
-          		continue
-          	countries.add(code)
-          	by_year[year] += 1
-          	values.append(float(value))
-          	if code in required:
-          		required[code].append((year, value))
-
-          print(f"mappedCountriesWithAnyValue={len(countries)}")
-          print(f"valueRange={min(values)}..{max(values)}")
-          print(f"broad75Threshold={int(-(-len(countries) * 75 // 100))}")
-          print("topCoverageYears:")
-          for year, count in sorted(by_year.items(), key=lambda item: (-item[1], -item[0]))[:20]:
-          	print(f"  {year}: {count}")
-          print("recentYears:")
-          for year in range(max(by_year), max(min(by_year), max(by_year) - 12) - 1, -1):
-          	print(f"  {year}: {by_year.get(year, 0)}")
-          for code, rows in required.items():
-          	rows.sort()
-          	print(f"{code}: count={len(rows)} latest={rows[-1] if rows else None}")
-          PY
+      - name: Dispatch production PIP validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build-world-bank-pip-statistics.yml --ref main
