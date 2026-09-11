@@ -12,9 +12,7 @@
 		"licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
 		"attribution": "International Labour Organization (ILO), ILOSTAT"
 	},
-	"iso3Aliases": {
-		"CHA": "TCD"
-	},
+	"iso3Aliases": {},
 	"indicators": [
 		{
 			"id": "labour.force-participation-15plus-percent",
