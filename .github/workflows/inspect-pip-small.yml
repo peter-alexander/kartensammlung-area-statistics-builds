@@ -1,4 +1,4 @@
-name: Inspect PIP poverty-line timings
+name: Harden PIP source-area validation
 
 on:
   push:
@@ -8,22 +8,51 @@ on:
       - ".github/workflows/inspect-pip-small.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect:
+  patch:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Compare poverty-line Arrow responses
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Make Channel Islands handling explicit
         run: |
-          set -u
-          VERSION="20260324_2021_01_02_PROD"
-          for line in 3 4.2 8.3; do
-            echo "=== ${line} ==="
-            curl --fail --location --connect-timeout 10 --max-time 60 \
-              --write-out 'http=%{http_code} bytes=%{size_download} seconds=%{time_total} type=%{content_type}\n' \
-              "https://api.worldbank.org/pip/v1/pip?country=all&year=all&ppp_version=2021&fill_gaps=true&reporting_level=national&version=${VERSION}&povline=${line}&format=arrow" \
-              --output "/tmp/pip-${line}.arrow" || true
-            ls -lh "/tmp/pip-${line}.arrow" 2>/dev/null || true
-          done
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/build_world_bank_pip.py")
+          text = path.read_text(encoding="utf-8")
+
+          old_defaults = 'DEFAULT_REGISTRY = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"\n'
+          new_defaults = old_defaults + '\nIGNORED_SOURCE_AREAS = {"CHI": "Channel Islands"}\n'
+          if text.count(old_defaults) != 1:
+          	raise SystemExit(f"Expected registry constant once, found {text.count(old_defaults)}")
+          text = text.replace(old_defaults, new_defaults, 1)
+
+          old_mapping = """\t\tsource_code = str(row.get(\"country_code\", \"\")).strip().upper()\n\t\tif not source_code:\n\t\t\tcontinue\n\t\tiso3 = mapped_iso3(source_code, aliases)\n"""
+          new_mapping = """\t\tsource_code = str(row.get(\"country_code\", \"\")).strip().upper()\n\t\tif not source_code:\n\t\t\tcontinue\n\t\tif source_code in IGNORED_SOURCE_AREAS:\n\t\t\tcontinue\n\t\tiso3 = mapped_iso3(source_code, aliases)\n"""
+          if text.count(old_mapping) != 1:
+          	raise SystemExit(f"Expected source mapping block once, found {text.count(old_mapping)}")
+          text = text.replace(old_mapping, new_mapping, 1)
+
+          old_unresolved = """\tif all_unresolved:\n\t\tprint(f\"Unmapped World Bank PIP source country codes: {sorted(all_unresolved)}\")\n"""
+          new_unresolved = """\tif all_unresolved:\n\t\traise RuntimeError(\n\t\t\tf\"Unexpected unmapped World Bank PIP source country codes: {sorted(all_unresolved)}\"\n\t\t)\n"""
+          if text.count(old_unresolved) != 1:
+          	raise SystemExit(f"Expected unresolved-code block once, found {text.count(old_unresolved)}")
+          text = text.replace(old_unresolved, new_unresolved, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+          python -m py_compile scripts/build_world_bank_pip.py
+
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/build_world_bank_pip.py
+          git commit -m "Harden PIP source-area validation"
+          git push
