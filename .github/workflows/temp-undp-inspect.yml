@@ -1,0 +1,68 @@
+name: Inspect UNDP HDR composite dataset
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/temp-undp-inspect.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Inspect current UNDP HDR download
+        run: |
+          python - <<'PY'
+          import collections
+          import csv
+          import io
+          import re
+          import urllib.parse
+          import urllib.request
+
+          docs = "https://hdr.undp.org/data-center/documentation-and-downloads"
+          req = urllib.request.Request(docs, headers={"User-Agent": "kartensammlung-area-statistics-builds/1"})
+          with urllib.request.urlopen(req, timeout=60) as response:
+          	html = response.read().decode("utf-8", errors="replace")
+
+          matches = re.findall(r'href=["\']([^"\']*Composite_indices_complete_time_series\.csv[^"\']*)["\']', html, flags=re.I)
+          matches = list(dict.fromkeys(urllib.parse.urljoin(docs, value) for value in matches))
+          print(f"discovered={matches}")
+          if len(matches) != 1:
+          	raise SystemExit(f"Expected exactly one composite time-series CSV link, found {len(matches)}")
+
+          url = matches[0]
+          req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1", "Accept": "text/csv,*/*"})
+          with urllib.request.urlopen(req, timeout=120) as response:
+          	data = response.read()
+          print(f"url={url}")
+          print(f"bytes={len(data)} contentType={response.headers.get('Content-Type')} lastModified={response.headers.get('Last-Modified')} etag={response.headers.get('ETag')}")
+
+          text = data.decode("utf-8-sig")
+          reader = csv.DictReader(io.StringIO(text))
+          rows = list(reader)
+          print(f"columns={reader.fieldnames}")
+          print(f"rows={len(rows)}")
+          print("firstRows:")
+          for row in rows[:3]:
+          	print(row)
+
+          if not reader.fieldnames:
+          	raise SystemExit("No CSV fields")
+
+          # Inspect likely identity and indicator columns without assuming the final schema yet.
+          for field in reader.fieldnames:
+          	values = [str(row.get(field, "")).strip() for row in rows]
+          	nonempty = [v for v in values if v]
+          	unique = list(dict.fromkeys(nonempty))
+          	print(f"field={field!r} nonempty={len(nonempty)} unique={len(set(nonempty))} sample={unique[:8]}")
+
+          # Long-format datasets usually expose an indicator code column; wide datasets expose code_year columns.
+          likely_codes = [f for f in reader.fieldnames if f.lower() in {"iso3", "iso_code", "country_code", "countryorarea", "country_code3"}]
+          print(f"likelyCountryCodeFields={likely_codes}")
+          PY
