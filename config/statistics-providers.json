@@ -32,6 +32,11 @@
 			"index": "who/index.json"
 		},
 		{
+			"id": "who-ghe",
+			"name": "WHO Global Health Estimates",
+			"index": "who-ghe/index.json"
+		},
+		{
 			"id": "jmp",
 			"name": "WHO/UNICEF JMP",
 			"index": "jmp/index.json"
