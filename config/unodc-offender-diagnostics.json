@@ -1,0 +1,70 @@
+{
+	"schema": "kartensammlung.unodc-statistics/v1",
+	"downloadUrls": [
+		"https://data.unodc.org/sites/dataportal.unodc.org/files/2026-07/data_cts_intentional_homicide.xlsx"
+	],
+	"provider": {
+		"id": "unodc",
+		"name": "UNODC",
+		"dataset": "UNODC Intentional Homicide",
+		"license": "UNODC Terms of Use",
+		"licenseUrl": "https://data.unodc.org/termsofuse",
+		"attribution": "United Nations Office on Drugs and Crime (UNODC)"
+	},
+	"sourcePage": "https://data.unodc.org/datareport/hom-offenders",
+	"broadCoverageFraction": 0.10,
+	"indicators": [
+		{
+			"id":"diagnostic.suspects-male-count",
+			"slug":"diagnostic-suspects-male-count",
+			"title":"Diagnostic suspects male count",
+			"description":"Diagnostic only.",
+			"filters":{"indicator":"Persons arrested/suspected for intentional homicide","dimension":"Total","sex":"Male","age":"Total","unit":"Counts"},
+			"unit":{"id":"persons","label":"Persons"},
+			"classification":{"type":"fixed","scale":"logarithmic","breaks":[1,10,100,1000,10000,100000]},
+			"minAreasWithAnyValue":1,
+			"broadCoverageFraction":0.01,
+			"maxDefaultYearAge":20,
+			"requiredAreas":[]
+		},
+		{
+			"id":"diagnostic.suspects-female-count",
+			"slug":"diagnostic-suspects-female-count",
+			"title":"Diagnostic suspects female count",
+			"description":"Diagnostic only.",
+			"filters":{"indicator":"Persons arrested/suspected for intentional homicide","dimension":"Total","sex":"Female","age":"Total","unit":"Counts"},
+			"unit":{"id":"persons","label":"Persons"},
+			"classification":{"type":"fixed","scale":"logarithmic","breaks":[1,10,100,1000,10000,100000]},
+			"minAreasWithAnyValue":1,
+			"broadCoverageFraction":0.01,
+			"maxDefaultYearAge":20,
+			"requiredAreas":[]
+		},
+		{
+			"id":"diagnostic.convicted-male-count",
+			"slug":"diagnostic-convicted-male-count",
+			"title":"Diagnostic convicted male count",
+			"description":"Diagnostic only.",
+			"filters":{"indicator":"Persons convicted for intentional homicide","dimension":"Total","sex":"Male","age":"Total","unit":"Counts"},
+			"unit":{"id":"persons","label":"Persons"},
+			"classification":{"type":"fixed","scale":"logarithmic","breaks":[1,10,100,1000,10000,100000]},
+			"minAreasWithAnyValue":1,
+			"broadCoverageFraction":0.01,
+			"maxDefaultYearAge":20,
+			"requiredAreas":[]
+		},
+		{
+			"id":"diagnostic.convicted-female-count",
+			"slug":"diagnostic-convicted-female-count",
+			"title":"Diagnostic convicted female count",
+			"description":"Diagnostic only.",
+			"filters":{"indicator":"Persons convicted for intentional homicide","dimension":"Total","sex":"Female","age":"Total","unit":"Counts"},
+			"unit":{"id":"persons","label":"Persons"},
+			"classification":{"type":"fixed","scale":"logarithmic","breaks":[1,10,100,1000,10000,100000]},
+			"minAreasWithAnyValue":1,
+			"broadCoverageFraction":0.01,
+			"maxDefaultYearAge":20,
+			"requiredAreas":[]
+		}
+	]
+}
