@@ -597,7 +597,7 @@ def create_country_tables(
 
 	connection.execute(
 		"""
-		CREATE TEMP TABLE country_labels AS
+		CREATE TEMP TABLE country_label_base AS
 		SELECT
 			'country:' || c.iso3 AS area_id,
 			c.name_de AS name,
@@ -628,6 +628,47 @@ def create_country_tables(
 		"""
 	)
 
+	connection.execute(
+		"""
+		CREATE TEMP TABLE country_labels AS
+		WITH area_metrics AS (
+			SELECT
+				area_id,
+				ROUND(
+					ST_Area(
+						ST_Transform(
+							geometry,
+							'EPSG:4326',
+							'EPSG:6933',
+							always_xy := true
+						)
+					) / 1000000.0,
+					1
+				) AS area_km2
+			FROM country_features
+		), ranked AS (
+			SELECT
+				b.area_id,
+				b.name,
+				b.name_local,
+				b.iso2,
+				b.iso3,
+				b.wikidata,
+				b.overture_id,
+				b.overture_subtype,
+				b.overture_parent_id,
+				m.area_km2,
+				ROW_NUMBER() OVER (
+					ORDER BY m.area_km2 DESC, b.iso3
+				) AS label_rank,
+				b.geometry
+			FROM country_label_base b
+			INNER JOIN area_metrics m USING (area_id)
+		)
+		SELECT * FROM ranked;
+		"""
+	)
+
 	target_count = len(codes)
 	country_count = connection.execute("SELECT COUNT(*) FROM country_features;").fetchone()[0]
 	label_count = connection.execute("SELECT COUNT(*) FROM country_labels;").fetchone()[0]
@@ -655,6 +696,24 @@ def create_country_tables(
 	if composition_count != len(compositions):
 		raise RuntimeError(
 			f"Composition count mismatch: expected={len(compositions)}, built={composition_count}"
+		)
+
+	label_metric_problem = connection.execute(
+		"""
+		SELECT COUNT(*)
+		FROM country_labels
+		WHERE area_km2 IS NULL OR area_km2 <= 0 OR label_rank IS NULL;
+		"""
+	).fetchone()[0]
+	if label_metric_problem:
+		raise RuntimeError(f"Invalid label area/rank metrics for {label_metric_problem} statistics areas.")
+	label_rank_stats = connection.execute(
+		"SELECT MIN(label_rank), MAX(label_rank), COUNT(DISTINCT label_rank) FROM country_labels;"
+	).fetchone()
+	if label_rank_stats != (1, target_count, target_count):
+		raise RuntimeError(
+			"Country label ranking is incomplete: "
+			f"min={label_rank_stats[0]}, max={label_rank_stats[1]}, distinct={label_rank_stats[2]}."
 		)
 
 	for area_id in (
@@ -713,20 +772,26 @@ def export_geojsonseq(
 	output_path: Path,
 ) -> None:
 	output_sql_path = output_path.resolve().as_posix().replace("'", "''")
+	fields = [
+		"area_id",
+		"name",
+		"name_local",
+		"iso2",
+		"iso3",
+		"wikidata",
+		"overture_id",
+		"overture_subtype",
+		"overture_parent_id",
+	]
+	if table_name == "country_labels":
+		fields.extend(["area_km2", "label_rank"])
+	fields.append("geometry")
+	select_fields = ",\n".join(f"\t\t\t\t{field}" for field in fields)
 	connection.execute(
 		f"""
 		COPY (
 			SELECT
-				area_id,
-				name,
-				name_local,
-				iso2,
-				iso3,
-				wikidata,
-				overture_id,
-				overture_subtype,
-				overture_parent_id,
-				geometry
+{select_fields}
 			FROM {table_name}
 			ORDER BY iso3
 		)
@@ -777,7 +842,18 @@ def write_registry(
 ) -> None:
 	rows = connection.execute(
 		"""
-		SELECT area_id, name, name_local, iso2, iso3, wikidata, overture_id, overture_subtype, overture_parent_id
+		SELECT
+			area_id,
+			name,
+			name_local,
+			iso2,
+			iso3,
+			wikidata,
+			overture_id,
+			overture_subtype,
+			overture_parent_id,
+			area_km2,
+			label_rank
 		FROM country_labels
 		ORDER BY iso3;
 		"""
@@ -785,7 +861,19 @@ def write_registry(
 	composition_components = resolved_composition_components(connection)
 
 	areas = []
-	for area_id, name, name_local, iso2, iso3, wikidata, overture_id, overture_subtype, overture_parent_id in rows:
+	for (
+		area_id,
+		name,
+		name_local,
+		iso2,
+		iso3,
+		wikidata,
+		overture_id,
+		overture_subtype,
+		overture_parent_id,
+		area_km2,
+		label_rank,
+	) in rows:
 		codes = {"iso2": iso2, "iso3": iso3}
 		if overture_id:
 			codes["overture"] = overture_id
@@ -795,6 +883,8 @@ def write_registry(
 		metadata = {
 			"overtureSubtype": overture_subtype,
 			"sourceName": name_local,
+			"areaKm2": area_km2,
+			"labelRank": label_rank,
 		}
 		if overture_parent_id:
 			metadata["overtureParentId"] = overture_parent_id
@@ -883,6 +973,12 @@ def write_metadata(
 			"compositionTargets": sorted(compositions),
 			"displayNameLanguage": "de",
 			"sourceNameProperty": "name_local",
+			"labelPriority": {
+				"property": "label_rank",
+				"areaProperty": "area_km2",
+				"method": "descending land area",
+				"areaProjection": "EPSG:6933",
+			},
 			"policy": (
 				"Complete ISO-3166-1 area-code set plus explicitly reviewed mappings. "
 				"Direct Overture country/dependency representations are preferred; configured composite "
