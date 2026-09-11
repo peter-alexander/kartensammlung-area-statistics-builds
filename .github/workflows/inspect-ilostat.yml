@@ -1,0 +1,166 @@
+name: Inspect ILOSTAT modelled labour indicators
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/inspect-ilostat.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Inspect ILOSTAT catalogue and candidate datasets
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import json
+          import re
+          import urllib.parse
+          import urllib.request
+
+          UA = {"User-Agent": "kartensammlung-area-statistics-builds/1"}
+          TOC_URL = "https://rplumber.ilo.org/data/metadata/toc/indicator/?lang=en"
+          FALLBACK_TOC_URL = "https://rplumber.ilo.org/metadata/toc/indicator/?lang=en"
+
+          def fetch(url, timeout=120):
+          	request = urllib.request.Request(url, headers=UA)
+          	with urllib.request.urlopen(request, timeout=timeout) as response:
+          		data = response.read()
+          		print(f"GET {url} -> {response.status} {response.headers.get('Content-Type')} {len(data)} bytes")
+          		return data, response.headers.get("Content-Type", "")
+
+          toc_data = None
+          for url in (TOC_URL, FALLBACK_TOC_URL):
+          	try:
+          		toc_data, toc_type = fetch(url)
+          		break
+          	except Exception as exc:
+          		print(f"TOC failed: {url}: {exc}")
+          if toc_data is None:
+          	raise RuntimeError("Could not load ILOSTAT indicator table of contents")
+
+          text = toc_data.decode("utf-8-sig")
+          try:
+          	payload = json.loads(text)
+          	print(f"TOC JSON type={type(payload).__name__}")
+          	if isinstance(payload, dict):
+          		print(f"TOC JSON keys={sorted(payload.keys())}")
+          		rows = payload.get("data") or payload.get("result") or payload.get("results") or payload.get("records") or []
+          	else:
+          		rows = payload
+          except json.JSONDecodeError:
+          	reader = csv.DictReader(io.StringIO(text))
+          	rows = list(reader)
+          	print(f"TOC CSV fields={reader.fieldnames} rows={len(rows)}")
+
+          if not isinstance(rows, list) or not rows:
+          	raise RuntimeError(f"Unexpected TOC payload: {str(payload)[:1000] if 'payload' in locals() else text[:1000]}")
+
+          print(f"TOC rows={len(rows)} sample keys={sorted(rows[0].keys())}")
+          print(f"TOC sample={rows[0]}")
+
+          patterns = [
+          	"labour force participation rate",
+          	"employment-to-population ratio",
+          	"neet rate",
+          	"not in employment, education or training",
+          	"informal employment rate",
+          	"time-related underemployment rate",
+          	"lu2:",
+          	"lu3:",
+          	"lu4:",
+          	"jobs gap rate",
+          	"average weekly hours actually worked per employed person",
+          	"employment by sex and economic activity",
+          	"employment by sex and status in employment",
+          	"labour income share",
+          	"gender income gap",
+          	"output per hour worked",
+          	"output per worker",
+          ]
+
+          def first(row, *names):
+          	for name in names:
+          		value = row.get(name)
+          		if value not in (None, ""):
+          			return str(value)
+          	return ""
+
+          matches = []
+          for row in rows:
+          	label = first(row, "indicator.label", "indicator_label", "indicator.label.en", "label", "title", "indicator")
+          	id_ = first(row, "id", "dataset", "dataset_id")
+          	freq = first(row, "freq", "frequency", "freq.label", "freq_label")
+          	hay = label.lower()
+          	if any(pattern in hay for pattern in patterns) and "modelled estimates" in hay.lower():
+          		matches.append((id_, label, freq, row))
+
+          print(f"MATCHES {len(matches)}")
+          for id_, label, freq, row in matches:
+          	print(f"MATCH id={id_} freq={freq} label={label} start={first(row, 'data.start', 'data_start')} end={first(row, 'data.end', 'data_end')} update={first(row, 'last.update', 'last_update')}")
+
+          wanted = []
+          wanted_needles = [
+          	"labour force participation rate by sex and age",
+          	"employment-to-population ratio by sex and age",
+          	"neet rate",
+          	"not in employment, education or training",
+          	"informal employment rate by sex",
+          	"time-related underemployment rate by sex and age",
+          	"lu2: combined rate of time-related underemployment and unemployment by sex --",
+          	"lu3: combined rate of unemployment and potential labour force by sex --",
+          	"lu4: composite rate of labour underutilization by sex --",
+          	"jobs gap rate by sex",
+          	"average weekly hours actually worked per employed person by sex",
+          	"employment by sex and economic activity",
+          	"employment by sex and status in employment",
+          	"labour income share as a percent of gdp",
+          	"gender income gap",
+          	"output per hour worked",
+          	"output per worker, gdp constant 2021 international",
+          ]
+          for id_, label, freq, row in matches:
+          	lower = label.lower()
+          	if any(needle in lower for needle in wanted_needles):
+          		if id_ and id_ not in [item[0] for item in wanted]:
+          			wanted.append((id_, label))
+
+          print(f"CANDIDATES {len(wanted)}")
+          for id_, label in wanted:
+          	params = urllib.parse.urlencode({
+          		"id": id_,
+          		"type": "code",
+          		"format": ".csv",
+          		"channel": "ilostat",
+          	})
+          	url = f"https://rplumber.ilo.org/data/indicator/?{params}"
+          	try:
+          		data, content_type = fetch(url)
+          		reader = csv.DictReader(io.StringIO(data.decode("utf-8-sig")))
+          		data_rows = list(reader)
+          		areas = {row.get("ref_area", "") for row in data_rows if row.get("ref_area")}
+          		years = sorted({int(row["time"]) for row in data_rows if str(row.get("time", "")).isdigit()})
+          		sexes = sorted({row.get("sex", "") for row in data_rows if row.get("sex")})
+          		classif1 = sorted({row.get("classif1", "") for row in data_rows if row.get("classif1")})
+          		classif2 = sorted({row.get("classif2", "") for row in data_rows if row.get("classif2")})
+          		sources = sorted({row.get("source", "") for row in data_rows if row.get("source")})
+          		print(f"DATASET {id_} | {label}")
+          		print(f"  fields={reader.fieldnames}")
+          		print(f"  rows={len(data_rows)} areas={len(areas)} years={years[0] if years else None}-{years[-1] if years else None} sexes={sexes}")
+          		print(f"  classif1={classif1[:30]}{' ...' if len(classif1) > 30 else ''}")
+          		print(f"  classif2={classif2[:30]}{' ...' if len(classif2) > 30 else ''}")
+          		print(f"  sources={sources[:10]}{' ...' if len(sources) > 10 else ''}")
+          		if data_rows:
+          			print(f"  sample={data_rows[0]}")
+          	except Exception as exc:
+          		print(f"DATASET FAILED {id_}: {exc}")
+          PY
