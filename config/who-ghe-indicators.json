@@ -1,0 +1,150 @@
+{
+	"schema": "kartensammlung.who-ghe-statistics/v1",
+	"workbookUrl": "https://cdn.who.int/media/docs/default-source/gho-documents/global-health-estimates/ghe2021_deathrates_bycountry_asdr.xlsx?sfvrsn=d2ead5e5_3",
+	"sourceUrl": "https://www.who.int/data/gho/data/themes/mortality-and-global-health-estimates/ghe-leading-causes-of-death",
+	"provider": {
+		"id": "who-ghe",
+		"name": "WHO Global Health Estimates",
+		"dataset": "Global Health Estimates 2021",
+		"license": "CC BY-NC-SA 3.0 IGO",
+		"licenseUrl": "https://www.who.int/about/policies/publishing/copyright",
+		"attribution": "World Health Organization"
+	},
+	"measure": {
+		"name": "Age-standardized death rate per 100,000 population",
+		"sex": "Persons"
+	},
+	"sheets": [
+		{"year": 2000, "name": "ASDR 2000"},
+		{"year": 2010, "name": "ASDR 2010"},
+		{"year": 2015, "name": "ASDR 2015"},
+		{"year": 2019, "name": "ASDR 2019"},
+		{"year": 2020, "name": "ASDR 2020"},
+		{"year": 2021, "name": "ASDR 2021"}
+	],
+	"minMappedAreas": 180,
+	"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"],
+	"indicators": [
+		{
+			"id": "mortality-ghe.all-causes-asdr-per-100000",
+			"slug": "mortality-ghe-all-causes-asdr-per-100000",
+			"gheCode": 0,
+			"sourceCause": "All Causes",
+			"title": "Gesamtsterblichkeit (altersstandardisiert)",
+			"description": "Altersstandardisierte Sterberate aller Todesursachen je 100.000 Einwohner, beide Geschlechter, nach den WHO Global Health Estimates.",
+			"unit": {"id": "age-standardized-deaths-per-100000", "label": "je 100.000 Einwohner"},
+			"classification": {"type": "fixed", "breaks": [400, 600, 800, 1000, 1400, 1800]}
+		},
+		{
+			"id": "mortality-ghe.tuberculosis-asdr-per-100000",
+			"slug": "mortality-ghe-tuberculosis-asdr-per-100000",
+			"gheCode": 30,
+			"sourceCause": "Tuberculosis",
+			"title": "Tuberkulose-Sterblichkeit (altersstandardisiert)",
+			"description": "Altersstandardisierte Sterberate durch Tuberkulose je 100.000 Einwohner, beide Geschlechter, nach den WHO Global Health Estimates.",
+			"unit": {"id": "age-standardized-deaths-per-100000", "label": "je 100.000 Einwohner"},
+			"classification": {"type": "fixed", "breaks": [1, 5, 10, 25, 50, 100]}
+		},
+		{
+			"id": "mortality-ghe.lower-respiratory-infections-asdr-per-100000",
+			"slug": "mortality-ghe-lower-respiratory-infections-asdr-per-100000",
+			"gheCode": 390,
+			"sourceCause": "Lower respiratory infections",
+			"title": "Sterblichkeit durch Infektionen der unteren Atemwege",
+			"description": "Altersstandardisierte Sterberate durch Infektionen der unteren Atemwege je 100.000 Einwohner, beide Geschlechter, nach den WHO Global Health Estimates.",
+			"unit": {"id": "age-standardized-deaths-per-100000", "label": "je 100.000 Einwohner"},
+			"classification": {"type": "fixed", "breaks": [2, 5, 10, 25, 50, 100]}
+		},
+		{
+			"id": "mortality-ghe.covid19-asdr-per-100000",
+			"slug": "mortality-ghe-covid19-asdr-per-100000",
+			"gheCode": 395,
+			"sourceCause": "COVID-19",
+			"minYear": 2020,
+			"title": "COVID-19-Sterblichkeit (altersstandardisiert)",
+			"description": "Altersstandardisierte Sterberate durch COVID-19 je 100.000 Einwohner, beide Geschlechter, nach den WHO Global Health Estimates. Vorpandemische Nullwerte des WHO-Arbeitsblatts werden nicht als Zeitreihe veröffentlicht.",
+			"unit": {"id": "age-standardized-deaths-per-100000", "label": "je 100.000 Einwohner"},
+			"classification": {"type": "fixed", "breaks": [20, 50, 100, 200, 300, 400]}
+		},
+		{
+			"id": "mortality-ghe.lung-cancer-asdr-per-100000",
+			"slug": "mortality-ghe-lung-cancer-asdr-per-100000",
+			"gheCode": 680,
+			"sourceCause": "Trachea, bronchus, lung cancers",
+			"title": "Lungenkrebs-Sterblichkeit (altersstandardisiert)",
+			"description": "Altersstandardisierte Sterberate durch Krebs der Luftröhre, Bronchien und Lunge je 100.000 Einwohner, beide Geschlechter, nach den WHO Global Health Estimates.",
+			"unit": {"id": "age-standardized-deaths-per-100000", "label": "je 100.000 Einwohner"},
+			"classification": {"type": "fixed", "breaks": [5, 10, 20, 30, 40, 50]}
+		},
+		{
+			"id": "mortality-ghe.diabetes-asdr-per-100000",
+			"slug": "mortality-ghe-diabetes-asdr-per-100000",
+			"gheCode": 800,
+			"sourceCause": "Diabetes mellitus",
+			"title": "Diabetes-Sterblichkeit (altersstandardisiert)",
+			"description": "Altersstandardisierte Sterberate durch Diabetes mellitus je 100.000 Einwohner, beide Geschlechter, nach den WHO Global Health Estimates.",
+			"unit": {"id": "age-standardized-deaths-per-100000", "label": "je 100.000 Einwohner"},
+			"classification": {"type": "fixed", "breaks": [5, 10, 20, 40, 80, 150]}
+		},
+		{
+			"id": "mortality-ghe.alzheimer-dementias-asdr-per-100000",
+			"slug": "mortality-ghe-alzheimer-dementias-asdr-per-100000",
+			"gheCode": 950,
+			"sourceCause": "Alzheimer disease and other dementias",
+			"title": "Alzheimer-/Demenz-Sterblichkeit (altersstandardisiert)",
+			"description": "Altersstandardisierte Sterberate durch Alzheimer-Krankheit und andere Demenzen je 100.000 Einwohner, beide Geschlechter, nach den WHO Global Health Estimates.",
+			"unit": {"id": "age-standardized-deaths-per-100000", "label": "je 100.000 Einwohner"},
+			"classification": {"type": "fixed", "breaks": [2, 5, 10, 20, 30, 50]}
+		},
+		{
+			"id": "mortality-ghe.ischaemic-heart-disease-asdr-per-100000",
+			"slug": "mortality-ghe-ischaemic-heart-disease-asdr-per-100000",
+			"gheCode": 1130,
+			"sourceCause": "Ischaemic heart disease",
+			"title": "Sterblichkeit durch ischämische Herzkrankheit",
+			"description": "Altersstandardisierte Sterberate durch ischämische Herzkrankheit je 100.000 Einwohner, beide Geschlechter, nach den WHO Global Health Estimates.",
+			"unit": {"id": "age-standardized-deaths-per-100000", "label": "je 100.000 Einwohner"},
+			"classification": {"type": "fixed", "breaks": [50, 100, 150, 200, 300, 400]}
+		},
+		{
+			"id": "mortality-ghe.stroke-asdr-per-100000",
+			"slug": "mortality-ghe-stroke-asdr-per-100000",
+			"gheCode": 1140,
+			"sourceCause": "Stroke",
+			"title": "Schlaganfall-Sterblichkeit (altersstandardisiert)",
+			"description": "Altersstandardisierte Sterberate durch Schlaganfall je 100.000 Einwohner, beide Geschlechter, nach den WHO Global Health Estimates.",
+			"unit": {"id": "age-standardized-deaths-per-100000", "label": "je 100.000 Einwohner"},
+			"classification": {"type": "fixed", "breaks": [30, 60, 90, 120, 180, 240]}
+		},
+		{
+			"id": "mortality-ghe.copd-asdr-per-100000",
+			"slug": "mortality-ghe-copd-asdr-per-100000",
+			"gheCode": 1180,
+			"sourceCause": "Chronic obstructive pulmonary disease",
+			"title": "COPD-Sterblichkeit (altersstandardisiert)",
+			"description": "Altersstandardisierte Sterberate durch chronisch obstruktive Lungenerkrankung (COPD) je 100.000 Einwohner, beide Geschlechter, nach den WHO Global Health Estimates.",
+			"unit": {"id": "age-standardized-deaths-per-100000", "label": "je 100.000 Einwohner"},
+			"classification": {"type": "fixed", "breaks": [5, 10, 20, 40, 70, 100]}
+		},
+		{
+			"id": "mortality-ghe.kidney-diseases-asdr-per-100000",
+			"slug": "mortality-ghe-kidney-diseases-asdr-per-100000",
+			"gheCode": 1270,
+			"sourceCause": "Kidney diseases",
+			"title": "Nierenerkrankungs-Sterblichkeit (altersstandardisiert)",
+			"description": "Altersstandardisierte Sterberate durch Nierenerkrankungen je 100.000 Einwohner, beide Geschlechter, nach den WHO Global Health Estimates.",
+			"unit": {"id": "age-standardized-deaths-per-100000", "label": "je 100.000 Einwohner"},
+			"classification": {"type": "fixed", "breaks": [5, 10, 20, 30, 50, 70]}
+		},
+		{
+			"id": "mortality-ghe.road-injury-asdr-per-100000",
+			"slug": "mortality-ghe-road-injury-asdr-per-100000",
+			"gheCode": 1530,
+			"sourceCause": "Road injury",
+			"title": "Straßenverkehrssterblichkeit (altersstandardisiert)",
+			"description": "Altersstandardisierte Sterberate durch Straßenverkehrsverletzungen je 100.000 Einwohner, beide Geschlechter, nach den WHO Global Health Estimates.",
+			"unit": {"id": "age-standardized-deaths-per-100000", "label": "je 100.000 Einwohner"},
+			"classification": {"type": "fixed", "breaks": [3, 5, 10, 15, 25, 40]}
+		}
+	]
+}
