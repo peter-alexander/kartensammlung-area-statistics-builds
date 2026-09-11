@@ -10,6 +10,11 @@
 			"id": "eurostat",
 			"name": "Eurostat",
 			"index": "eurostat/index.json"
+		},
+		{
+			"id": "un-wpp",
+			"name": "UN World Population Prospects",
+			"index": "un-wpp/index.json"
 		}
 	]
 }
