@@ -8,7 +8,9 @@ on:
     paths:
       - "config/statistics-providers.json"
       - "config/unodc-indicators.json"
+      - "config/unodc-violent-indicators.json"
       - "scripts/build_unodc.py"
+      - "scripts/extend_unodc_violent.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
       - ".github/workflows/build-unodc-statistics.yml"
   push:
@@ -17,7 +19,9 @@ on:
     paths:
       - "config/statistics-providers.json"
       - "config/unodc-indicators.json"
+      - "config/unodc-violent-indicators.json"
       - "scripts/build_unodc.py"
+      - "scripts/extend_unodc_violent.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
       - ".github/workflows/build-unodc-statistics.yml"
 
@@ -43,13 +47,14 @@ jobs:
           python-version: "3.12"
 
       - name: Install Python dependencies
-        run: python -m pip install --disable-pip-version-check openpyxl
+        run: python -m pip install --disable-pip-version-check openpyxl pycountry
 
       - name: Validate scripts
         run: |
           bash -n .github/scripts/deploy-world-bank-statistics.sh
-          python -m py_compile scripts/build_unodc.py
+          python -m py_compile scripts/build_unodc.py scripts/extend_unodc_violent.py
           python -m json.tool config/unodc-indicators.json >/dev/null
+          python -m json.tool config/unodc-violent-indicators.json >/dev/null
 
       - name: Build UNODC statistics
         shell: bash
@@ -58,6 +63,7 @@ jobs:
           mkdir -p diagnostics
           REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           python scripts/build_unodc.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/unodc.log
+          python scripts/extend_unodc_violent.py --registry "$REGISTRY_URL" 2>&1 | tee -a diagnostics/unodc.log
 
       - name: Show statistics summary
         run: |
@@ -69,6 +75,7 @@ jobs:
           print(f"snapshot={payload['activeSnapshot']}")
           print(f"retrievedAt={payload['retrievedAt']}")
           print(f"downloadUrl={payload['dataset']['downloadUrl']}")
+          print(f"indicators={len(payload['indicators'])}")
           for indicator in payload["indicators"]:
           	coverage = indicator["coverage"]
           	print(
