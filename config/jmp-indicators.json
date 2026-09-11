@@ -90,6 +90,42 @@
 			"minAreasInLatestYear": 195
 		},
 		{
+			"id": "wash.water.on-premises-percent",
+			"slug": "wash-water-on-premises-percent",
+			"sourceIndicator": "WS_PPL_W-PRE",
+			"serviceType": "WAT",
+			"title": "Trinkwasser: verbesserte Quelle am Wohnort (%)",
+			"description": "Anteil der Bevölkerung, der verbesserte Trinkwasserquellen nutzt, die sich am Wohnort beziehungsweise auf dem Grundstück befinden.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [20, 40, 60, 75, 90, 98]},
+			"minAreasWithAnyValue": 220,
+			"minAreasInLatestYear": 200
+		},
+		{
+			"id": "wash.water.available-when-needed-percent",
+			"slug": "wash-water-available-when-needed-percent",
+			"sourceIndicator": "WS_PPL_W-AVA",
+			"serviceType": "WAT",
+			"title": "Trinkwasser: bei Bedarf verfügbar (%)",
+			"description": "Anteil der Bevölkerung, der verbesserte Trinkwasserquellen nutzt, deren Wasser bei Bedarf verfügbar ist.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [20, 40, 60, 75, 90, 98]},
+			"minAreasWithAnyValue": 145,
+			"minAreasInLatestYear": 135
+		},
+		{
+			"id": "wash.water.free-from-contamination-percent",
+			"slug": "wash-water-free-from-contamination-percent",
+			"sourceIndicator": "WS_PPL_W-QUA",
+			"serviceType": "WAT",
+			"title": "Trinkwasser: frei von fäkaler und relevanter chemischer Kontamination (%)",
+			"description": "Anteil der Bevölkerung, der verbesserte Trinkwasserquellen nutzt, die frei von fäkaler und vorrangig relevanter chemischer Kontamination sind.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [20, 40, 60, 75, 90, 98]},
+			"minAreasWithAnyValue": 155,
+			"minAreasInLatestYear": 150
+		},
+		{
 			"id": "wash.sanitation.at-least-basic-percent",
 			"slug": "wash-sanitation-at-least-basic-percent",
 			"sourceIndicator": "WS_PPL_S-ALB",
@@ -160,6 +196,66 @@
 			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 2, 5, 10, 20, 40]},
 			"minAreasWithAnyValue": 220,
 			"minAreasInLatestYear": 190
+		},
+		{
+			"id": "wash.sanitation.sewer-network-percent",
+			"slug": "wash-sanitation-sewer-network-percent",
+			"sourceIndicator": "WS_PPL_S-SEW",
+			"serviceType": "SAN",
+			"title": "Sanitärversorgung: Anschluss an Kanalnetz (%)",
+			"description": "Anteil der Bevölkerung, der Sanitäranlagen mit Anschluss an ein Kanalnetz nutzt.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [10, 25, 50, 70, 85, 95]},
+			"minAreasWithAnyValue": 215,
+			"minAreasInLatestYear": 190
+		},
+		{
+			"id": "wash.sanitation.sewer-treated-secondary-percent",
+			"slug": "wash-sanitation-sewer-treated-secondary-percent",
+			"sourceIndicator": "WS_PPL_S-WWT",
+			"serviceType": "SAN",
+			"title": "Sanitärversorgung: Kanalnetz mit mindestens sekundärer Abwasserbehandlung (%)",
+			"description": "Anteil der Bevölkerung, der an Kanalnetze angeschlossene Sanitäranlagen nutzt, deren Abwasser mindestens sekundär behandelt wird.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [10, 25, 50, 70, 85, 95]},
+			"minAreasWithAnyValue": 160,
+			"minAreasInLatestYear": 150
+		},
+		{
+			"id": "wash.sanitation.septic-tank-percent",
+			"slug": "wash-sanitation-septic-tank-percent",
+			"sourceIndicator": "WS_PPL_S-SEP",
+			"serviceType": "SAN",
+			"title": "Sanitärversorgung: Septiktank (%)",
+			"description": "Anteil der Bevölkerung, der Sanitäranlagen mit Anschluss an Septiktanks nutzt.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [5, 10, 20, 30, 40, 60]},
+			"minAreasWithAnyValue": 200,
+			"minAreasInLatestYear": 175
+		},
+		{
+			"id": "wash.sanitation.onsite-waste-treated-offsite-percent",
+			"slug": "wash-sanitation-onsite-waste-treated-offsite-percent",
+			"sourceIndicator": "WS_PPL_S-FST",
+			"serviceType": "SAN",
+			"title": "Sanitärversorgung: Fäkalien aus Vor-Ort-Systemen extern behandelt (%)",
+			"description": "Anteil der Bevölkerung, der Vor-Ort-Sanitäranlagen nutzt, deren Fäkalien außerhalb des Grundstücks behandelt werden.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 20, 40, 60]},
+			"minAreasWithAnyValue": 145,
+			"minAreasInLatestYear": 135
+		},
+		{
+			"id": "wash.sanitation.onsite-waste-disposed-insitu-percent",
+			"slug": "wash-sanitation-onsite-waste-disposed-insitu-percent",
+			"sourceIndicator": "WS_PPL_S-DIS",
+			"serviceType": "SAN",
+			"title": "Sanitärversorgung: Fäkalien aus Vor-Ort-Systemen vor Ort entsorgt (%)",
+			"description": "Anteil der Bevölkerung, der Vor-Ort-Sanitäranlagen nutzt, deren Fäkalien am Standort sicher beziehungsweise dauerhaft verbleiben oder entsorgt werden.",
+			"unit": {"id": "percent", "label": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [1, 5, 10, 20, 40, 60]},
+			"minAreasWithAnyValue": 150,
+			"minAreasInLatestYear": 140
 		},
 		{
 			"id": "wash.hygiene.basic-percent",
