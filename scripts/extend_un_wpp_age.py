@@ -159,10 +159,7 @@ def read_age_values(path: Path, config: dict[str, Any], age_config: dict[str, An
 				continue
 			year = int(raw_year)
 			variant = str(row.get("Variant", "")).strip()
-			if year <= int(config["estimateEndYear"]):
-				if variant and variant != "Estimates":
-					continue
-			elif variant and variant != str(config["projectionVariant"]):
+			if variant and variant != str(config["projectionVariant"]):
 				continue
 			age_start = int(raw_age)
 			area_id = area_by_iso3[iso3]
