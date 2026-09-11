@@ -38,24 +38,15 @@ jobs:
           if old not in text:
           	raise RuntimeError("Could not locate registry code block")
           text = text.replace(old, new, 1)
-
           path.write_text(text, encoding="utf-8")
-
-          workflow = Path(".github/workflows/build-country-geometry.yml")
-          workflow_text = workflow.read_text(encoding="utf-8")
-          old_branches = '''  push:\n    branches:\n      - main\n    paths:\n'''
-          new_branches = '''  push:\n    branches:\n      - main\n      - test/faostat\n    paths:\n'''
-          if old_branches not in workflow_text:
-          	raise RuntimeError("Could not locate country workflow push branches")
-          workflow.write_text(workflow_text.replace(old_branches, new_branches, 1), encoding="utf-8")
           PY
 
           python -m py_compile scripts/build_countries.py
           git diff --check
-          git diff -- scripts/build_countries.py .github/workflows/build-country-geometry.yml
+          git diff -- scripts/build_countries.py
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/build_countries.py .github/workflows/build-country-geometry.yml
+          git add scripts/build_countries.py
           git commit -m "Add M49 codes to country registry"
           git push origin HEAD:test/faostat
