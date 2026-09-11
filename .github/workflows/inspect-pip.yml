@@ -1,0 +1,92 @@
+name: Inspect World Bank PIP API
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/inspect-pip.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Inspect API versions and annual country data
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import json
+          import urllib.parse
+          import urllib.request
+          from collections import Counter, defaultdict
+
+          BASE = "https://api.worldbank.org/pip/v1"
+          UA = {"User-Agent": "kartensammlung-area-statistics-builds/1", "Accept": "application/json"}
+
+          def fetch_json(path, params):
+          	url = f"{BASE}/{path}?{urllib.parse.urlencode(params)}"
+          	req = urllib.request.Request(url, headers=UA)
+          	with urllib.request.urlopen(req, timeout=120) as response:
+          		data = response.read()
+          	print(f"URL {url}")
+          	print(f"bytes={len(data)} content-type={response.headers.get('content-type')}")
+          	return json.loads(data)
+
+          versions = fetch_json("versions", {"format": "json"})
+          print("VERSIONS_TYPE", type(versions).__name__)
+          print(json.dumps(versions, indent=2)[:12000])
+
+          version_rows = versions if isinstance(versions, list) else versions.get("data", versions.get("versions", [])) if isinstance(versions, dict) else []
+          candidates = []
+          for row in version_rows:
+          	version = row.get("version") if isinstance(row, dict) else str(row)
+          	if version and "_2021_" in version and version.endswith("_PROD"):
+          		candidates.append(version)
+          if not candidates:
+          	raise SystemExit("No current public 2021 PPP PROD PIP version found")
+          version = sorted(candidates)[-1]
+          print("SELECTED_VERSION", version)
+
+          rows = fetch_json("pip", {
+          	"country": "all",
+          	"year": "all",
+          	"ppp_version": "2021",
+          	"fill_gaps": "true",
+          	"reporting_level": "national",
+          	"version": version,
+          	"povline": "3",
+          	"format": "json",
+          })
+          if isinstance(rows, dict):
+          	for key in ("data", "results", "result"):
+          		if isinstance(rows.get(key), list):
+          			rows = rows[key]
+          			break
+          if not isinstance(rows, list) or not rows:
+          	raise SystemExit(f"Unexpected PIP payload type/size: {type(rows).__name__}")
+          print("ROW_COUNT", len(rows))
+          print("FIELDS", sorted(rows[0]))
+          for row in rows[:5]:
+          	print("SAMPLE", json.dumps(row, sort_keys=True))
+
+          countries = {str(row.get("country_code", "")) for row in rows if row.get("country_code")}
+          years = sorted({int(row["reporting_year"]) for row in rows if str(row.get("reporting_year", "")).isdigit()})
+          print("COUNTRIES", len(countries))
+          print("YEAR_RANGE", years[0], years[-1])
+          by_year = Counter(int(row["reporting_year"]) for row in rows if str(row.get("reporting_year", "")).isdigit())
+          print("RECENT_YEAR_COUNTS", {year: by_year[year] for year in years if year >= 2020})
+          print("ESTIMATE_TYPES", Counter(str(row.get("estimate_type", "")) for row in rows))
+          print("INTERPOLATED", Counter(str(row.get("is_interpolated", "")) for row in rows))
+          print("WELFARE_TYPES", Counter(str(row.get("welfare_type", "")) for row in rows))
+          print("REPORTING_LEVELS", Counter(str(row.get("reporting_level", "")) for row in rows))
+
+          for iso in ("AUT", "DEU", "USA", "IND", "BRA", "ZAF"):
+          	recent = [row for row in rows if row.get("country_code") == iso and int(row.get("reporting_year", 0)) >= 2022]
+          	print("COUNTRY", iso, json.dumps(recent, sort_keys=True)[:12000])
+          PY
