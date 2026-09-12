@@ -7,7 +7,7 @@ on:
   pull_request:
     paths:
       - "config/statistics-providers.json"
-      - "config/faostat-food-security-indicators.json"
+      - "config/faostat-indicators.json"
       - "scripts/build_faostat.py"
       - "scripts/build_world_bank.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
@@ -17,7 +17,7 @@ on:
       - main
     paths:
       - "config/statistics-providers.json"
-      - "config/faostat-food-security-indicators.json"
+      - "config/faostat-indicators.json"
       - "scripts/build_faostat.py"
       - "scripts/build_world_bank.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
@@ -33,7 +33,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -49,7 +49,7 @@ jobs:
           bash -n .github/scripts/deploy-world-bank-statistics.sh
           python -m py_compile scripts/build_faostat.py scripts/build_world_bank.py
           python -m json.tool config/statistics-providers.json >/dev/null
-          python -m json.tool config/faostat-food-security-indicators.json >/dev/null
+          python -m json.tool config/faostat-indicators.json >/dev/null
 
       - name: Build FAOSTAT statistics
         shell: bash
@@ -69,7 +69,7 @@ jobs:
 
           provider_path = Path("dist/statistics/faostat/index.json")
           diagnostics_path = Path("dist/statistics/faostat/diagnostics.json")
-          config_path = Path("config/faostat-food-security-indicators.json")
+          config_path = Path("config/faostat-indicators.json")
           global_index_path = Path("dist/statistics/index.json")
 
           provider = json.loads(provider_path.read_text(encoding="utf-8"))
@@ -77,49 +77,89 @@ jobs:
           config = json.loads(config_path.read_text(encoding="utf-8"))
           global_index = json.loads(global_index_path.read_text(encoding="utf-8"))
 
+          if config.get("schema") != "kartensammlung.faostat-statistics/v2":
+          	raise SystemExit("Unexpected FAOSTAT config schema")
           if provider.get("provider", {}).get("id") != "faostat":
           	raise SystemExit("FAOSTAT provider id mismatch")
-          indicators = provider.get("indicators") or []
-          if len(indicators) != 6:
-          	raise SystemExit(f"Expected 6 FAOSTAT indicators, found {len(indicators)}")
+          if diagnostics.get("schema") != "kartensammlung.faostat-build-diagnostics/v2":
+          	raise SystemExit("Unexpected FAOSTAT diagnostics schema")
           if not any(item.get("id") == "faostat" for item in global_index.get("providers", [])):
           	raise SystemExit("FAOSTAT missing from global statistics index")
+
+          indicators = provider.get("indicators") or []
+          configured_indicators = config.get("indicators") or []
+          if len(indicators) != 18 or len(configured_indicators) != 18:
+          	raise SystemExit(f"Expected 18 FAOSTAT indicators, found provider={len(indicators)} config={len(configured_indicators)}")
+
+          expected_datasets = {"food-security", "healthy-diet", "land-use", "fertilizers-nutrient", "temperature-change"}
+          source_datasets = (provider.get("dataset") or {}).get("datasets") or []
+          if {item.get("id") for item in source_datasets} != expected_datasets:
+          	raise SystemExit("FAOSTAT provider dataset set mismatch")
+          if {item.get("id") for item in diagnostics.get("datasets", [])} != expected_datasets:
+          	raise SystemExit("FAOSTAT diagnostics dataset set mismatch")
 
           registry = provider.get("areaRegistry") or {}
           if registry.get("areaCount") != 250:
           	raise SystemExit(f"Expected 250 registry country areas, got {registry.get('areaCount')}")
           if registry.get("m49AreaCount") != 249:
           	raise SystemExit(f"Expected 249 M49-coded registry areas, got {registry.get('m49AreaCount')}")
-          dataset = provider.get("dataset") or {}
-          if dataset.get("periodType") != "three-year-average":
-          	raise SystemExit(f"Unexpected FAOSTAT period type: {dataset.get('periodType')}")
 
-          config_by_id = {item["id"]: item for item in config["indicators"]}
+          config_by_id = {item["id"]: item for item in configured_indicators}
           diagnostic_indicators = diagnostics.get("indicators") or {}
-          if set(diagnostic_indicators) != {item["id"] for item in indicators}:
-          	raise SystemExit("FAOSTAT diagnostics indicator set differs from provider index")
+          provider_ids = {item["id"] for item in indicators}
+          if provider_ids != set(config_by_id) or provider_ids != set(diagnostic_indicators):
+          	raise SystemExit("FAOSTAT indicator sets differ between config, provider index and diagnostics")
 
           for indicator in indicators:
           	indicator_id = indicator["id"]
           	configured = config_by_id[indicator_id]
-          	if indicator.get("frequency") != "three-year-average":
-          		raise SystemExit(f"Unexpected frequency for {indicator_id}: {indicator.get('frequency')}")
-          	if indicator.get("defaultYear") != 2025:
-          		raise SystemExit(f"Unexpected default endpoint for {indicator_id}: {indicator.get('defaultYear')}")
-          	if (indicator.get("periodLabels") or {}).get("2025") != "2023-2025":
-          		raise SystemExit(f"Missing 2023-2025 period label for {indicator_id}")
           	coverage = indicator.get("coverage") or {}
+          	if indicator.get("datasetId") != configured["datasetId"]:
+          		raise SystemExit(f"Dataset mismatch for {indicator_id}")
+          	if indicator.get("frequency") != configured["frequency"]:
+          		raise SystemExit(f"Frequency mismatch for {indicator_id}")
           	if coverage.get("registryAreas") != 250:
           		raise SystemExit(f"Expected registryAreas=250 for {indicator_id}, got {coverage.get('registryAreas')}")
-          	if coverage.get("defaultPeriod") != "2023-2025":
-          		raise SystemExit(f"Unexpected default period for {indicator_id}: {coverage.get('defaultPeriod')}")
           	if int(coverage.get("areasWithAnyValue", 0)) < int(configured["minAreasWithAnyValue"]):
           		raise SystemExit(f"Any-value coverage below configured minimum for {indicator_id}")
-          	if int(coverage.get("areasInDefaultYear", 0)) < int(configured["minAreasInDefaultPeriod"]):
-          		raise SystemExit(f"Default-period coverage below configured minimum for {indicator_id}")
+          	if int(coverage.get("areasInDefaultYear", 0)) < int(configured["minAreasInDefaultYear"]):
+          		raise SystemExit(f"Default-year coverage below configured minimum for {indicator_id}")
+          	if int(coverage.get("latestYear", 0)) < int(configured["minimumLatestYear"]):
+          		raise SystemExit(f"Latest year below configured minimum for {indicator_id}")
+          	if int(indicator.get("defaultYear", 0)) < int(configured["minimumDefaultYear"]):
+          		raise SystemExit(f"Default year below configured minimum for {indicator_id}")
 
-          	diagnostic = diagnostic_indicators[indicator_id]
-          	ignored = diagnostic.get("ignoredSourceAreas") or {}
+          	payload_path = Path("dist/statistics/faostat") / indicator["path"]
+          	payload = json.loads(payload_path.read_text(encoding="utf-8"))
+          	if payload.get("schema") != "kartensammlung.statistics-indicator/v1":
+          		raise SystemExit(f"Invalid indicator payload schema for {indicator_id}")
+          	if payload.get("indicator", {}).get("id") != indicator_id:
+          		raise SystemExit(f"Indicator payload id mismatch for {indicator_id}")
+          	if payload.get("defaultYear") != indicator.get("defaultYear"):
+          		raise SystemExit(f"Default year mismatch for {indicator_id}")
+          	if payload.get("availableYears") != indicator.get("availableYears"):
+          		raise SystemExit(f"Available years mismatch for {indicator_id}")
+
+          	if configured["frequency"] == "three-year-average":
+          		period_labels = indicator.get("periodLabels") or {}
+          		default_year = str(indicator["defaultYear"])
+          		if period_labels.get(default_year) != coverage.get("defaultPeriod"):
+          			raise SystemExit(f"Period label mismatch for {indicator_id}")
+          		if not coverage.get("defaultPeriod"):
+          			raise SystemExit(f"Missing default period for {indicator_id}")
+          	else:
+          		if indicator.get("periodLabels"):
+          			raise SystemExit(f"Annual indicator unexpectedly has period labels: {indicator_id}")
+
+          for indicator_id in (
+          	"food-security.undernourishment-prevalence",
+          	"food-security.undernourished-people",
+          	"food-security.moderate-severe-food-insecurity-prevalence",
+          	"food-security.moderate-severe-food-insecure-people",
+          	"food-security.severe-food-insecurity-prevalence",
+          	"food-security.severe-food-insecure-people",
+          ):
+          	ignored = diagnostic_indicators[indicator_id].get("ignoredSourceAreas") or {}
           	if ignored.get("001") != "World":
           		raise SystemExit(f"World aggregate was not explicitly ignored for {indicator_id}")
           	if ignored.get("159") != "China":
@@ -135,18 +175,18 @@ jobs:
 
           print(f"snapshot={provider['activeSnapshot']}")
           print(f"retrievedAt={provider['retrievedAt']}")
-          print(f"sourceUrl={dataset['sourceUrl']}")
-          print(f"lastModified={dataset.get('lastModified')}")
           print(f"registry={registry.get('m49AreaCount')}/{registry.get('areaCount')} M49-coded countries")
+          for source in source_datasets:
+          	print(f"dataset={source['code']} rows={source['rows']} bytes={source['bytes']} lastModified={source.get('lastModified')}")
           for indicator in indicators:
           	coverage = indicator["coverage"]
           	diagnostic = diagnostic_indicators[indicator["id"]]
+          	period = coverage.get("defaultPeriod") or str(indicator["defaultYear"])
           	print(
-          		f"{indicator['id']}: periods={indicator['periodLabels'][str(indicator['availableYears'][0])]}.."
-          		f"{indicator['periodLabels'][str(indicator['availableYears'][-1])]} "
-          		f"default={coverage['defaultPeriod']} areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
-          		f"latest={coverage['areasInLatestYear']} censored={diagnostic['censoredValues']} "
-          		f"ignoredSourceAreas={len(diagnostic['ignoredSourceAreas'])}"
+          		f"{indicator['id']}: dataset={indicator['datasetId']} default={period} "
+          		f"areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+          		f"any={coverage['areasWithAnyValue']} latest={coverage['areasInLatestYear']} "
+          		f"censored={diagnostic['censoredValues']}"
           	)
           PY
           du -h dist/statistics/faostat/index.json
