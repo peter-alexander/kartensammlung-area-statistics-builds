@@ -1,4 +1,4 @@
-name: Temporary FAOSTAT batch 3 diagnostics
+name: Temporary FAOSTAT batch 3 apply
 
 on:
   workflow_dispatch:
@@ -6,22 +6,35 @@ on:
     branches:
       - feature/faostat-batch3
     paths:
-      - "scripts/diagnose_faostat_batch3.py"
+      - "scripts/apply_faostat_batch3.py"
       - ".github/workflows/temp-faostat-batch3-diagnose.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  diagnose:
+  apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
-      - name: Checkout
+      - name: Checkout branch
         uses: actions/checkout@v4
-      - name: Setup Python
-        uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - name: Diagnose current FAOSTAT domains
-        run: python scripts/diagnose_faostat_batch3.py
+          ref: feature/faostat-batch3
+      - name: Apply product changes
+        run: |
+          python scripts/apply_faostat_batch3.py
+          python -m py_compile scripts/build_faostat.py
+          python -m json.tool config/faostat-indicators.json >/dev/null
+      - name: Remove temporary diagnostics
+        run: |
+          rm scripts/diagnose_faostat_batch3.py
+          rm scripts/apply_faostat_batch3.py
+          rm .github/workflows/temp-faostat-batch3-diagnose.yml
+      - name: Commit product changes
+        run: |
+          git config user.name "peter-alexander"
+          git config user.email "15900922+peter-alexander@users.noreply.github.com"
+          git add -A
+          git commit -m "Expand FAOSTAT production and emissions indicators"
+          git push origin HEAD:feature/faostat-batch3
