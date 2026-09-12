@@ -94,7 +94,7 @@ Entscheidung: **vorerst beide behalten**. WDI ist hier nicht nur eine triviale K
 - mediane absolute Differenz etwa 0,0003 Jahre; 2024 etwa 0,0004 Jahre
 - einzelne Länder weichen dennoch deutlich ab: US Virgin Islands 2024 WDI 80,7707 vs. WPP 75,6994 Jahre; maximale historische Differenz etwa 5,94 Jahre
 
-Entscheidung: **vorerst beide behalten.** UN WPP hat die deutlich bessere Abdeckung, WDI ist aber nicht in allen Ländern lediglich eine identische Kopie. Vor einer Löschung muss geklärt werden, welche nationalen Quellen bzw. Harmonisierungsschritte die deutlichen Ausnahmen verursachen und ob dieser methodische Unterschied für Nutzer relevant ist.
+Entscheidung: **beide dauerhaft behalten.** Die aktuelle WDI-Metadatenbank nennt ausdrücklich drei Quellengruppen: UN World Population Prospects, nationale Statistikämter und Eurostat. WDI ist damit eine gemischte/harmonisierte Distributionsreihe und nicht bloß eine Kopie der WPP-Modellreihe. Die deutlichen nationalen Ausnahmen sind deshalb ein echter methodischer Mehrwert: WPP liefert die konsistente globale Modellreihe, WDI kann beobachtete bzw. nationale Reihen übernehmen.
 
 #### Gesamtfertilitätsrate
 
@@ -106,7 +106,7 @@ Entscheidung: **vorerst beide behalten.** UN WPP hat die deutlich bessere Abdeck
 - mediane absolute Differenz etwa 0,0003 Kinder je Frau
 - einzelne Länder weisen dennoch echte Abweichungen auf, z. B. Curaçao 2024 WDI 1,40 vs. WPP 1,0712 und Färöer 2023 WDI 1,8676 vs. WPP 2,2402; maximale historische Differenz etwa 0,573 Kinder je Frau
 
-Entscheidung: **vorerst beide behalten.** Auch hier ist WPP hinsichtlich Abdeckung überlegen, die WDI-Reihe enthält aber einzelne methodisch bzw. quellenseitig abweichende Länderwerte. Eine Entfernung erfolgt erst nach Klärung dieser Ausnahmen.
+Entscheidung: **beide dauerhaft behalten.** Auch die aktuelle WDI-Metadatenbank nennt UN WPP, nationale Statistikämter und Eurostat gemeinsam als Quellen. Zusätzlich beschreibt WDI die Nutzung registrierter Lebendgeburten sowie, je nach Datenlage, Zensus-/Survey-Daten, Extrapolationen und Modelle. Damit bildet WDI bewusst eine andere, gemischte Datenreihe als die reine WPP-Serie ab.
 
 #### Säuglingssterblichkeit
 
