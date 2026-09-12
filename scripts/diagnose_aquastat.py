@@ -11,27 +11,8 @@ API = "https://api.data.apps.fao.org/api/v2/bigquery"
 SQL_URL = "https://data.apps.fao.org/catalog/dataset/945666e6-7803-4621-b8ef-cfd885a84596/resource/4a000a1b-24f0-4328-aab6-b9b525892090/download/query_en.sql"
 USER_AGENT = "kartensammlung-area-statistics-builds/1"
 CANDIDATES = {
-	4550: "SDG 6.4.2 water stress",
-	4551: "SDG 6.4.1 water use efficiency",
-	4188: "total renewable water resources",
-	4190: "renewable water resources per capita",
-	4158: "internal renewable water resources per capita",
-	4253: "total water withdrawal",
-	4257: "total water withdrawal per capita",
-	4254: "agricultural share of total withdrawal",
-	4255: "municipal share of total withdrawal",
-	4256: "industrial share of total withdrawal",
-	4313: "area equipped for irrigation",
-	4331: "cultivated area equipped for irrigation",
-	4318: "equipped irrigation area actually irrigated",
-	4328: "share of equipped area actually irrigated",
-	4264: "desalinated water produced",
-	4269: "produced municipal wastewater",
-	4270: "treated municipal wastewater",
-	4265: "direct use of treated municipal wastewater",
-	4192: "dependency ratio",
-	4471: "dam capacity per capita",
-	4197: "total dam capacity",
+	4016: "Pressure on water resources subgroup",
+	4190: "Total renewable water resources per capita variable",
 }
 
 
@@ -46,7 +27,7 @@ def get_csv(variable: int, year: int = 2023) -> list[dict[str, str]]:
 	})
 	url = f"{API}?{query}"
 	req = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/csv,*/*"})
-	with urlopen(req, timeout=120) as response:
+	with urlopen(req, timeout=45) as response:
 		data = response.read()
 		print(f"REQUEST code={variable} status={response.status} bytes={len(data)} contentType={response.headers.get('content-type')}")
 	text = data.decode("utf-8-sig")
