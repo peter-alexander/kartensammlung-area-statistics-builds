@@ -1,0 +1,27 @@
+name: Audit WHO WDI open health
+
+on:
+  push:
+    branches:
+      - audit/who-wdi-open
+    paths:
+      - scripts/audit_who_wdi_open_health.py
+      - .github/workflows/audit-who-wdi-open-health.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compare WHO and WDI
+        run: python scripts/audit_who_wdi_open_health.py
