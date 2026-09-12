@@ -69,7 +69,7 @@ jobs:
           from pathlib import Path
 
           provider = json.loads(Path("dist/statistics/who/index.json").read_text(encoding="utf-8"))
-          assert len(provider["indicators"]) == 6, len(provider["indicators"])
+          assert len(provider["indicators"]) == 7, len(provider["indicators"])
           by_id = {item["id"]: item for item in provider["indicators"]}
           annual_ids = {
           	"mortality.suicide-per-100000",
@@ -89,6 +89,22 @@ jobs:
           	assert payload["source"]["fallback"]["providerId"] == "world-bank"
           	assert payload.get("observationMetadata"), indicator_id
           	assert payload["confidenceIntervals"]["values"], indicator_id
+
+          dtp = by_id["immunization.dpt-percent"]
+          assert dtp["frequency"] == "annual"
+          assert dtp["availableYears"] == list(range(1980, 2025)), dtp["availableYears"]
+          assert dtp["defaultYear"] == 2024, dtp["defaultYear"]
+          assert dtp["coverage"]["areasInDefaultYear"] >= 192, dtp["coverage"]
+          assert dtp["coverage"]["directObservations"] >= 4750, dtp["coverage"]
+          assert dtp["coverage"]["fallbackObservations"] >= 3000, dtp["coverage"]
+          assert dtp["confidenceIntervals"] is False
+          dtp_payload = json.loads(Path("dist/statistics/who", dtp["path"]).read_text(encoding="utf-8"))
+          assert dtp_payload["source"]["providerId"] == "who"
+          assert dtp_payload["source"]["fallback"]["indicator"] == "SH.IMM.IDPT"
+          assert dtp_payload["source"]["timeCoverage"] == {"startYear": 2000, "endYear": 2024}
+          assert dtp_payload["indicator"]["confidenceIntervals"] == {"available": False}
+          assert dtp_payload.get("observationMetadata")
+
           print(f"snapshot={provider['activeSnapshot']}")
           print(f"retrievedAt={provider['retrievedAt']}")
           print(f"indicators={len(provider['indicators'])}")
