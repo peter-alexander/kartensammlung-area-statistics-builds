@@ -96,6 +96,16 @@ def load_country_codes() -> dict[str, str]:
 	return codes
 
 
+def country_m49_code(iso2: str) -> str | None:
+	country = pycountry.countries.get(alpha_2=iso2)
+	if country is None:
+		return None
+	m49 = str(getattr(country, "numeric", "")).strip()
+	if not re.fullmatch(r"\d{3}", m49):
+		raise RuntimeError(f"Invalid M49 code for {iso2}: {m49!r}")
+	return m49
+
+
 def load_country_names(codes: dict[str, str]) -> dict[str, str]:
 	translation = gettext.translation(
 		"iso3166-1",
@@ -875,6 +885,9 @@ def write_registry(
 		label_rank,
 	) in rows:
 		codes = {"iso2": iso2, "iso3": iso3}
+		m49 = country_m49_code(iso2)
+		if m49:
+			codes["m49"] = m49
 		if overture_id:
 			codes["overture"] = overture_id
 		if wikidata:
