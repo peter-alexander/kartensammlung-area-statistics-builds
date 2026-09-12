@@ -5,7 +5,7 @@ import json
 import math
 import statistics
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -146,6 +146,31 @@ def main() -> None:
 	print(f"median_abs_diff={statistics.median(diffs):.12g} mean_abs_diff={statistics.fmean(diffs):.12g} max_abs_diff={max(diffs):.12g}")
 	print(f"WHO_ONLY={len(who_only)} countries={sorted({iso3 for iso3, _ in who_only})}")
 	print(f"WDI_ONLY={len(wdi_only)} countries={sorted({iso3 for iso3, _ in wdi_only})}")
+
+	mismatches = [key for key in common if abs(round(who[key]) - wdi[key]) > 1e-12]
+	mismatch_by_country: dict[str, list[int]] = defaultdict(list)
+	for iso3, year in mismatches:
+		mismatch_by_country[iso3].append(year)
+	print(f"ROUND_MISMATCH observations={len(mismatches)} countries={len(mismatch_by_country)}")
+	for iso3 in sorted(mismatch_by_country, key=lambda code: (-len(mismatch_by_country[code]), code)):
+		years = sorted(mismatch_by_country[iso3])
+		outside = 0
+		for year in years:
+			low, high = bounds[(iso3, year)]
+			if low is not None and high is not None and not (low <= wdi[(iso3, year)] <= high):
+				outside += 1
+		print(
+			f"MISMATCH_COUNTRY {iso3}: n={len(years)} years={years[0]}-{years[-1]} "
+			f"outsideWHOinterval={outside} years_list={years}"
+		)
+
+	outside_all = 0
+	for key in common:
+		low, high = bounds[key]
+		if low is not None and high is not None and not (low <= wdi[key] <= high):
+			outside_all += 1
+	print(f"WDI_OUTSIDE_WHO_INTERVAL={outside_all}/{len(common)}")
+
 	for key in sorted(common, key=lambda item: abs(who[item] - wdi[item]), reverse=True)[:30]:
 		print(f"DIFF {key[0]} {key[1]} WHO={who[key]:.12g} WDI={wdi[key]:.12g} abs={abs(who[key]-wdi[key]):.12g} bounds={bounds.get(key)}")
 
