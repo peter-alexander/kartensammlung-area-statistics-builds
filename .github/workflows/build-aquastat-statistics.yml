@@ -86,8 +86,8 @@ jobs:
 
           indicators = provider.get("indicators") or []
           configured = config.get("indicators") or []
-          if len(indicators) != 7 or len(configured) != 7:
-          	raise SystemExit(f"Expected 7 AQUASTAT indicators, found provider={len(indicators)} config={len(configured)}")
+          if len(indicators) != 12 or len(configured) != 12:
+          	raise SystemExit(f"Expected 12 AQUASTAT indicators, found provider={len(indicators)} config={len(configured)}")
           config_by_id = {item["id"]: item for item in configured}
           diagnostic_by_id = diagnostics.get("indicators") or {}
           provider_ids = {item["id"] for item in indicators}
