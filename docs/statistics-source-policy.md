@@ -88,20 +88,25 @@ Entscheidung: **vorerst beide behalten**. WDI ist hier nicht nur eine triviale K
 
 `world-bank:life-expectancy.at-birth-years` und `un-wpp:life-expectancy.at-birth-years` überlappen 1960–2024.
 
-- 14.006 gemeinsame Werte
-- mediane absolute Differenz etwa 0,0003 Jahre
-- 2024 median etwa 0,0004 Jahre
+- WDI: 14.006 Beobachtungen, 216 Länder, 1960–2024
+- UN WPP: 35.787 Beobachtungen, 237 Länder, 1950–2100; letztes Schätzjahr 2023, danach Medium-Projektion
+- 14.006 gemeinsame Werte; **keine einzige WDI-Beobachtung liegt außerhalb der WPP-Abdeckung**
+- mediane absolute Differenz etwa 0,0003 Jahre; 2024 etwa 0,0004 Jahre
+- einzelne Länder weichen dennoch deutlich ab: US Virgin Islands 2024 WDI 80,7707 vs. WPP 75,6994 Jahre; maximale historische Differenz etwa 5,94 Jahre
 
-Entscheidung: **UN WPP soll kanonisch sein; die WDI-Doppelung kann nach abschließender Migrationsprüfung entfallen.**
+Entscheidung: **vorerst beide behalten.** UN WPP hat die deutlich bessere Abdeckung, WDI ist aber nicht in allen Ländern lediglich eine identische Kopie. Vor einer Löschung muss geklärt werden, welche nationalen Quellen bzw. Harmonisierungsschritte die deutlichen Ausnahmen verursachen und ob dieser methodische Unterschied für Nutzer relevant ist.
 
 #### Gesamtfertilitätsrate
 
 `world-bank:fertility.total-births-per-woman` und `un-wpp:fertility.total-rate` überlappen 1960–2024.
 
-- 14.008 gemeinsame Werte
+- WDI: 14.008 Beobachtungen, 216 Länder, 1960–2024
+- UN WPP: 35.787 Beobachtungen, 237 Länder, 1950–2100; letztes Schätzjahr 2023, danach Medium-Projektion
+- 14.008 gemeinsame Werte; **keine einzige WDI-Beobachtung liegt außerhalb der WPP-Abdeckung**
 - mediane absolute Differenz etwa 0,0003 Kinder je Frau
+- einzelne Länder weisen dennoch echte Abweichungen auf, z. B. Curaçao 2024 WDI 1,40 vs. WPP 1,0712 und Färöer 2023 WDI 1,8676 vs. WPP 2,2402; maximale historische Differenz etwa 0,573 Kinder je Frau
 
-Entscheidung: **UN WPP soll kanonisch sein; die WDI-Doppelung kann nach abschließender Migrationsprüfung entfallen.**
+Entscheidung: **vorerst beide behalten.** Auch hier ist WPP hinsichtlich Abdeckung überlegen, die WDI-Reihe enthält aber einzelne methodisch bzw. quellenseitig abweichende Länderwerte. Eine Entfernung erfolgt erst nach Klärung dieser Ausnahmen.
 
 #### Säuglingssterblichkeit
 
@@ -233,7 +238,7 @@ Die aktuelle GHED-Datei meldet `Last updated: December 12th, 2025`; sie enthält
 
 Lizenz: **CC BY 4.0**. Die aktuelle WDI-Metadatenanzeige weist für diese ausdrücklich aus WHO GHED stammenden Reihen CC BY 4.0 aus.
 
-Entscheidung: **vollständig umgesetzt am 12. September 2026. WHO GHED ist der kanonische Provider für alle drei CHE-Reihen.** Ein WDI-Fallback ist nicht nötig, weil GHED in allen drei Reihen mindestens dieselbe und insgesamt größere Länder-/Jahresabdeckung hat. Die produktive GHED-Veröffentlichung lief als Run `34708549477` mit Snapshot `13bf44dede477b15`; alle drei Release-Dateien sowie Provider- und globales Manifest wurden bytegenau verifiziert. Anschließend werden die drei sichtbaren WDI-Doppelungen `SH.XPD.CHEX.GD.ZS`, `SH.XPD.CHEX.PC.CD` und `SH.XPD.CHEX.PP.CD` aus dem WDI-Provider entfernt.
+Entscheidung: **vollständig umgesetzt am 12. September 2026. WHO GHED ist der kanonische Provider für alle drei CHE-Reihen.** Ein WDI-Fallback ist nicht nötig, weil GHED in allen drei Reihen mindestens dieselbe und insgesamt größere Länder-/Jahresabdeckung hat. Die produktive GHED-Veröffentlichung lief als Run `34708549477` mit Snapshot `13bf44dede477b15`; alle drei Release-Dateien sowie Provider- und globales Manifest wurden bytegenau verifiziert. Anschließend wurden die drei sichtbaren WDI-Doppelungen `SH.XPD.CHEX.GD.ZS`, `SH.XPD.CHEX.PC.CD` und `SH.XPD.CHEX.PP.CD` aus dem WDI-Provider entfernt. Der bereinigte WDI-Produktionslauf `34708827152` veröffentlichte Snapshot `fd62c7271267f842` mit 42 Indikatoren; alle 42 Release-Dateien sowie Provider- und globales Manifest wurden bytegenau verifiziert. Erst danach wurde der vorherige WDI-Snapshot gelöscht.
 
 Produkt-Testbuild:
 
