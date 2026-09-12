@@ -16,26 +16,43 @@ def fetch_json(url: str) -> Any:
 		return json.load(response)
 
 
+def dump_structure(label: str, structure: dict[str, Any]) -> None:
+	print(label)
+	for level in ("dataSet", "series", "observation"):
+		print(f"  DIMENSIONS {level}")
+		for index, dimension in enumerate(structure.get("dimensions", {}).get(level, [])):
+			values = dimension.get("values") or []
+			print(f"    {index}: id={dimension.get('id')!r} name={dimension.get('name')!r} values={len(values)}")
+			if len(values) <= 10:
+				for value in values:
+					print(f"      {value.get('id')}\t{value.get('name')}")
+		print(f"  ATTRIBUTES {level}")
+		for index, attribute in enumerate(structure.get("attributes", {}).get(level, [])):
+			values = attribute.get("values") or []
+			print(f"    {index}: id={attribute.get('id')!r} name={attribute.get('name')!r} values={len(values)}")
+			for value in values[:12]:
+				print(f"      {value.get('id')}\t{value.get('name')}")
+
+
 def main() -> None:
 	payload = fetch_json(STRUCTURE_URL)
-	structure = payload["structure"]
-	for level in ("dataSet", "series", "observation"):
-		dimensions = structure.get("dimensions", {}).get(level, [])
-		print(f"DIMENSIONS {level}: {len(dimensions)}")
-		for index, dimension in enumerate(dimensions):
-			values = dimension.get("values") or []
-			print(f"  {index}: id={dimension.get('id')!r} name={dimension.get('name')!r} values={len(values)}")
-			if dimension.get("id") in {"INDICATOR", "SEX"}:
-				for item in values:
-					item_id = str(item.get("id") or "")
-					item_name = str(item.get("name") or "")
-					if dimension.get("id") == "SEX" or item_id in {"CME_MRM0", "CME_MRY0", "CME_MRY0T4"}:
-						print(f"    {item_id}\t{item_name}")
+	dump_structure("GLOBAL STRUCTURE", payload["structure"])
 
 	print("SAMPLE URL", SAMPLE_URL)
 	sample = fetch_json(SAMPLE_URL)
-	print("SAMPLE top-level", sorted(sample))
-	print(json.dumps(sample, ensure_ascii=False, sort_keys=True)[:20000])
+	data = sample.get("data") or {}
+	print("SAMPLE keys", sorted(data))
+	dump_structure("SAMPLE STRUCTURE", data.get("structure") or {})
+	data_sets = data.get("dataSets") or []
+	print("SAMPLE datasets", len(data_sets))
+	if data_sets:
+		series = data_sets[0].get("series") or {}
+		print("SAMPLE series keys", list(series)[:10])
+		for key in list(series)[:3]:
+			observations = series[key].get("observations") or {}
+			print("SERIES", key, "observations", len(observations))
+			for observation_key in list(observations)[:3] + list(observations)[-3:]:
+				print("  OBS", observation_key, observations[observation_key])
 
 
 if __name__ == "__main__":
