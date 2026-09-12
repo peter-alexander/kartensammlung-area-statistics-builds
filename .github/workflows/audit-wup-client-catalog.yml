@@ -15,38 +15,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Locate WUP national-definition downloads
+      - name: Inspect WUP national-definition CSV schema
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
-          import html
-          import re
-          from urllib.parse import urljoin
+          import csv
+          import gzip
+          import io
+          from collections import Counter
           from urllib.request import Request, urlopen
 
-          base = "https://population.un.org/wup/downloads"
-          headers = {"User-Agent": "Kartensammlung-WUP-Audit/1.0"}
-          with urlopen(Request(base, headers=headers), timeout=30) as response:
-          	page = response.read().decode("utf-8", errors="replace")
-          scripts = sorted(set(html.unescape(v) for v in re.findall(r'src=["\']([^"\']+\.js(?:\?[^"\']*)?)["\']', page, flags=re.I)))
-          targets = (
-          	"WUP2025-DB-National-Definitions-Population-Data.csv.gz",
-          	"WUP2025-F15-National-Definitions_percPop_by_category.xlsx",
-          	"WUP2025-M02-DataSources-National-Definitions-UrbanPercentage.xlsx",
-          )
-          for script in scripts:
-          	url = urljoin(base, script)
-          	with urlopen(Request(url, headers=headers), timeout=30) as response:
-          		text = response.read().decode("utf-8", errors="replace")
-          	print("script", url, "bytes", len(text))
-          	for target in targets:
-          		start = 0
-          		while True:
-          			pos = text.find(target, start)
-          			if pos < 0:
-          				break
-          			print("TARGET", target)
-          			print(text[max(0, pos - 600):pos + len(target) + 600])
-          			start = pos + len(target)
+          url = "https://population.un.org/wup/assets/Download/Countries%20and%20Aggregates/WUP2025-DB-National-Definitions-Population-Data.csv.gz"
+          req = Request(url, headers={"User-Agent": "Kartensammlung-WUP-Audit/1.0"})
+          with urlopen(req, timeout=60) as response:
+          	compressed = response.read()
+          	print("status", response.status, "compressed-bytes", len(compressed), "last-modified", response.headers.get("Last-Modified"))
+          text = gzip.decompress(compressed).decode("utf-8-sig")
+          print("uncompressed-bytes", len(text.encode("utf-8")))
+          reader = csv.DictReader(io.StringIO(text))
+          print("columns", reader.fieldnames)
+          rows = list(reader)
+          print("rows", len(rows))
+          for row in rows[:8]:
+          	print("sample", row)
+          for field in reader.fieldnames or []:
+          	values = Counter(row.get(field, "") for row in rows)
+          	if len(values) <= 20:
+          		print("VALUES", field, len(values), values.most_common(20))
           PY
