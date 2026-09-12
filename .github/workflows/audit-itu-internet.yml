@@ -16,33 +16,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Probe ITU DataHub API
+      - name: Probe ITU DataHub routes
         shell: bash
         run: |
-          python - <<'PY'
-          import json
-          import urllib.request
-
-          urls = [
-          	"https://api.datahub.itu.int/v2/dictionaries/getbyid/11624",
-          	"https://api.datahub.itu.int/v2/data/bycode/11624",
-          ]
-          for url in urls:
-          	print(f"URL={url}")
-          	req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-audit/1.0"})
-          	with urllib.request.urlopen(req, timeout=60) as response:
-          		body = response.read()
-          		print(f"status={response.status} bytes={len(body)} contentType={response.headers.get('Content-Type')}")
-          		try:
-          			payload = json.loads(body)
-          		except Exception:
-          			print(body[:1000].decode("utf-8", errors="replace"))
-          			continue
-          		print(f"type={type(payload).__name__}")
-          		if isinstance(payload, dict):
-          			print("keys=" + ",".join(sorted(payload.keys())))
-          			print(json.dumps(payload, ensure_ascii=False)[:5000])
-          		elif isinstance(payload, list):
-          			print(f"items={len(payload)}")
-          			print(json.dumps(payload[:3], ensure_ascii=False)[:5000])
-          PY
+          set -u
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152 Safari/537.36'
+          urls=(
+            'https://api.datahub.itu.int/v2/dictionaries/getbyid/11624'
+            'https://api.datahub.itu.int/v2/data/bycode/11624'
+            'https://api.datahub.itu.int/v2/data/download/byid/11624/iscollection/false'
+          )
+          i=0
+          for url in "${urls[@]}"; do
+            i=$((i + 1))
+            echo "URL=$url"
+            headers="/tmp/itu-${i}.headers"
+            body="/tmp/itu-${i}.body"
+            code=$(curl --silent --show-error --location \
+              --connect-timeout 15 --max-time 90 \
+              --user-agent "$UA" \
+              --header 'Accept: application/json,text/csv,application/zip,application/octet-stream,*/*' \
+              --header 'Origin: https://datahub.itu.int' \
+              --header 'Referer: https://datahub.itu.int/' \
+              --dump-header "$headers" \
+              --output "$body" \
+              --write-out '%{http_code}' \
+              "$url" || true)
+            echo "status=$code bytes=$(wc -c < "$body" 2>/dev/null || echo 0)"
+            grep -Ei '^(content-type|content-disposition|location|server|via|x-|cf-):' "$headers" || true
+            file "$body" || true
+            head -c 1500 "$body" | strings | head -n 25 || true
+            echo
+          done
