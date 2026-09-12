@@ -7,6 +7,11 @@
 			"index": "world-bank/index.json"
 		},
 		{
+			"id": "itu-datahub",
+			"name": "ITU DataHub",
+			"index": "itu-datahub/index.json"
+		},
+		{
 			"id": "world-bank-pip",
 			"name": "World Bank PIP",
 			"index": "world-bank-pip/index.json"
