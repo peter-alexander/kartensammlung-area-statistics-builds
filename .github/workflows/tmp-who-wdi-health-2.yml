@@ -18,5 +18,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inspect direct WHO series
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check pycountry
+
+      - name: Compare direct WHO series with WDI
         run: python .github/scripts/tmp_inspect_who_health_2.py
