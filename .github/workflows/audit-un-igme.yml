@@ -21,5 +21,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Discover UNICEF child mortality series
+      - name: Inspect UNICEF IGME SDMX structure and sample
         run: python scripts/audit_un_igme_discovery.py
