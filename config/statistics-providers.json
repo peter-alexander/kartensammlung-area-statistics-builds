@@ -70,6 +70,11 @@
 			"id": "faostat",
 			"name": "FAOSTAT",
 			"index": "faostat/index.json"
+		},
+		{
+			"id": "aquastat",
+			"name": "FAO AQUASTAT",
+			"index": "aquastat/index.json"
 		}
 	]
 }
