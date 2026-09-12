@@ -19,13 +19,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inspect FAOSTAT sources
+      - name: Inspect FAOSTAT candidate combinations and coverage
         shell: bash
         run: |
           python - <<'PY'
-          from collections import Counter
+          from collections import defaultdict
           import csv
           import io
+          import json
           import urllib.request
           import zipfile
 
@@ -36,43 +37,104 @@ jobs:
           	"ET": "https://bulks-faostat.fao.org/production/Environment_Temperature_change_E_All_Data_(Normalized).zip",
           }
 
-          for code, url in SOURCES.items():
-          	print(f"\n===== {code} =====")
-          	req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-faostat-diagnose/1"})
+          def get(url):
+          	req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-faostat-diagnose/2"})
           	with urllib.request.urlopen(req, timeout=120) as response:
-          		data = response.read()
-          		print("url=", url)
-          		print("bytes=", len(data))
-          		print("last-modified=", response.headers.get("Last-Modified"))
+          		return response.read()
+
+          registry = json.loads(get("https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json").decode("utf-8"))
+          m49_to_area = {
+          	str(area.get("codes", {}).get("m49", "")): area["area_id"]
+          	for area in registry["areas"]
+          	if area.get("level") == "country" and str(area.get("codes", {}).get("m49", ""))
+          }
+          print("registryCountries=", sum(area.get("level") == "country" for area in registry["areas"]))
+          print("registryM49=", len(m49_to_area))
+
+          all_rows = {}
+          for code, url in SOURCES.items():
+          	data = get(url)
           	with zipfile.ZipFile(io.BytesIO(data)) as archive:
-          		names = archive.namelist()
-          		print("files=", names)
-          		data_name = next(name for name in names if "All_Data_(Normalized).csv" in name)
-          		raw = archive.read(data_name)
+          		name = next(name for name in archive.namelist() if "All_Data_(Normalized).csv" in name)
+          		raw = archive.read(name)
           		for encoding in ("utf-8-sig", "cp1252", "latin-1"):
           			try:
           				text = raw.decode(encoding)
           				break
           			except UnicodeDecodeError:
           				continue
-          		reader = csv.DictReader(io.StringIO(text))
-          		rows = list(reader)
-          		print("data_file=", data_name)
-          		print("fields=", reader.fieldnames)
-          		print("rows=", len(rows))
-          		items = sorted({(str(r.get("Item Code", "")).strip(), str(r.get("Item", "")).strip()) for r in rows})
-          		elements = sorted({(str(r.get("Element Code", "")).strip(), str(r.get("Element", "")).strip()) for r in rows})
-          		units = sorted({str(r.get("Unit", "")).strip() for r in rows})
-          		years = sorted({str(r.get("Year", "")).strip() for r in rows if str(r.get("Year", "")).strip()})
-          		areas = {(str(r.get("Area Code (M49)", "")).strip(), str(r.get("Area", "")).strip()) for r in rows}
-          		print("items:")
-          		for pair in items:
-          			print("  ", pair)
-          		print("elements:")
-          		for pair in elements:
-          			print("  ", pair)
-          		print("units=", units)
-          		print("years=", years[:3], "...", years[-5:])
-          		print("sourceAreas=", len(areas))
-          		print("top flags=", Counter(str(r.get("Flag", "")).strip() for r in rows).most_common(10))
+          		all_rows[code] = list(csv.DictReader(io.StringIO(text)))
+
+          print("\n===== CAHD combinations =====")
+          combos = defaultdict(list)
+          for row in all_rows["CAHD"]:
+          	combos[(row["Item Code"], row["Item"], row["Element Code"], row["Element"], row["Unit"])].append(row)
+          for key, rows in sorted(combos.items()):
+          	years = sorted({int(r["Year"]) for r in rows})
+          	latest = years[-1]
+          	latest_mapped = {
+          		m49_to_area[m49]
+          		for r in rows
+          		if int(r["Year"]) == latest and str(r.get("Value", "")).strip()
+          		for m49 in [str(r["Area Code (M49)"]).strip().lstrip("'").zfill(3)]
+          		if m49 in m49_to_area
+          	}
+          	any_mapped = {
+          		m49_to_area[m49]
+          		for r in rows
+          		if str(r.get("Value", "")).strip()
+          		for m49 in [str(r["Area Code (M49)"]).strip().lstrip("'").zfill(3)]
+          		if m49 in m49_to_area
+          	}
+          	print(key, f"years={years[0]}-{latest} any={len(any_mapped)} latest={len(latest_mapped)}")
+
+          print("\n===== RL selected =====")
+          for item, element in (("6610", "7209"), ("6620", "7209"), ("6646", "7209"), ("6655", "7208"), ("6690", "7252")):
+          	rows = [r for r in all_rows["RL"] if r["Item Code"] == item and r["Element Code"] == element]
+          	print_combo = rows[0] if rows else {}
+          	years = sorted({int(r["Year"]) for r in rows})
+          	latest = years[-1]
+          	for target_year in (latest, latest - 1, latest - 2):
+          		mapped = {
+          			m49_to_area[m49]
+          			for r in rows
+          			if int(r["Year"]) == target_year and str(r.get("Value", "")).strip()
+          			for m49 in [str(r["Area Code (M49)"]).strip().lstrip("'").zfill(3)]
+          			if m49 in m49_to_area
+          		}
+          		print(item, element, print_combo.get("Item"), print_combo.get("Element"), print_combo.get("Unit"), "year", target_year, "coverage", len(mapped))
+
+          print("\n===== RFN selected =====")
+          for item in ("3102", "3103", "3104"):
+          	rows = [r for r in all_rows["RFN"] if r["Item Code"] == item and r["Element Code"] == "5159"]
+          	print_combo = rows[0]
+          	years = sorted({int(r["Year"]) for r in rows})
+          	for target_year in (years[-1], years[-2], years[-3]):
+          		mapped = {
+          			m49_to_area[m49]
+          			for r in rows
+          			if int(r["Year"]) == target_year and str(r.get("Value", "")).strip()
+          			for m49 in [str(r["Area Code (M49)"]).strip().lstrip("'").zfill(3)]
+          			if m49 in m49_to_area
+          		}
+          		print(item, print_combo["Item"], print_combo["Element Code"], print_combo["Element"], print_combo["Unit"], "year", target_year, "coverage", len(mapped))
+
+          print("\n===== ET months and annual coverage =====")
+          months = sorted({(r["Months Code"], r["Months"]) for r in all_rows["ET"]})
+          for pair in months:
+          	print("month=", pair)
+          for months_code, months_name in months:
+          	rows = [r for r in all_rows["ET"] if r["Months Code"] == months_code and r["Element Code"] == "7271"]
+          	years = sorted({int(r["Year"]) for r in rows})
+          	if not years:
+          		continue
+          	latest = years[-1]
+          	mapped = {
+          		m49_to_area[m49]
+          		for r in rows
+          		if int(r["Year"]) == latest and str(r.get("Value", "")).strip()
+          		for m49 in [str(r["Area Code (M49)"]).strip().lstrip("'").zfill(3)]
+          		if m49 in m49_to_area
+          	}
+          	print("ET", months_code, months_name, "year", latest, "coverage", len(mapped))
           PY
