@@ -1,0 +1,130 @@
+name: Test FAOSTAT statistics
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - test/faostat
+    paths:
+      - "config/faostat-food-security-indicators.json"
+      - "config/statistics-providers.json"
+      - "scripts/build_faostat.py"
+      - "scripts/build_world_bank.py"
+      - ".github/workflows/build-faostat-statistics-test.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-faostat-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate scripts and config
+        run: |
+          python -m py_compile scripts/build_faostat.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/faostat-food-security-indicators.json >/dev/null
+
+      - name: Build FAOSTAT statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_faostat.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/faostat.log
+
+      - name: Validate FAOSTAT artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          provider_path = Path("dist/statistics/faostat/index.json")
+          diagnostics_path = Path("dist/statistics/faostat/diagnostics.json")
+          provider = json.loads(provider_path.read_text(encoding="utf-8"))
+          diagnostics = json.loads(diagnostics_path.read_text(encoding="utf-8"))
+
+          if provider.get("provider", {}).get("id") != "faostat":
+          	raise SystemExit("FAOSTAT provider id mismatch")
+          indicators = provider.get("indicators") or []
+          if len(indicators) != 6:
+          	raise SystemExit(f"Expected 6 FAOSTAT indicators, found {len(indicators)}")
+
+          registry = provider.get("areaRegistry") or {}
+          if registry.get("areaCount") != 250:
+          	raise SystemExit(f"Expected 250 registry country areas, got {registry.get('areaCount')}")
+          if registry.get("m49AreaCount") != 249:
+          	raise SystemExit(f"Expected 249 M49-coded registry areas, got {registry.get('m49AreaCount')}")
+
+          for indicator in indicators:
+          	if indicator.get("frequency") != "three-year-average":
+          		raise SystemExit(f"Unexpected frequency for {indicator.get('id')}: {indicator.get('frequency')}")
+          	if indicator.get("defaultYear") != 2025:
+          		raise SystemExit(f"Unexpected default endpoint for {indicator.get('id')}: {indicator.get('defaultYear')}")
+          	if (indicator.get("periodLabels") or {}).get("2025") != "2023-2025":
+          		raise SystemExit(f"Missing 2023-2025 period label for {indicator.get('id')}")
+          	coverage = indicator.get("coverage") or {}
+          	if coverage.get("defaultPeriod") != "2023-2025":
+          		raise SystemExit(f"Unexpected default period for {indicator.get('id')}: {coverage.get('defaultPeriod')}")
+
+          diagnostic_indicators = diagnostics.get("indicators") or {}
+          if set(diagnostic_indicators) != {item["id"] for item in indicators}:
+          	raise SystemExit("FAOSTAT diagnostics indicator set differs from provider index")
+          for indicator_id, diagnostic in sorted(diagnostic_indicators.items()):
+          	ignored = diagnostic.get("ignoredSourceAreas") or {}
+          	if ignored.get("001") != "World":
+          		raise SystemExit(f"World aggregate was not explicitly ignored for {indicator_id}")
+          	if ignored.get("159") != "China":
+          		raise SystemExit(f"FAOSTAT China aggregate M49 159 was not ignored for {indicator_id}")
+
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"retrievedAt={provider['retrievedAt']}")
+          print(f"sourceUrl={provider['dataset']['sourceUrl']}")
+          print(f"lastModified={provider['dataset'].get('lastModified')}")
+          print(f"registry={registry.get('m49AreaCount')}/{registry.get('areaCount')} M49-coded countries")
+          for indicator in indicators:
+          	coverage = indicator["coverage"]
+          	diagnostic = diagnostic_indicators[indicator["id"]]
+          	print(
+          		f"{indicator['id']}: periods={indicator['periodLabels'][str(indicator['availableYears'][0])]}.."
+          		f"{indicator['periodLabels'][str(indicator['availableYears'][-1])]} "
+          		f"default={coverage['defaultPeriod']} areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+          		f"latest={coverage['areasInLatestYear']} censored={diagnostic['censoredValues']} "
+          		f"missingMappedRows={diagnostic['missingMappedRows']} ignoredSourceAreas={len(diagnostic['ignoredSourceAreas'])}"
+          	)
+          PY
+          du -h dist/statistics/faostat/index.json
+          du -ch dist/statistics/faostat/releases/*/*.json | tail -n 1
+
+      - name: Upload FAOSTAT test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: faostat-statistics-test-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: faostat-statistics-test-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30

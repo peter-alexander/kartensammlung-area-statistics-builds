@@ -65,6 +65,11 @@
 			"id": "ilostat",
 			"name": "ILOSTAT",
 			"index": "ilostat/index.json"
+		},
+		{
+			"id": "faostat",
+			"name": "FAOSTAT",
+			"index": "faostat/index.json"
 		}
 	]
 }
