@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import csv
+import io
+import json
+import re
+from urllib.request import Request, urlopen
+import zipfile
+
+REGISTRY_URL = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+SOURCES = [
+	("production", "QCL", "https://bulks-faostat.fao.org/production/Production_Crops_Livestock_E_All_Data_(Normalized).zip"),
+	("production-indices", "QI", "https://bulks-faostat.fao.org/production/Production_Indices_E_All_Data_(Normalized).zip"),
+	("pesticides-use", "RP", "https://bulks-faostat.fao.org/production/Inputs_Pesticides_Use_E_All_Data_(Normalized).zip"),
+	("emissions-totals", "GT", "https://bulks-faostat.fao.org/production/Emissions_Totals_E_All_Data_(Normalized).zip"),
+]
+KEYWORDS = re.compile(r"agric|food|crop|livestock|meat|milk|cereal|yield|pestic|herbicide|fungicide|insecticide|agrifood|farm gate|land use|emission|total", re.I)
+
+
+def fetch(url: str) -> bytes:
+	req = Request(url, headers={"User-Agent":"kartensammlung-area-statistics-builds/1"})
+	with urlopen(req, timeout=180) as r:
+		return r.read()
+
+
+def decode(data: bytes) -> str:
+	for enc in ("utf-8-sig", "cp1252", "latin-1"):
+		try:
+			return data.decode(enc)
+		except UnicodeDecodeError:
+			pass
+	raise RuntimeError("decode failed")
+
+
+def norm_m49(raw: str) -> str:
+	v = str(raw or "").strip().lstrip("'")
+	return v.zfill(3) if v.isdigit() else ""
+
+
+def main() -> None:
+	registry = json.loads(fetch(REGISTRY_URL))
+	valid_m49 = {str(a.get("codes",{}).get("m49","")) for a in registry.get("areas",[]) if a.get("level")=="country" and a.get("codes",{}).get("m49")}
+	print(f"REGISTRY countries={sum(1 for a in registry.get('areas',[]) if a.get('level')=='country')} m49={len(valid_m49)}")
+	for source_id, code, url in SOURCES:
+		blob = fetch(url)
+		with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+			csv_names = [n for n in zf.namelist() if n.endswith("All_Data_(Normalized).csv")]
+			if len(csv_names) != 1:
+				raise RuntimeError(f"{source_id}: expected one normalized CSV, got {csv_names}")
+			name = csv_names[0]
+			reader = csv.DictReader(io.StringIO(decode(zf.read(name))))
+			rows = list(reader)
+		fields = reader.fieldnames or []
+		print(f"\nSOURCE {source_id} code={code} bytes={len(blob)} rows={len(rows)} file={name}")
+		print("FIELDS", fields)
+		years = [int(r["Year"]) for r in rows if str(r.get("Year","")).isdigit()]
+		print("YEARS", min(years, default="?"), max(years, default="?"))
+		items = {}
+		for r in rows:
+			item = str(r.get("Item", "")).strip()
+			item_code = str(r.get("Item Code", "")).strip()
+			if item and (KEYWORDS.search(item) or source_id in ("pesticides-use","emissions-totals","production-indices")):
+				items[(item_code,item)] = None
+		print(f"ITEMS matched={len(items)}")
+		for item_code,item in sorted(items)[:400]:
+			sub = [r for r in rows if str(r.get("Item Code","")).strip()==item_code]
+			combos = {}
+			for r in sub:
+				elc = str(r.get("Element Code","")).strip(); el = str(r.get("Element","")).strip(); unit = str(r.get("Unit","")).strip()
+				combos[(elc,el,unit)] = None
+			latest = max((int(r["Year"]) for r in sub if str(r.get("Year","")).isdigit()), default=None)
+			latest_rows = [r for r in sub if latest is not None and str(r.get("Year"))==str(latest)]
+			mapped = len({norm_m49(r.get("Area Code (M49)","")) for r in latest_rows if norm_m49(r.get("Area Code (M49)","")) in valid_m49})
+			combo_text = "; ".join(f"{ec}:{e} [{u}]" for ec,e,u in sorted(combos))
+			print(f"ITEM {item_code} | {item} | latest={latest} mappedLatest={mapped} | {combo_text}")
+
+
+if __name__ == "__main__":
+	main()
