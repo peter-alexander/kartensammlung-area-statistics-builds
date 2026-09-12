@@ -1,0 +1,36 @@
+name: Render minimal FAOSTAT workflow patch
+
+on:
+  push:
+    branches:
+      - audit/faostat-forest
+    paths:
+      - .github/workflows/render-faostat-workflow-patch.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/faostat-forest
+      - name: Render patched workflow
+        shell: python
+        run: |
+          import base64
+          from pathlib import Path
+
+          path = Path('.github/workflows/build-faostat-statistics.yml')
+          text = path.read_text(encoding='utf-8')
+          old_a = 'if len(indicators) != 25 or len(configured_indicators) != 25:'
+          new_a = 'if len(indicators) != 26 or len(configured_indicators) != 26:'
+          old_b = 'Expected 25 FAOSTAT indicators, found provider={len(indicators)} config={len(configured_indicators)}'
+          new_b = 'Expected 26 FAOSTAT indicators, found provider={len(indicators)} config={len(configured_indicators)}'
+          if text.count(old_a) != 1 or text.count(old_b) != 1:
+          	raise SystemExit('Expected FAOSTAT count assertions not found exactly once')
+          text = text.replace(old_a, new_a, 1).replace(old_b, new_b, 1)
+          print('PATCHED_BASE64=' + base64.b64encode(text.encode('utf-8')).decode('ascii'))
