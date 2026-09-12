@@ -4,6 +4,8 @@ import io
 import json
 import math
 import urllib.request
+from collections import Counter
+from decimal import Decimal, ROUND_HALF_UP
 
 import pycountry
 
@@ -49,6 +51,11 @@ def normalize_m49(value):
 	return str(int(float(str(value).strip())))
 
 
+def m49_name(m49):
+	country = pycountry.countries.get(numeric=str(m49).zfill(3))
+	return country.name if country else "?"
+
+
 def load_who(spec, cache):
 	url = spec["url"]
 	if url not in cache:
@@ -90,6 +97,10 @@ def load_wdi(code):
 	return values
 
 
+def round2_half_up(value):
+	return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 cache = {}
 for name, spec in WHO.items():
 	who = load_who(spec, cache)
@@ -99,8 +110,8 @@ for name, spec in WHO.items():
 	wdi_only = sorted(set(wdi) - set(who))
 	diffs = [abs(who[key] - wdi[key]) for key in common]
 	exact = sum(1 for key in common if who[key] == wdi[key])
-	round1 = sum(1 for key in common if round(who[key], 1) == round(wdi[key], 1))
-	tol001 = sum(1 for key in common if math.isclose(who[key], wdi[key], abs_tol=0.001, rel_tol=0.0))
+	round2 = sum(1 for key in common if round2_half_up(who[key]) == Decimal(str(wdi[key])).quantize(Decimal("0.01")))
+	tol00051 = sum(1 for key in common if math.isclose(who[key], wdi[key], abs_tol=0.0051, rel_tol=0.0))
 	latest_year = max(year for _, year in set(who) | set(wdi))
 	who_latest = len({m49 for m49, year in who if year == latest_year})
 	wdi_latest = len({m49 for m49, year in wdi if year == latest_year})
@@ -108,10 +119,12 @@ for name, spec in WHO.items():
 	print(f"WHO={len(who)} WDI={len(wdi)} common={len(common)} WHO-only={len(who_only)} WDI-only={len(wdi_only)}")
 	print(f"years WHO={min(y for _,y in who)}-{max(y for _,y in who)} WDI={min(y for _,y in wdi)}-{max(y for _,y in wdi)}")
 	print(f"latest={latest_year} WHO countries={who_latest} WDI countries={wdi_latest}")
-	print(f"exact={exact}/{len(common)} round1={round1}/{len(common)} tol0.001={tol001}/{len(common)} maxAbsDiff={max(diffs) if diffs else None}")
+	print(f"exact={exact}/{len(common)} round2-half-up={round2}/{len(common)} tol0.0051={tol00051}/{len(common)} maxAbsDiff={max(diffs) if diffs else None}")
+	wdi_gap_counts = Counter(m49 for m49, _ in wdi_only)
+	who_gap_counts = Counter(m49 for m49, _ in who_only)
+	print("WDI-only countries=" + repr([(m49, m49_name(m49), count) for m49, count in sorted(wdi_gap_counts.items())]))
+	print("WHO-only countries=" + repr([(m49, m49_name(m49), count) for m49, count in sorted(who_gap_counts.items())]))
 	if common:
-		worst = sorted(common, key=lambda key: abs(who[key] - wdi[key]), reverse=True)[:10]
+		worst = sorted(common, key=lambda key: abs(who[key] - wdi[key]), reverse=True)[:5]
 		for key in worst:
 			print(f"diff {key}: WHO={who[key]} WDI={wdi[key]} abs={abs(who[key]-wdi[key])}")
-	print(f"WHO-only sample={who_only[:20]}")
-	print(f"WDI-only sample={wdi_only[:20]}")
