@@ -13,6 +13,7 @@ SOURCES = [
 	("production-indices", "QI", "https://bulks-faostat.fao.org/production/Production_Indices_E_All_Data_(Normalized).zip"),
 	("livestock-patterns", "EK", "https://bulks-faostat.fao.org/production/Environment_LivestockPatterns_E_All_Data_(Normalized).zip"),
 	("pesticides-use", "RP", "https://bulks-faostat.fao.org/production/Inputs_Pesticides_Use_E_All_Data_(Normalized).zip"),
+	("emissions-indicators", "EM", "https://bulks-faostat.fao.org/production/Environment_Emissions_by_Sector_E_All_Data_(Normalized).zip"),
 	("emissions-totals", "GT", "https://bulks-faostat.fao.org/production/Emissions_Totals_E_All_Data_(Normalized).zip"),
 ]
 KEYWORDS = re.compile(r"agric|food|crop|livestock|meat|milk|cereal|yield|pestic|herbicide|fungicide|insecticide|agrifood|farm gate|land use|emission|total", re.I)
@@ -64,7 +65,7 @@ def main() -> None:
 					max_year = year if max_year is None else max(max_year, year)
 				item = str(r.get("Item", "")).strip()
 				item_code = str(r.get("Item Code", "")).strip()
-				if not item or not (KEYWORDS.search(item) or source_id in ("pesticides-use","emissions-totals","production-indices","livestock-patterns")):
+				if not item or not (KEYWORDS.search(item) or source_id in ("pesticides-use","emissions-indicators","emissions-totals","production-indices","livestock-patterns")):
 					continue
 				key = (item_code, item)
 				entry = items.setdefault(key, {"combos": set(), "latest": None, "mapped": set()})
