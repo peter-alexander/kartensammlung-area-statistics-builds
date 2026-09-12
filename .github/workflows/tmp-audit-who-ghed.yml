@@ -1,0 +1,49 @@
+name: Temporary audit WHO GHED
+
+on:
+  push:
+    branches:
+      - feature/who-ghed-audit
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check openpyxl
+      - name: Download GHED complete database
+        run: |
+          curl --fail --show-error --location --retry 3 --retry-delay 3 \
+            https://apps.who.int/nha/database/Home/IndicatorsDownload/en \
+            --output /tmp/ghed.xlsx
+          ls -lh /tmp/ghed.xlsx
+          file /tmp/ghed.xlsx
+      - name: Inspect workbook
+        run: |
+          python - <<'PY'
+          from openpyxl import load_workbook
+          from pathlib import Path
+
+          path = Path('/tmp/ghed.xlsx')
+          wb = load_workbook(path, read_only=True, data_only=True)
+          print('sheets=', wb.sheetnames)
+          for ws in wb.worksheets:
+              print(f'\nSHEET {ws.title!r} max_row={ws.max_row} max_column={ws.max_column}')
+              rows = ws.iter_rows(values_only=True)
+              for i, row in enumerate(rows, 1):
+                  vals = [v for v in row if v not in (None, '')]
+                  if vals:
+                      print(f'row{i}:', repr(tuple(vals[:40])))
+                  if i >= 12:
+                      break
+          PY
