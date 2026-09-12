@@ -1,0 +1,29 @@
+name: Temporary finalize WDI and UN WPP policy
+
+on:
+  push:
+    branches:
+      - docs/finalize-wdi-wpp-audit
+
+permissions:
+  contents: write
+
+jobs:
+  update-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: docs/finalize-wdi-wpp-audit
+      - name: Update policy
+        run: python .github/scripts/tmp_finalize_wdi_wpp_policy.py
+      - name: Commit policy
+        run: |
+          git rm .github/scripts/tmp_finalize_wdi_wpp_policy.py
+          git add docs/statistics-source-policy.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Finalize WDI and UN WPP source decision [skip ci]"
+          git push origin HEAD:docs/finalize-wdi-wpp-audit
