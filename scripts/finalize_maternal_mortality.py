@@ -29,7 +29,7 @@ maternal = '''          maternal = by_id["mortality.maternal-per-100000-live-bir
           assert "indicatorUuid" not in maternal_payload["source"]
           assert maternal_payload["indicator"]["confidenceIntervals"]["available"] is True
           maternal_intervals = sum(
-          \tlen(values) for values in maternal_payload["confidenceIntervals"]["values"].values()
+              len(values) for values in maternal_payload["confidenceIntervals"]["values"].values()
           )
           assert maternal_intervals == 7605, maternal_intervals
           assert "country:COK" in maternal_payload["values"]["2023"]
