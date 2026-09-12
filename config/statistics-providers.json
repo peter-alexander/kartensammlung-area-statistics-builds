@@ -47,6 +47,11 @@
 			"index": "who-ghe/index.json"
 		},
 		{
+			"id": "who-ghed",
+			"name": "WHO Global Health Expenditure Database",
+			"index": "who-ghed/index.json"
+		},
+		{
 			"id": "jmp",
 			"name": "WHO/UNICEF JMP",
 			"index": "jmp/index.json"

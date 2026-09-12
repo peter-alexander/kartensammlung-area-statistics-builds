@@ -1,0 +1,56 @@
+{
+	"schema": "kartensammlung.who-ghed-statistics/v1",
+	"sourceUrl": "https://apps.who.int/nha/database",
+	"documentationUrl": "https://apps.who.int/nha/database/DocumentationCentre/Index/e/en",
+	"downloadUrl": "https://apps.who.int/nha/database/Home/IndicatorsDownload/en",
+	"preliminaryYears": [2024],
+	"provider": {
+		"id": "who-ghed",
+		"name": "WHO GHED",
+		"dataset": "Global Health Expenditure Database",
+		"license": "CC BY 4.0",
+		"licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+		"attribution": "World Health Organization (WHO), Global Health Expenditure Database (GHED)"
+	},
+	"indicators": [
+		{
+			"id": "health-expenditure.current-percent-gdp",
+			"slug": "health-expenditure-current-percent-gdp",
+			"sourceColumn": "che_gdp",
+			"title": "Gesundheitsausgaben in % des BIP",
+			"description": "Laufende Gesundheitsausgaben (Current Health Expenditure, CHE) in Prozent des Bruttoinlandsprodukts nach der WHO Global Health Expenditure Database.",
+			"unit": {"id": "percent-of-gdp", "label": "Prozent des BIP", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [3, 5, 7, 10, 15, 20]},
+			"valueRange": [0, 100],
+			"minAreasWithAnyValue": 190,
+			"minAreasInDefaultYear": 190,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "health-expenditure.current-per-capita-usd",
+			"slug": "health-expenditure-current-per-capita-usd",
+			"sourceColumn": "che_pc_usd",
+			"title": "Gesundheitsausgaben pro Kopf",
+			"description": "Laufende Gesundheitsausgaben (CHE) pro Einwohner zu aktuellen US-Dollar nach der WHO Global Health Expenditure Database.",
+			"unit": {"id": "usd-current-per-person", "label": "US-Dollar pro Einwohner", "symbol": "$"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [50, 100, 500, 1000, 5000, 10000]},
+			"valueRange": [0, 100000],
+			"minAreasWithAnyValue": 190,
+			"minAreasInDefaultYear": 190,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "health-expenditure.current-per-capita-ppp",
+			"slug": "health-expenditure-current-per-capita-ppp",
+			"sourceColumn": "che_ppp_pc",
+			"title": "Gesundheitsausgaben pro Kopf (KKP)",
+			"description": "Laufende Gesundheitsausgaben (CHE) pro Einwohner in aktuellen internationalen Dollar zu Kaufkraftparitäten (KKP) nach der WHO Global Health Expenditure Database.",
+			"unit": {"id": "current-international-dollar-per-person", "label": "internationale Dollar pro Einwohner (KKP)", "symbol": "Int-$"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [100, 500, 1000, 2500, 5000, 10000]},
+			"valueRange": [0, 100000],
+			"minAreasWithAnyValue": 190,
+			"minAreasInDefaultYear": 190,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		}
+	]
+}
