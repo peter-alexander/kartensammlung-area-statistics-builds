@@ -16,49 +16,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inspect current ITU DataHub client
+      - name: Probe official ITU country Excel releases
         shell: bash
         run: |
-          set -euo pipefail
-          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152 Safari/537.36'
-          curl --fail --silent --show-error --location \
-            --user-agent "$UA" \
-            'https://datahub.itu.int/data/?i=11624' \
-            --output /tmp/datahub.html
-          echo "htmlBytes=$(wc -c < /tmp/datahub.html)"
-          python - <<'PY'
-          import html
-          import re
-          from pathlib import Path
-          from urllib.parse import urljoin
-
-          text = Path("/tmp/datahub.html").read_text(encoding="utf-8", errors="replace")
-          srcs = []
-          for value in re.findall(r'<script[^>]+src=["\']([^"\']+)', text):
-          	url = urljoin("https://datahub.itu.int/", html.unescape(value))
-          	if url not in srcs:
-          		srcs.append(url)
-          print(f"scripts={len(srcs)}")
-          Path("/tmp/scripts.txt").write_text("\n".join(srcs) + "\n", encoding="utf-8")
-          for url in srcs[:20]:
-          	print(url)
-          PY
-
-          mkdir -p /tmp/datahub-js
+          set -u
+          base='https://www.itu.int/en/ITU-D/Statistics/Documents/statistics'
+          paths=(
+            '2022/December/PercentIndividualsUsingInternet.xlsx'
+            '2023/July/PercentIndividualsUsingInternet.xlsx'
+            '2023/December/PercentIndividualsUsingInternet.xlsx'
+            '2024/July/PercentIndividualsUsingInternet.xlsx'
+            '2024/December/PercentIndividualsUsingInternet.xlsx'
+            '2025/July/PercentIndividualsUsingInternet.xlsx'
+            '2025/December/PercentIndividualsUsingInternet.xlsx'
+            '2026/January/PercentIndividualsUsingInternet.xlsx'
+            '2026/July/PercentIndividualsUsingInternet.xlsx'
+          )
           n=0
-          while IFS= read -r url; do
+          for path in "${paths[@]}"; do
             n=$((n + 1))
-            curl --fail --silent --show-error --location \
-              --user-agent "$UA" "$url" --output "/tmp/datahub-js/${n}.js" || true
-          done < /tmp/scripts.txt
-
-          echo '--- API hosts/routes found in current client ---'
-          grep -RaoE 'https://[^"[:space:]]+|/v[0-9]+/[A-Za-z0-9_/?=&{}.-]+|/data/[A-Za-z0-9_/?=&{}.-]+' /tmp/datahub-js \
-            | grep -Ei 'datahub|bycode|download|dictionar|aggregation' \
-            | head -n 100 || true
-
-          echo '--- literal api.datahub contexts ---'
-          grep -RaoE '.{0,180}api\.datahub\.itu\.int.{0,260}' /tmp/datahub-js | head -n 40 || true
-
-          echo '--- literal bycode contexts ---'
-          grep -RaoE '.{0,180}(bycode|download/byid|getbyid).{0,260}' /tmp/datahub-js | head -n 80 || true
+            url="${base}/${path}"
+            out="/tmp/itu-${n}.xlsx"
+            code=$(curl --silent --show-error --location \
+              --connect-timeout 15 --max-time 60 \
+              --output "$out" --write-out '%{http_code}' "$url" || true)
+            bytes=$(wc -c < "$out" 2>/dev/null || echo 0)
+            type=$(file -b "$out" 2>/dev/null || true)
+            printf '%s status=%s bytes=%s type=%s\n' "$path" "$code" "$bytes" "$type"
+            if [ "$code" = '200' ] && [ "$bytes" -gt 10000 ]; then
+              python - "$out" <<'PY'
+          import sys, zipfile
+          p=sys.argv[1]
+          print("xlsx=" + str(zipfile.is_zipfile(p)))
+          PY
+            fi
+          done
