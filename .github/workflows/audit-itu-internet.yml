@@ -16,38 +16,41 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Probe official ITU country Excel releases
+      - name: Download ITU DataHub mirror
         shell: bash
         run: |
-          set -u
-          base='https://www.itu.int/en/ITU-D/Statistics/Documents/statistics'
-          paths=(
-            '2022/December/PercentIndividualsUsingInternet.xlsx'
-            '2023/July/PercentIndividualsUsingInternet.xlsx'
-            '2023/December/PercentIndividualsUsingInternet.xlsx'
-            '2024/July/PercentIndividualsUsingInternet.xlsx'
-            '2024/December/PercentIndividualsUsingInternet.xlsx'
-            '2025/July/PercentIndividualsUsingInternet.xlsx'
-            '2025/December/PercentIndividualsUsingInternet.xlsx'
-            '2026/January/PercentIndividualsUsingInternet.xlsx'
-            '2026/July/PercentIndividualsUsingInternet.xlsx'
-          )
-          n=0
-          for path in "${paths[@]}"; do
-            n=$((n + 1))
-            url="${base}/${path}"
-            out="/tmp/itu-${n}.xlsx"
-            code=$(curl --silent --show-error --location \
-              --connect-timeout 15 --max-time 60 \
-              --output "$out" --write-out '%{http_code}' "$url" || true)
-            bytes=$(wc -c < "$out" 2>/dev/null || echo 0)
-            type=$(file -b "$out" 2>/dev/null || true)
-            printf '%s status=%s bytes=%s type=%s\n' "$path" "$code" "$bytes" "$type"
-            if [ "$code" = '200' ] && [ "$bytes" -gt 10000 ]; then
-              python - "$out" <<'PY'
-          import sys, zipfile
-          p=sys.argv[1]
-          print("xlsx=" + str(zipfile.is_zipfile(p)))
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --connect-timeout 15 --max-time 120 \
+            'https://datacatalogfiles.worldbank.org/ddh-published/0067055/DR0095956/ITU_DH.csv' \
+            --output /tmp/ITU_DH.csv
+          curl --fail --silent --show-error --location \
+            --connect-timeout 15 --max-time 120 \
+            'https://datacatalogfiles.worldbank.org/ddh-published/0067055/DR0095955/WBG_WDI_ITU_INDICATORS.csv' \
+            --output /tmp/WBG_WDI_ITU_INDICATORS.csv
+          ls -lh /tmp/ITU_DH.csv /tmp/WBG_WDI_ITU_INDICATORS.csv
+
+      - name: Inspect Internet indicator records
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+
+          for path in [Path('/tmp/ITU_DH.csv'), Path('/tmp/WBG_WDI_ITU_INDICATORS.csv')]:
+          	print(f'FILE={path.name}')
+          	with path.open('r', encoding='utf-8-sig', newline='') as f:
+          		reader = csv.DictReader(f)
+          		print('columns=' + repr(reader.fieldnames))
+          		matches = []
+          		rows = 0
+          		for row in reader:
+          			rows += 1
+          			blob = ' | '.join(str(v) for v in row.values())
+          			if '11624' in blob or 'i99H' in blob or 'I99H' in blob or 'Individuals using the Internet' in blob:
+          				if len(matches) < 12:
+          					matches.append(row)
+          		print(f'rows={rows} matchesShown={len(matches)}')
+          		for row in matches:
+          			print(row)
           PY
-            fi
-          done
