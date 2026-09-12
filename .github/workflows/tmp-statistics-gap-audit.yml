@@ -11,22 +11,33 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build deployed indicator inventory
+      - name: Compare overlapping deployed series
         run: |
           mkdir -p audit
           python - <<'PY'
           import json
+          import math
+          import statistics
           import time
           from pathlib import Path
           from urllib.request import Request, urlopen
 
           BASE = "https://tiles.radlobby.at/AreaStatistics/statistics"
           USER_AGENT = "kartensammlung-gap-audit/1"
+
+          PAIRS = [
+          	("population", "world-bank", "population.total", "un-wpp", "population.total"),
+          	("life-expectancy", "world-bank", "life-expectancy.at-birth-years", "un-wpp", "life-expectancy.at-birth-years"),
+          	("fertility", "world-bank", "fertility.total-births-per-woman", "un-wpp", "fertility.total-rate"),
+          	("infant-mortality", "world-bank", "mortality.infant-per-1000", "un-wpp", "infant-mortality.rate"),
+          	("under5-mortality", "world-bank", "mortality.under5-per-1000", "un-wpp", "under-five-mortality.rate"),
+          	("forest-share", "world-bank", "forest.area-percent", "faostat", "land-use.forest-land-share"),
+          ]
 
           def fetch_json(url):
           	last = None
@@ -35,50 +46,89 @@ jobs:
           			time.sleep(delay)
           		try:
           			request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-          			with urlopen(request, timeout=20) as response:
+          			with urlopen(request, timeout=30) as response:
           				return json.load(response)
           		except Exception as error:
           			last = error
           	raise RuntimeError(f"Failed to fetch {url}: {last}")
 
-          global_index = fetch_json(f"{BASE}/index.json?audit=2")
-          records = []
-          for provider_entry in global_index["providers"]:
-          	provider_id = provider_entry["id"]
-          	provider_index = fetch_json(f"{BASE}/{provider_entry['index']}?audit=2")
-          	provider_meta = provider_index.get("provider") or {}
-          	for indicator in provider_index.get("indicators", []):
-          		unit = indicator.get("unit") or {}
-          		records.append({
-          			"providerId": provider_id,
-          			"providerName": provider_entry.get("name"),
-          			"dataset": provider_meta.get("dataset"),
-          			"id": indicator.get("id"),
-          			"title": indicator.get("title"),
-          			"description": indicator.get("description"),
-          			"unitId": unit.get("id"),
-          			"unitLabel": unit.get("label"),
-          			"defaultYear": indicator.get("defaultYear"),
-          			"availableYears": indicator.get("availableYears"),
-          			"coverage": indicator.get("coverage"),
-          			"sourceIndicator": indicator.get("sourceIndicator"),
-          			"path": indicator.get("path"),
-          		})
+          index_cache = {}
+          payload_cache = {}
 
-          Path("audit/live-inventory.json").write_text(
-          	json.dumps(records, ensure_ascii=False, indent=2) + "\n",
+          def provider_index(provider):
+          	if provider not in index_cache:
+          		index_cache[provider] = fetch_json(f"{BASE}/{provider}/index.json?audit=compare")
+          	return index_cache[provider]
+
+          def indicator_payload(provider, indicator_id):
+          	key = (provider, indicator_id)
+          	if key in payload_cache:
+          		return payload_cache[key]
+          	entry = next(item for item in provider_index(provider)["indicators"] if item["id"] == indicator_id)
+          	payload_cache[key] = fetch_json(f"{BASE}/{provider}/{entry['path']}?audit=compare")
+          	return payload_cache[key]
+
+          results = []
+          for label, p1, id1, p2, id2 in PAIRS:
+          	a = indicator_payload(p1, id1)
+          	b = indicator_payload(p2, id2)
+          	years = sorted(set(map(str, a["values"])) & set(map(str, b["values"])), key=int)
+          	abs_diffs = []
+          	rel_diffs = []
+          	exact = 0
+          	total = 0
+          	by_year = []
+          	for year in years:
+          		av = a["values"].get(year, {})
+          		bv = b["values"].get(year, {})
+          		areas = sorted(set(av) & set(bv))
+          		year_abs = []
+          		year_exact = 0
+          		for area in areas:
+          			x = float(av[area])
+          			y = float(bv[area])
+          			diff = abs(x - y)
+          			year_abs.append(diff)
+          			abs_diffs.append(diff)
+          			if x == y:
+          				exact += 1
+          				year_exact += 1
+          			if y != 0:
+          				rel_diffs.append(diff / abs(y))
+          			total += 1
+          		if areas:
+          			by_year.append({
+          				"year": int(year),
+          				"n": len(areas),
+          				"exactFraction": year_exact / len(areas),
+          				"medianAbsDiff": statistics.median(year_abs),
+          			})
+          	result = {
+          		"label": label,
+          		"a": f"{p1}:{id1}",
+          		"b": f"{p2}:{id2}",
+          		"unitA": a.get("indicator", {}).get("unit"),
+          		"unitB": b.get("indicator", {}).get("unit"),
+          		"overlapYears": [int(years[0]), int(years[-1])] if years else None,
+          		"comparisons": total,
+          		"exactFraction": exact / total if total else None,
+          		"medianAbsDiff": statistics.median(abs_diffs) if abs_diffs else None,
+          		"medianRelativeDiff": statistics.median(rel_diffs) if rel_diffs else None,
+          		"latestOverlap": by_year[-1] if by_year else None,
+          	}
+          	results.append(result)
+          	print(json.dumps(result, ensure_ascii=False))
+
+          Path("audit/series-comparison.json").write_text(
+          	json.dumps(results, ensure_ascii=False, indent=2) + "\n",
           	encoding="utf-8",
           )
-          print(f"providers={len(global_index['providers'])}")
-          print(f"indicators={len(records)}")
-          for provider_id in sorted({record["providerId"] for record in records}):
-          	print(f"{provider_id}: {sum(record['providerId'] == provider_id for record in records)}")
           PY
 
-      - name: Upload inventory
+      - name: Upload comparison
         uses: actions/upload-artifact@v4
         with:
-          name: statistics-gap-audit-live-indexes
-          path: audit/live-inventory.json
+          name: statistics-series-comparison
+          path: audit/series-comparison.json
           if-no-files-found: error
           retention-days: 1
