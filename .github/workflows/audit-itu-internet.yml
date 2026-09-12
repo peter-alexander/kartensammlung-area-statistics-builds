@@ -25,42 +25,124 @@ jobs:
             'https://datacatalogfiles.worldbank.org/ddh-published/0067055/DR0095956/ITU_DH.csv' \
             --output /tmp/ITU_DH.csv
 
-      - name: Inspect registry and ITU indicator identifiers
+      - name: Compare ITU IT_NET_USER with WDI IT.NET.USER.ZS
         shell: bash
         run: |
           python - <<'PY'
           import csv
           import json
+          import math
+          import statistics
           import urllib.request
-          from collections import Counter
+          from collections import Counter, defaultdict
           from pathlib import Path
 
-          req = urllib.request.Request(
-          	'https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json',
-          	headers={'User-Agent': 'kartensammlung-area-statistics-audit/1'},
-          )
-          with urllib.request.urlopen(req, timeout=60) as response:
-          	registry = json.load(response)
-          print('registryType=' + type(registry).__name__)
-          if isinstance(registry, dict):
-          	print('registryKeys=' + repr(list(registry.keys())))
-          	for key, value in registry.items():
-          		if isinstance(value, list):
-          			print(f'registryList {key}: n={len(value)} sample={value[:2]}')
-          		elif isinstance(value, dict):
-          			print(f'registryDict {key}: keys={list(value)[:10]}')
-          elif isinstance(registry, list):
-          	print(f'registryListTop n={len(registry)} sample={registry[:2]}')
+          UA = 'kartensammlung-area-statistics-audit/1'
 
-          counts = Counter()
+          def get_json(url):
+          	req = urllib.request.Request(url, headers={'User-Agent': UA, 'Accept': 'application/json'})
+          	with urllib.request.urlopen(req, timeout=90) as response:
+          		return json.load(response)
+
+          registry = get_json('https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json')
+          iso3s = {
+          	str(area.get('codes', {}).get('iso3', '')).strip().upper()
+          	for area in registry['areas']
+          	if len(str(area.get('codes', {}).get('iso3', '')).strip()) == 3
+          }
+          print(f'registryIso3={len(iso3s)}')
+
+          direct = {}
+          dimensions = Counter()
+          target_rows = 0
           with Path('/tmp/ITU_DH.csv').open('r', encoding='utf-8-sig', newline='') as f:
           	for row in csv.DictReader(f):
-          		counts[row['INDICATOR']] += 1
-          candidates = [
-          	(code, count) for code, count in counts.items()
-          	if any(token in code.upper() for token in ('USER', 'USR', 'INTERNET', 'INT_'))
+          		if row['INDICATOR'] != 'IT_NET_USER':
+          			continue
+          		target_rows += 1
+          		dims = (
+          			row['SEX'], row['AGE'], row['URBANISATION'],
+          			row['COMP_BREAKDOWN_1'], row['COMP_BREAKDOWN_2'], row['COMP_BREAKDOWN_3'],
+          		)
+          		dimensions[dims] += 1
+          		if dims != ('_T', '_T', '_T', '_Z', '_Z', '_Z'):
+          			continue
+          		iso3 = row['REF_AREA'].strip().upper()
+          		if iso3 not in iso3s:
+          			continue
+          		try:
+          			year = int(row['TIME_PERIOD'])
+          			value = float(row['OBS_VALUE'])
+          		except (TypeError, ValueError):
+          			continue
+          		if not math.isfinite(value):
+          			continue
+          		key = (iso3, year)
+          		if key in direct and abs(direct[key] - value) > 1e-12:
+          			raise RuntimeError(f'duplicate ITU value {key}: {direct[key]} vs {value}')
+          		direct[key] = value
+
+          print(f'ITU rawRows={target_rows} dimensionCombinations={len(dimensions)}')
+          for dims, count in dimensions.most_common(12):
+          	print(f'  dims={dims} rows={count}')
+          print(f'ITU totalSeriesRows={len(direct)}')
+          if not direct:
+          	raise RuntimeError('No IT_NET_USER total-series values found')
+
+          payload = get_json('https://api.worldbank.org/v2/country/all/indicator/IT.NET.USER.ZS?format=json&per_page=20000')
+          wdi = {}
+          for row in payload[1]:
+          	iso3 = str(row.get('countryiso3code') or '').strip().upper()
+          	if iso3 not in iso3s or row.get('value') is None:
+          		continue
+          	try:
+          		year = int(row['date'])
+          		value = float(row['value'])
+          	except (TypeError, ValueError):
+          		continue
+          	if math.isfinite(value):
+          		wdi[(iso3, year)] = value
+
+          def summary(label, values):
+          	years = [year for _, year in values]
+          	areas = {iso3 for iso3, _ in values}
+          	print(f'{label}: observations={len(values)} areas={len(areas)} years={min(years)}-{max(years)}')
+          	for year in sorted(set(years), reverse=True)[:6]:
+          		print(f'  {year}: {sum(y == year for _, y in values)} areas')
+
+          summary('ITU', direct)
+          summary('WDI', wdi)
+
+          common = sorted(set(direct) & set(wdi))
+          itu_only = sorted(set(direct) - set(wdi))
+          wdi_only = sorted(set(wdi) - set(direct))
+          diffs = [abs(direct[key] - wdi[key]) for key in common]
+          relative = [
+          	abs(direct[key] - wdi[key]) / max(abs(direct[key]), abs(wdi[key]), 1e-12)
+          	for key in common
           ]
-          print(f'indicatorCodes={len(counts)} candidates={len(candidates)}')
-          for code, count in sorted(candidates):
-          	print(f'{code}: {count}')
+          print(f'common={len(common)} ituOnly={len(itu_only)} wdiOnly={len(wdi_only)}')
+          print(f'exact1e-12={sum(diff <= 1e-12 for diff in diffs)} within1e-9={sum(diff <= 1e-9 for diff in diffs)} within1e-6={sum(diff <= 1e-6 for diff in diffs)}')
+          print(f'medianAbsDiff={statistics.median(diffs)} meanAbsDiff={statistics.fmean(diffs)} maxAbsDiff={max(diffs)}')
+          print(f'medianRelDiff={statistics.median(relative)}')
+
+          latest_common = max(year for _, year in common)
+          latest_keys = [key for key in common if key[1] == latest_common]
+          latest_diffs = [abs(direct[key] - wdi[key]) for key in latest_keys]
+          print(f'latestCommonYear={latest_common} commonAreas={len(latest_keys)} medianAbsDiff={statistics.median(latest_diffs)} maxAbsDiff={max(latest_diffs)}')
+
+          def area_summary(label, keys):
+          	print(label)
+          	by_area = defaultdict(list)
+          	for iso3, year in keys:
+          		by_area[iso3].append(year)
+          	for iso3, years in sorted(by_area.items(), key=lambda item: (-len(item[1]), item[0]))[:40]:
+          		print(f'  {iso3}: n={len(years)} years={min(years)}-{max(years)}')
+
+          area_summary('ITU-only:', itu_only)
+          area_summary('WDI-only:', wdi_only)
+
+          print('Largest differences:')
+          for key in sorted(common, key=lambda k: abs(direct[k] - wdi[k]), reverse=True)[:40]:
+          	print(f'  {key[0]} {key[1]} ITU={direct[key]:.15g} WDI={wdi[key]:.15g} diff={abs(direct[key]-wdi[key]):.15g}')
           PY
