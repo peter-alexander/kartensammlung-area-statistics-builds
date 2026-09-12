@@ -137,7 +137,7 @@ jobs:
           chmod +x .github/scripts/deploy-world-bank-statistics.sh
           .github/scripts/deploy-world-bank-statistics.sh dist/statistics
 
-      # CORS is configured server-side; exact public byte comparison verifies deployment.
+      # Exact public byte comparison is the production integrity check; CORS is configured server-side.
       - name: Verify public statistics
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         shell: bash
