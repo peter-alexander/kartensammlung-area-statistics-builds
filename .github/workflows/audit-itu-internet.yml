@@ -80,12 +80,12 @@ jobs:
           	if iso3 not in iso3s or row.get('value') is None:
           		continue
           	try:
-          			year = int(row['date'])
-          			value = float(row['value'])
-          		except (TypeError, ValueError):
-          			continue
-          		if math.isfinite(value):
-          			wdi[(iso3, year)] = value
+          		year = int(row['date'])
+          		value = float(row['value'])
+          	except (TypeError, ValueError):
+          		continue
+          	if math.isfinite(value):
+          		wdi[(iso3, year)] = value
 
           itu_only = sorted(set(direct) - set(wdi))
           wdi_only = sorted(set(wdi) - set(direct))
