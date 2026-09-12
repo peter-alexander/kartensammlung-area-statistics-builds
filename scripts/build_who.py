@@ -89,6 +89,9 @@ def validate_config(payload: Any) -> dict[str, Any]:
 		dimension_filters = indicator.get("dimensionFilters", {})
 		if not isinstance(dimension_filters, dict) or any(not str(key).strip() or not str(value).strip() for key, value in dimension_filters.items()):
 			raise ValueError(f"WHO indicator {indicator_id} has invalid dimensionFilters.")
+		confidence_intervals = indicator.get("confidenceIntervals", True)
+		if not isinstance(confidence_intervals, bool):
+			raise ValueError(f"WHO indicator {indicator_id} has invalid confidenceIntervals flag.")
 		for field_name in ("valueField", "lowerField", "upperField", "fallbackWdiIndicator"):
 			if field_name in indicator and not str(indicator[field_name]).strip():
 				raise ValueError(f"WHO indicator {indicator_id} has invalid {field_name}.")
@@ -263,14 +266,17 @@ def normalize_indicator(
 	rows, byte_count = fetch_csv(str(indicator["downloadUrl"]), max(timeout, 90), csv_cache)
 	print(f"WHO {indicator['sourceIndicator']}: downloaded={byte_count} bytes rows={len(rows)}")
 	value_field = str(indicator.get("valueField", "RATE_PER_100_N"))
-	lower_field = str(indicator.get("lowerField", "RATE_PER_100_NL"))
-	upper_field = str(indicator.get("upperField", "RATE_PER_100_NU"))
+	has_confidence_intervals = bool(indicator.get("confidenceIntervals", True))
+	lower_field = str(indicator.get("lowerField", "RATE_PER_100_NL")) if has_confidence_intervals else None
+	upper_field = str(indicator.get("upperField", "RATE_PER_100_NU")) if has_confidence_intervals else None
 	dimension_filters = {str(key): str(value) for key, value in indicator.get("dimensionFilters", {}).items()}
 	required_fields = {
 		"IND_CODE", "IND_UUID", "DIM_TIME", "DIM_TIME_TYPE", "DIM_GEO_CODE_M49",
 		"DIM_GEO_CODE_TYPE", "DIM_PUBLISH_STATE_CODE", "IND_NAME", "GEO_NAME_SHORT",
-		value_field, lower_field, upper_field, *dimension_filters.keys(),
+		value_field, *dimension_filters.keys(),
 	}
+	if has_confidence_intervals:
+		required_fields.update({str(lower_field), str(upper_field)})
 	missing_fields = required_fields - set(rows[0])
 	if missing_fields:
 		raise RuntimeError(f"WHO CSV schema changed for {indicator['id']}: missing {sorted(missing_fields)}")
@@ -279,6 +285,7 @@ def normalize_indicator(
 	values_by_year: dict[int, dict[str, int | float]] = {}
 	intervals_by_year: dict[int, dict[str, dict[str, int | float]]] = {}
 	ignored_m49: set[str] = set()
+	direct_years: set[int] = set()
 	direct_observations = 0
 	for row in rows:
 		if str(row.get("IND_CODE", "")).strip() != str(indicator["sourceIndicator"]):
@@ -306,21 +313,26 @@ def normalize_indicator(
 			continue
 		area_id = area_by_m49[m49]
 		value = parse_number(row.get(value_field))
-		lower = parse_number(row.get(lower_field))
-		upper = parse_number(row.get(upper_field))
 		validate_value_range(indicator, area_id, year, value, "value")
-		validate_value_range(indicator, area_id, year, lower, "confidence lower bound")
-		validate_value_range(indicator, area_id, year, upper, "confidence upper bound")
-		if not float(lower) <= float(value) <= float(upper):
-			raise RuntimeError(
-				f"WHO confidence interval is invalid for {indicator['id']} {area_id} {year}: "
-				f"{lower}, {value}, {upper}"
-			)
+		interval = None
+		if has_confidence_intervals:
+			lower = parse_number(row.get(str(lower_field)))
+			upper = parse_number(row.get(str(upper_field)))
+			validate_value_range(indicator, area_id, year, lower, "confidence lower bound")
+			validate_value_range(indicator, area_id, year, upper, "confidence upper bound")
+			if not float(lower) <= float(value) <= float(upper):
+				raise RuntimeError(
+					f"WHO confidence interval is invalid for {indicator['id']} {area_id} {year}: "
+					f"{lower}, {value}, {upper}"
+				)
+			interval = {"lower": lower, "upper": upper}
 		year_values = values_by_year.setdefault(year, {})
 		if area_id in year_values:
 			raise RuntimeError(f"Duplicate WHO country value for {indicator['id']} {area_id} {year}.")
 		year_values[area_id] = value
-		intervals_by_year.setdefault(year, {})[area_id] = {"lower": lower, "upper": upper}
+		if interval is not None:
+			intervals_by_year.setdefault(year, {})[area_id] = interval
+		direct_years.add(year)
 		direct_observations += 1
 
 	fallback_metadata: dict[int, dict[str, dict[str, Any]]] = {}
@@ -370,11 +382,10 @@ def normalize_indicator(
 		"frequency": frequency,
 		"unit": indicator["unit"],
 		"classification": indicator["classification"],
-		"confidenceIntervals": {
-			"available": True,
-			"lowerField": lower_field,
-			"upperField": upper_field,
-		},
+		"confidenceIntervals": (
+			{"available": True, "lowerField": lower_field, "upperField": upper_field}
+			if has_confidence_intervals else {"available": False}
+		),
 	}
 	provider = config["provider"]
 	source: dict[str, Any] = {
@@ -394,10 +405,11 @@ def normalize_indicator(
 	}
 	if dimension_filters:
 		source["dimensionFilters"] = dimension_filters
-	if len(available_years) == 1:
-		source["referenceYear"] = available_years[0]
-	else:
-		source["timeCoverage"] = {"startYear": available_years[0], "endYear": available_years[-1]}
+	direct_available_years = sorted(direct_years)
+	if len(direct_available_years) == 1:
+		source["referenceYear"] = direct_available_years[0]
+	elif direct_available_years:
+		source["timeCoverage"] = {"startYear": direct_available_years[0], "endYear": direct_available_years[-1]}
 	if fallback_code:
 		source["fallback"] = {
 			"providerId": "world-bank",
@@ -489,7 +501,7 @@ def main() -> None:
 			"availableYears": payload["availableYears"],
 			"defaultYear": payload["defaultYear"],
 			"coverage": payload["coverage"],
-			"confidenceIntervals": True,
+			"confidenceIntervals": bool(payload["indicator"]["confidenceIntervals"]["available"]),
 		})
 
 	registry_source = {

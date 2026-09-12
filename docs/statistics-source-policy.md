@@ -202,13 +202,23 @@ Testbuild:
 
 Konsequenz nach erfolgreicher WHO-Produktion: Die vier sichtbaren WDI-Doppelungen `SH.STA.SUIC.P5`, `SH.STA.SUIC.MA.P5`, `SH.STA.SUIC.FE.P5` und `SH.DYN.NCOM.ZS` wurden aus dem WDI-Provider entfernt. Die zusätzliche WDI-Abdeckung bleibt ausschließlich als explizit markierter Fallback innerhalb der kanonischen WHO-Kennzahlen erhalten.
 
+#### DTP3-Impfquote
+
+Direkte WHO-Quelle: World Health Data Hub, `WHS4_100`, UUID `F8E084C`. Die Direktdatei enthält jährliche WHO/UNICEF-Schätzungen für 2000–2024; WDI `SH.IMM.IDPT` reicht zusätzlich bis 1980 zurück.
+
+- 4.756 gemeinsame Länder-Jahr-Werte wurden verglichen.
+- **4.756/4.756 Werte sind exakt identisch.**
+- WHO direkt deckt im Jahr 2024 193 Länder ab, WDI 192.
+- WDI liefert vor allem die Historie 1980–1999 sowie einzelne Länder-/Jahrlücken; WHO direkt enthält zusätzlich Cookinseln und Niue.
+
+Entscheidung: **WHO ist kanonisch.** Die direkte WHO-Reihe wird für 2000–2024 verwendet; WDI ergänzt ausschließlich frühere Jahre und Lücken als explizit markierter Fallback. Die sichtbare WDI-Doppelung wird erst nach erfolgreicher WHO-Produktion entfernt.
+
 #### Nächste WHO-Prüfungen
 
 Noch einzeln zu prüfen sind insbesondere:
 
 - Gesundheitsausgaben,
 - Ärzte sowie Pflege-/Hebammenpersonal,
-- DPT-Impfquote,
 - Masern-Impfquote.
 
 ### Weitere Themen

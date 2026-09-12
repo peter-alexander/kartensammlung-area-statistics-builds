@@ -127,6 +127,26 @@
 			"valueRange": [0, 100],
 			"minAreasWithAnyValue": 180,
 			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "immunization.dpt-percent",
+			"slug": "immunization-dpt-percent",
+			"sourceIndicator": "WHS4_100",
+			"sourceUuid": "F8E084C",
+			"sourceUrl": "https://data.who.int/indicators/i/48D7D19/F8E084C",
+			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/F8E084C_ALL_LATEST.csv",
+			"valueField": "RATE_PER_100_N",
+			"confidenceIntervals": false,
+			"startYear": 1980,
+			"endYear": 2024,
+			"fallbackWdiIndicator": "SH.IMM.IDPT",
+			"title": "DPT-Impfquote",
+			"description": "Anteil der Einjährigen, die drei Dosen eines Diphtherie-, Tetanus- und Pertussis-haltigen Impfstoffs (DTP3) erhalten haben; offizielle WHO/UNICEF-Schätzung. Direkte WHO-Werte ab 2000 sind kanonisch; die identische WHO-originäre WDI-Reihe ergänzt ausschließlich frühere Jahre und Länder-/Jahrlücken und wird als Fallback markiert.",
+			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [50, 70, 80, 90, 95, 99]},
+			"valueRange": [0, 100],
+			"minAreasWithAnyValue": 180,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		}
 	]
 }
