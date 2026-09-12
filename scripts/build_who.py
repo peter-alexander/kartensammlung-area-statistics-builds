@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import pycountry
@@ -27,7 +28,7 @@ USER_AGENT = "kartensammlung-area-statistics-builds/1"
 
 
 def parse_args() -> argparse.Namespace:
-	parser = argparse.ArgumentParser(description="Build normalized country statistics from WHO World Health Data Hub CSV files.")
+	parser = argparse.ArgumentParser(description="Build normalized country statistics from WHO World Health Data Hub and Global Health Observatory data.")
 	parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
 	parser.add_argument("--providers", type=Path, default=DEFAULT_PROVIDERS)
 	parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
@@ -64,9 +65,14 @@ def validate_config(payload: Any) -> dict[str, Any]:
 	for indicator in indicators:
 		if not isinstance(indicator, dict):
 			raise ValueError("WHO indicator entries must be objects.")
-		for key in ("id", "slug", "sourceIndicator", "sourceUuid", "sourceUrl", "downloadUrl", "title", "description"):
+		for key in ("id", "slug", "sourceIndicator", "sourceUrl", "downloadUrl", "title", "description"):
 			if not str(indicator.get(key, "")).strip():
 				raise ValueError(f"WHO indicator entry is missing {key}.")
+		source_format = str(indicator.get("sourceFormat", "data-hub-csv")).strip()
+		if source_format not in {"data-hub-csv", "gho-odata"}:
+			raise ValueError(f"WHO indicator {indicator['id']} has unsupported sourceFormat {source_format!r}.")
+		if source_format == "data-hub-csv" and not str(indicator.get("sourceUuid", "")).strip():
+			raise ValueError(f"WHO Data Hub indicator {indicator['id']} is missing sourceUuid.")
 		if not str(indicator["sourceUrl"]).startswith("https://") or not str(indicator["downloadUrl"]).startswith("https://"):
 			raise ValueError(f"WHO indicator {indicator['id']} source URLs must use HTTPS.")
 		indicator_id = str(indicator["id"])
@@ -175,6 +181,45 @@ def fetch_csv(url: str, timeout: int, cache: dict[str, tuple[list[dict[str, str]
 	return cache[url]
 
 
+def fetch_gho_rows(
+	url: str,
+	indicator_code: str,
+	timeout: int,
+	cache: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+	if url in cache:
+		return cache[url]
+	rows: list[dict[str, Any]] = []
+	page_size = 1000
+	skip = 0
+	for _ in range(100):
+		params = urlencode({
+			"$select": "SpatialDim,SpatialDimType,TimeDim,NumericValue,Value",
+			"$filter": "SpatialDimType eq 'COUNTRY'",
+			"$top": page_size,
+			"$skip": skip,
+		})
+		separator = "&" if "?" in url else "?"
+		page_url = f"{url}{separator}{params}"
+		try:
+			payload = json.loads(fetch_bytes(page_url, max(timeout, 90), "application/json,*/*").decode("utf-8"))
+		except (UnicodeDecodeError, json.JSONDecodeError) as error:
+			raise RuntimeError(f"WHO GHO response could not be parsed for {indicator_code}.") from error
+		page_rows = payload.get("value") if isinstance(payload, dict) else None
+		if not isinstance(page_rows, list):
+			raise RuntimeError(f"Unexpected WHO GHO response for {indicator_code}.")
+		rows.extend(row for row in page_rows if isinstance(row, dict))
+		if len(page_rows) < page_size:
+			break
+		skip += page_size
+	else:
+		raise RuntimeError(f"WHO GHO pagination exceeded 100 pages for {indicator_code}.")
+	if not rows:
+		raise RuntimeError(f"WHO GHO returned no rows for {indicator_code}.")
+	cache[url] = rows
+	return rows
+
+
 def fetch_wdi(
 	indicator_code: str,
 	start_year: int,
@@ -261,10 +306,34 @@ def normalize_indicator(
 	area_by_m49: dict[str, str],
 	timeout: int,
 	csv_cache: dict[str, tuple[list[dict[str, str]], int]],
+	gho_cache: dict[str, list[dict[str, Any]]],
 	wdi_cache: dict[tuple[str, int, int], dict[tuple[str, int], int | float]],
 ) -> dict[str, Any]:
-	rows, byte_count = fetch_csv(str(indicator["downloadUrl"]), max(timeout, 90), csv_cache)
-	print(f"WHO {indicator['sourceIndicator']}: downloaded={byte_count} bytes rows={len(rows)}")
+	source_format = str(indicator.get("sourceFormat", "data-hub-csv")).strip()
+	source_uuid = str(indicator.get("sourceUuid", "")).strip()
+	if source_format == "gho-odata":
+		gho_rows = fetch_gho_rows(str(indicator["downloadUrl"]), str(indicator["sourceIndicator"]), timeout, gho_cache)
+		rows: list[dict[str, Any]] = []
+		for row in gho_rows:
+			iso3 = str(row.get("SpatialDim") or "").strip().upper()
+			country = pycountry.countries.get(alpha_3=iso3)
+			m49 = str(getattr(country, "numeric", "")) if country is not None else ""
+			rows.append({
+				"IND_CODE": indicator["sourceIndicator"],
+				"IND_UUID": "",
+				"DIM_TIME": row.get("TimeDim"),
+				"DIM_TIME_TYPE": "YEAR",
+				"DIM_GEO_CODE_M49": m49,
+				"DIM_GEO_CODE_TYPE": "COUNTRY",
+				"DIM_PUBLISH_STATE_CODE": "PUBLISHED",
+				"IND_NAME": indicator.get("sourceIndicatorName", indicator["title"]),
+				"GEO_NAME_SHORT": iso3,
+				"RATE_PER_100_N": row.get("NumericValue") if row.get("NumericValue") is not None else row.get("Value"),
+			})
+		print(f"WHO GHO {indicator['sourceIndicator']}: rows={len(rows)}")
+	else:
+		rows, byte_count = fetch_csv(str(indicator["downloadUrl"]), max(timeout, 90), csv_cache)
+		print(f"WHO {indicator['sourceIndicator']}: downloaded={byte_count} bytes rows={len(rows)}")
 	value_field = str(indicator.get("valueField", "RATE_PER_100_N"))
 	has_confidence_intervals = bool(indicator.get("confidenceIntervals", True))
 	lower_field = str(indicator.get("lowerField", "RATE_PER_100_NL")) if has_confidence_intervals else None
@@ -290,7 +359,7 @@ def normalize_indicator(
 	for row in rows:
 		if str(row.get("IND_CODE", "")).strip() != str(indicator["sourceIndicator"]):
 			raise RuntimeError(f"WHO indicator code mismatch in {indicator['id']}.")
-		if str(row.get("IND_UUID", "")).strip() != str(indicator["sourceUuid"]):
+		if source_uuid and str(row.get("IND_UUID", "")).strip() != source_uuid:
 			raise RuntimeError(f"WHO indicator UUID mismatch in {indicator['id']}.")
 		if str(row.get("DIM_TIME_TYPE", "")).strip() != "YEAR":
 			continue
@@ -391,9 +460,8 @@ def normalize_indicator(
 	source: dict[str, Any] = {
 		"providerId": provider["id"],
 		"providerName": provider["name"],
-		"dataset": provider["dataset"],
+		"dataset": indicator.get("sourceDataset", provider["dataset"]),
 		"indicator": indicator["sourceIndicator"],
-		"indicatorUuid": indicator["sourceUuid"],
 		"indicatorName": next((str(row.get("IND_NAME", "")).strip() for row in rows if str(row.get("IND_NAME", "")).strip()), None),
 		"provenance": str(indicator.get("provenance", "WHO official estimate")),
 		"license": provider["license"],
@@ -402,7 +470,10 @@ def normalize_indicator(
 		"url": indicator["sourceUrl"],
 		"downloadUrl": indicator["downloadUrl"],
 		"valueField": value_field,
+		"sourceFormat": source_format,
 	}
+	if source_uuid:
+		source["indicatorUuid"] = source_uuid
 	if dimension_filters:
 		source["dimensionFilters"] = dimension_filters
 	direct_available_years = sorted(direct_years)
@@ -471,10 +542,11 @@ def main() -> None:
 	area_by_m49, registry_payload = load_registry_by_m49(args.registry, args.timeout)
 	now = datetime.now(timezone.utc)
 	csv_cache: dict[str, tuple[list[dict[str, str]], int]] = {}
+	gho_cache: dict[str, list[dict[str, Any]]] = {}
 	wdi_cache: dict[tuple[str, int, int], dict[tuple[str, int], int | float]] = {}
 	indicator_payloads: list[tuple[dict[str, Any], dict[str, Any]]] = []
 	for indicator in config["indicators"]:
-		payload = normalize_indicator(config, indicator, area_by_m49, args.timeout, csv_cache, wdi_cache)
+		payload = normalize_indicator(config, indicator, area_by_m49, args.timeout, csv_cache, gho_cache, wdi_cache)
 		indicator_payloads.append((indicator, payload))
 
 	hasher = hashlib.sha256()
@@ -487,7 +559,7 @@ def main() -> None:
 	for indicator, payload in indicator_payloads:
 		filename = f"{indicator['slug']}.json"
 		common.write_json(release_dir / filename, payload)
-		index_indicators.append({
+		index_entry = {
 			"id": indicator["id"],
 			"title": indicator["title"],
 			"description": indicator["description"],
@@ -496,13 +568,15 @@ def main() -> None:
 			"unit": indicator["unit"],
 			"classification": indicator["classification"],
 			"sourceIndicator": indicator["sourceIndicator"],
-			"sourceUuid": indicator["sourceUuid"],
 			"path": f"releases/{snapshot}/{filename}",
 			"availableYears": payload["availableYears"],
 			"defaultYear": payload["defaultYear"],
 			"coverage": payload["coverage"],
 			"confidenceIntervals": bool(payload["indicator"]["confidenceIntervals"]["available"]),
-		})
+		}
+		if indicator.get("sourceUuid"):
+			index_entry["sourceUuid"] = indicator["sourceUuid"]
+		index_indicators.append(index_entry)
 
 	registry_source = {
 		"url": args.registry if args.registry.startswith(("https://", "http://")) else None,
@@ -520,7 +594,7 @@ def main() -> None:
 		"areaRegistry": registry_source,
 		"indicators": index_indicators,
 		"notes": [
-			"Direct WHO World Health Data Hub observations are canonical.",
+			"Direct WHO World Health Data Hub and Global Health Observatory observations are canonical.",
 			"Confidence intervals from WHO are preserved in each indicator payload where available.",
 			"Configured World Bank WDI fallbacks are used only for country-year gaps in WHO-origin series and are marked in observationMetadata.",
 		],
