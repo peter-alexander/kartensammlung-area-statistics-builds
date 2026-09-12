@@ -1,0 +1,25 @@
+name: Audit UN IGME
+
+on:
+  push:
+    branches:
+      - audit/un-igme
+    paths:
+      - scripts/audit_un_igme_discovery.py
+      - .github/workflows/audit-un-igme.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Discover UNICEF child mortality series
+        run: python scripts/audit_un_igme_discovery.py
