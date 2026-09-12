@@ -1,0 +1,218 @@
+name: Build ITU DataHub statistics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "31 6 18 * *"
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "config/itu-datahub-indicators.json"
+      - "config/world-bank-indicators.json"
+      - "scripts/build_itu_datahub.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-itu-datahub-statistics.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "config/statistics-providers.json"
+      - "config/itu-datahub-indicators.json"
+      - "config/world-bank-indicators.json"
+      - "scripts/build_itu_datahub.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-itu-datahub-statistics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-itu-datahub-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate scripts
+        run: |
+          bash -n .github/scripts/deploy-world-bank-statistics.sh
+          python -m py_compile scripts/build_itu_datahub.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/itu-datahub-indicators.json >/dev/null
+          python -m json.tool config/world-bank-indicators.json >/dev/null
+
+      - name: Build ITU DataHub statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_itu_datahub.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/itu-datahub.log
+
+      - name: Validate ITU DataHub output
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path("config/itu-datahub-indicators.json").read_text(encoding="utf-8"))
+          provider = json.loads(Path("dist/statistics/itu-datahub/index.json").read_text(encoding="utf-8"))
+          global_index = json.loads(Path("dist/statistics/index.json").read_text(encoding="utf-8"))
+
+          assert provider["provider"]["id"] == "itu-datahub"
+          assert len(provider["indicators"]) == len(config["indicators"]) == 1
+          assert any(item["id"] == "itu-datahub" for item in global_index["providers"])
+          assert provider["dataset"]["distribution"]["datasetId"] == "0067055"
+          assert provider["dataset"]["distribution"]["resourceId"] == "DR0095956"
+          assert provider["dataset"]["rows"] >= 150000
+          assert provider["dataset"]["bytes"] >= 19000000
+
+          configured = {item["id"]: item for item in config["indicators"]}
+          for item in provider["indicators"]:
+          	cfg = configured[item["id"]]
+          	coverage = item["coverage"]
+          	assert item["sourceIndicator"] == cfg["sourceIndicator"]
+          	assert item["defaultYear"] >= cfg["minimumDefaultYear"]
+          	assert item["availableYears"][-1] >= cfg["minimumLatestYear"]
+          	assert coverage["areasWithAnyValue"] >= cfg["minAreasWithAnyValue"]
+          	assert coverage["areasInDefaultYear"] >= cfg["minAreasInDefaultYear"]
+          	assert coverage["directObservations"] >= 5000
+          	assert coverage["fallbackObservations"] > 0
+          	assert coverage["observations"] == coverage["directObservations"] + coverage["fallbackObservations"]
+
+          	payload = json.loads(Path("dist/statistics/itu-datahub", item["path"]).read_text(encoding="utf-8"))
+          	assert payload["source"]["providerId"] == "itu-datahub"
+          	assert payload["source"]["indicator"] == cfg["sourceIndicator"]
+          	assert payload["source"]["distribution"]["provider"] == "World Bank Data Catalog"
+          	assert payload["source"]["distribution"]["datasetId"] == "0067055"
+          	assert payload["source"]["distribution"]["resourceId"] == "DR0095956"
+          	assert payload["source"]["fallback"]["providerId"] == "world-bank"
+          	assert payload["source"]["fallback"]["indicator"] == cfg["fallbackWdiIndicator"]
+          	assert payload["source"]["sourceInvariants"] == config["sourceInvariants"]
+          	assert payload["source"]["filters"] == cfg["filters"]
+
+          	metadata = payload.get("observationMetadata") or {}
+          	metadata_count = sum(len(values) for values in metadata.values())
+          	assert metadata_count == coverage["fallbackObservations"]
+          	for year_values in metadata.values():
+          		for observation in year_values.values():
+          			assert observation["fallback"] is True
+          			assert observation["sourceProviderId"] == "world-bank"
+          			assert observation["sourceIndicator"] == cfg["fallbackWdiIndicator"]
+
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"retrievedAt={provider['retrievedAt']}")
+          for item in provider["indicators"]:
+          	coverage = item["coverage"]
+          	print(
+          		f"{item['id']}: defaultYear={item['defaultYear']} "
+          		f"areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+          		f"years={item['availableYears'][0]}-{item['availableYears'][-1]} "
+          		f"direct={coverage['directObservations']} "
+          		f"fallback={coverage['fallbackObservations']}"
+          	)
+          PY
+          du -h dist/statistics/itu-datahub/index.json
+          du -ch dist/statistics/itu-datahub/releases/*/*.json | tail -n 1
+
+      - name: Upload statistics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: itu-datahub-statistics-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Deploy to tiles.radlobby.at
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          PROVIDER_ID: itu-datahub
+        run: |
+          chmod +x .github/scripts/deploy-world-bank-statistics.sh
+          .github/scripts/deploy-world-bank-statistics.sh dist/statistics
+
+      - name: Verify browser access and public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          check_file() {
+          	local url="$1"
+          	local local_file="$2"
+          	local output="$3"
+          	local headers
+          	local allow_origin
+          	headers="$(mktemp)"
+          	curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          		--header "Origin: ${BROWSER_ORIGIN}" --dump-header "$headers" \
+          		--output "$output" "${url}?${CACHE_BUST}"
+          	cmp "$local_file" "$output"
+          	allow_origin="$(awk '
+          		BEGIN { IGNORECASE = 1 }
+          		tolower($1) == "access-control-allow-origin:" {
+          			value = $0
+          			sub(/^[^:]+:[[:space:]]*/, "", value)
+          			gsub(/\r/, "", value)
+          			print value
+          		}
+          	' "$headers" | tail -n 1)"
+          	rm -f "$headers"
+          	if [ "$allow_origin" != "*" ] && [ "$allow_origin" != "$BROWSER_ORIGIN" ]; then
+          		echo "CORS check failed for ${url}: Access-Control-Allow-Origin='${allow_origin:-<missing>}'" >&2
+          		exit 1
+          	fi
+          }
+
+          check_file "${PUBLIC_BASE}/index.json" "dist/statistics/index.json" /tmp/public-statistics-index.json
+          check_file "${PUBLIC_BASE}/itu-datahub/index.json" "dist/statistics/itu-datahub/index.json" /tmp/public-itu-datahub-index.json
+          while IFS= read -r path; do
+          	mkdir -p "/tmp/public-itu-datahub/$(dirname "$path")"
+          	check_file \
+          		"${PUBLIC_BASE}/itu-datahub/${path}" \
+          		"dist/statistics/itu-datahub/${path}" \
+          		"/tmp/public-itu-datahub/${path}"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/itu-datahub/index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
+          PY
+          )
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: itu-datahub-statistics-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30

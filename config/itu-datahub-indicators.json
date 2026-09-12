@@ -1,0 +1,66 @@
+{
+	"schema": "kartensammlung.itu-datahub-statistics/v1",
+	"downloadUrl": "https://datacatalogfiles.worldbank.org/ddh-published/0067055/DR0095956/ITU_DH.csv",
+	"catalogUrl": "https://datacatalog.worldbank.org/search/dataset/0067055/itu-data-hub",
+	"sourceUrl": "https://datahub.itu.int/",
+	"provider": {
+		"id": "itu-datahub",
+		"name": "ITU DataHub",
+		"dataset": "ITU Data Hub",
+		"license": "CC BY 4.0",
+		"licenseUrl": "https://datacatalog.worldbank.org/search/dataset/0067055/itu-data-hub",
+		"attribution": "International Telecommunication Union (ITU)"
+	},
+	"distribution": {
+		"provider": "World Bank Data Catalog",
+		"datasetId": "0067055",
+		"resourceId": "DR0095956"
+	},
+	"wdiFallback": {
+		"apiBase": "https://api.worldbank.org/v2",
+		"sourceId": 2,
+		"providerId": "world-bank",
+		"providerName": "World Bank WDI"
+	},
+	"sourceInvariants": {
+		"STRUCTURE": "datastructure",
+		"STRUCTURE_ID": "WB.DATA360:DS_DATA360(1.2)",
+		"ACTION": "I",
+		"UNIT_MULT": "0",
+		"UNIT_MEASURE": "PT_POP",
+		"UNIT_TYPE": "RATIO",
+		"AGG_METHOD": "MEAN",
+		"DATABASE_ID": "ITU_DH",
+		"OBS_CONF": "PU",
+		"FREQ": "A",
+		"TIME_FORMAT": "602",
+		"OBS_STATUS": "A",
+		"DECIMALS": "2"
+	},
+	"indicators": [
+		{
+			"id": "internet-users.percent",
+			"slug": "internet-users-percent",
+			"sourceIndicator": "IT_NET_USER",
+			"sourceIndicatorName": "Percentage of individuals using the internet (ITU)",
+			"fallbackWdiIndicator": "IT.NET.USER.ZS",
+			"title": "Internetnutzung",
+			"description": "Anteil der Personen, die das Internet nutzen, an der Gesamtbevölkerung.",
+			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [20, 40, 60, 80, 90, 98]},
+			"filters": {
+				"SEX": "_T",
+				"AGE": "_T",
+				"URBANISATION": "_T",
+				"COMP_BREAKDOWN_1": "_Z",
+				"COMP_BREAKDOWN_2": "_Z",
+				"COMP_BREAKDOWN_3": "_Z"
+			},
+			"minAreasWithAnyValue": 220,
+			"minAreasInDefaultYear": 180,
+			"minimumLatestYear": 2025,
+			"minimumDefaultYear": 2024,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		}
+	]
+}
