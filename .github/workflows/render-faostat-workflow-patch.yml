@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   render:
@@ -21,11 +21,10 @@ jobs:
       - name: Render patched workflow
         shell: python
         run: |
-          import base64
           from pathlib import Path
 
-          path = Path('.github/workflows/build-faostat-statistics.yml')
-          text = path.read_text(encoding='utf-8')
+          source = Path('.github/workflows/build-faostat-statistics.yml')
+          text = source.read_text(encoding='utf-8')
           old_a = 'if len(indicators) != 25 or len(configured_indicators) != 25:'
           new_a = 'if len(indicators) != 26 or len(configured_indicators) != 26:'
           old_b = 'Expected 25 FAOSTAT indicators, found provider={len(indicators)} config={len(configured_indicators)}'
@@ -33,4 +32,13 @@ jobs:
           if text.count(old_a) != 1 or text.count(old_b) != 1:
           	raise SystemExit('Expected FAOSTAT count assertions not found exactly once')
           text = text.replace(old_a, new_a, 1).replace(old_b, new_b, 1)
-          print('PATCHED_BASE64=' + base64.b64encode(text.encode('utf-8')).decode('ascii'))
+          target = Path('tmp/patched-build-faostat-statistics.yml')
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text(text, encoding='utf-8')
+      - name: Commit temporary patched blob
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tmp/patched-build-faostat-statistics.yml
+          git commit -m "Render temporary FAOSTAT workflow blob"
+          git push origin HEAD:audit/faostat-forest
