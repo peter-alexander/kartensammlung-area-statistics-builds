@@ -62,14 +62,14 @@ jobs:
           REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           python scripts/build_who.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/who.log
 
-      - name: Validate WHO mortality migration
+      - name: Validate WHO source migrations
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
 
           provider = json.loads(Path("dist/statistics/who/index.json").read_text(encoding="utf-8"))
-          assert len(provider["indicators"]) == 7, len(provider["indicators"])
+          assert len(provider["indicators"]) == 8, len(provider["indicators"])
           by_id = {item["id"]: item for item in provider["indicators"]}
           annual_ids = {
           	"mortality.suicide-per-100000",
@@ -104,6 +104,24 @@ jobs:
           assert dtp_payload["source"]["timeCoverage"] == {"startYear": 2000, "endYear": 2024}
           assert dtp_payload["indicator"]["confidenceIntervals"] == {"available": False}
           assert dtp_payload.get("observationMetadata")
+
+          measles = by_id["immunization.measles-percent"]
+          assert measles["frequency"] == "annual"
+          assert measles["availableYears"] == list(range(1980, 2026)), measles["availableYears"]
+          assert measles["defaultYear"] == 2025, measles["defaultYear"]
+          assert measles["coverage"]["areasInDefaultYear"] >= 190, measles["coverage"]
+          assert measles["coverage"]["directObservations"] >= 4800, measles["coverage"]
+          assert measles["coverage"]["fallbackObservations"] >= 3000, measles["coverage"]
+          assert measles["confidenceIntervals"] is False
+          measles_payload = json.loads(Path("dist/statistics/who", measles["path"]).read_text(encoding="utf-8"))
+          assert measles_payload["source"]["providerId"] == "who"
+          assert measles_payload["source"]["indicator"] == "WHS8_110"
+          assert measles_payload["source"]["sourceFormat"] == "gho-odata"
+          assert measles_payload["source"]["fallback"]["indicator"] == "SH.IMM.MEAS"
+          assert measles_payload["source"]["timeCoverage"] == {"startYear": 2000, "endYear": 2025}
+          assert "indicatorUuid" not in measles_payload["source"]
+          assert measles_payload["indicator"]["confidenceIntervals"] == {"available": False}
+          assert measles_payload.get("observationMetadata")
 
           print(f"snapshot={provider['activeSnapshot']}")
           print(f"retrievedAt={provider['retrievedAt']}")
