@@ -1,0 +1,47 @@
+name: Audit WUP 2025 urbanization
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/un-wup-urbanization
+    paths:
+      - ".github/workflows/audit-wup-urbanization.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe WUP download catalogue
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import html
+          import re
+          from urllib.request import Request, urlopen
+
+          urls = [
+          	"https://population.un.org/wup/downloads",
+          	"https://population.un.org/wup/downloads?tab=CSV",
+          	"https://population.un.org/wup/downloads?tab=Sources%20and%20Documentation",
+          ]
+          for url in urls:
+          	print("\n===", url, "===")
+          	req = Request(url, headers={"User-Agent": "Kartensammlung-WUP-Audit/1.0"})
+          	with urlopen(req, timeout=30) as response:
+          		text = response.read().decode("utf-8", errors="replace")
+          	print("bytes", len(text))
+          	for match in sorted(set(re.findall(r'href=["\']([^"\']+)["\']', text, flags=re.I))):
+          		decoded = html.unescape(match)
+          		if any(token in decoded.lower() for token in ("wup2025", "download", ".csv", ".xlsx", ".zip")):
+          			print("href", decoded)
+          	for line in text.splitlines():
+          		if any(token in line.lower() for token in ("national definition", "csv format", "wup2025-f")):
+          			clean = re.sub(r"\s+", " ", line).strip()
+          			print("html", clean[:1200])
+          PY
