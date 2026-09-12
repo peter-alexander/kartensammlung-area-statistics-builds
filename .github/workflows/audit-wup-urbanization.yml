@@ -16,32 +16,46 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Probe WUP download catalogue
+      - name: Inspect WUP download catalogue
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           import html
           import re
+          from urllib.parse import urljoin
           from urllib.request import Request, urlopen
 
-          urls = [
-          	"https://population.un.org/wup/downloads",
-          	"https://population.un.org/wup/downloads?tab=CSV",
-          	"https://population.un.org/wup/downloads?tab=Sources%20and%20Documentation",
-          ]
-          for url in urls:
-          	print("\n===", url, "===")
-          	req = Request(url, headers={"User-Agent": "Kartensammlung-WUP-Audit/1.0"})
-          	with urlopen(req, timeout=30) as response:
-          		text = response.read().decode("utf-8", errors="replace")
-          	print("bytes", len(text))
-          	for match in sorted(set(re.findall(r'href=["\']([^"\']+)["\']', text, flags=re.I))):
-          		decoded = html.unescape(match)
-          		if any(token in decoded.lower() for token in ("wup2025", "download", ".csv", ".xlsx", ".zip")):
-          			print("href", decoded)
-          	for line in text.splitlines():
-          		if any(token in line.lower() for token in ("national definition", "csv format", "wup2025-f")):
-          			clean = re.sub(r"\s+", " ", line).strip()
-          			print("html", clean[:1200])
+          base = "https://population.un.org/wup/downloads"
+          req = Request(base, headers={"User-Agent": "Kartensammlung-WUP-Audit/1.0"})
+          with urlopen(req, timeout=30) as response:
+          	page = response.read().decode("utf-8", errors="replace")
+
+          print("page bytes", len(page))
+          hrefs = sorted(set(html.unescape(v) for v in re.findall(r'href=["\']([^"\']+)["\']', page, flags=re.I)))
+          for href in hrefs:
+          	if "WUP2025" in href:
+          		print("page-file", href)
+
+          scripts = sorted(set(html.unescape(v) for v in re.findall(r'src=["\']([^"\']+\.js(?:\?[^"\']*)?)["\']', page, flags=re.I)))
+          print("scripts", len(scripts))
+          found = set()
+          for script in scripts:
+          	url = urljoin(base, script)
+          	try:
+          		req = Request(url, headers={"User-Agent": "Kartensammlung-WUP-Audit/1.0"})
+          		with urlopen(req, timeout=30) as response:
+          			text = response.read().decode("utf-8", errors="replace")
+          	except Exception as exc:
+          		print("script-error", url, repr(exc))
+          		continue
+          	print("script", url, "bytes", len(text))
+          	for match in re.findall(r'WUP2025-[A-Za-z0-9_\-\.]+(?:xlsx|csv|zip)', text, flags=re.I):
+          		found.add(match)
+          	if "National definitions" in text or "National%20definitions" in text:
+          		print("contains-national-definitions", url)
+
+          print("catalogue-files", len(found))
+          for filename in sorted(found):
+          	print("client-file", filename)
           PY
