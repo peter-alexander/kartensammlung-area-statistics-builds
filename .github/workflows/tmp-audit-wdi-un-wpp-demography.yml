@@ -1,0 +1,76 @@
+name: Temporary audit WDI versus UN WPP demography
+
+on:
+  push:
+    branches:
+      - feature/audit-wdi-un-wpp-demography
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Audit production series
+        run: |
+          python - <<'PY'
+          import json
+          import math
+          import statistics
+          import urllib.request
+
+          BASE = 'https://tiles.radlobby.at/AreaStatistics/statistics'
+
+          def get_json(url):
+              req = urllib.request.Request(url, headers={'User-Agent':'kartensammlung-source-audit/1'})
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  return json.load(r)
+
+          wdi_index = get_json(BASE + '/world-bank/index.json')
+          wpp_index = get_json(BASE + '/un-wpp/index.json')
+          print('WDI snapshot=', wdi_index['activeSnapshot'], 'indicators=', len(wdi_index['indicators']))
+          print('WPP snapshot=', wpp_index['activeSnapshot'], 'indicators=', len(wpp_index['indicators']))
+
+          pairs = [
+              ('life-expectancy.at-birth-years', 'life-expectancy.at-birth-years'),
+              ('fertility.total-births-per-woman', 'fertility.total-rate'),
+          ]
+          wi = {x['id']: x for x in wdi_index['indicators']}
+          ui = {x['id']: x for x in wpp_index['indicators']}
+
+          for wdi_id, wpp_id in pairs:
+              a_item = wi[wdi_id]
+              b_item = ui[wpp_id]
+              a = get_json(BASE + '/world-bank/' + a_item['path'])
+              b = get_json(BASE + '/un-wpp/' + b_item['path'])
+              av = {(int(y), area): float(v) for y, vals in a['values'].items() for area, v in vals.items()}
+              bv = {(int(y), area): float(v) for y, vals in b['values'].items() for area, v in vals.items()}
+              common = sorted(set(av) & set(bv))
+              diffs = [abs(av[k] - bv[k]) for k in common]
+              print('\nPAIR', wdi_id, '<=>', wpp_id)
+              print('WDI years=', min(y for y,_ in av), max(y for y,_ in av), 'obs=', len(av), 'areas=', len({a for _,a in av}), 'default=', a_item['defaultYear'], a_item['coverage'])
+              print('WPP years=', min(y for y,_ in bv), max(y for y,_ in bv), 'obs=', len(bv), 'areas=', len({a for _,a in bv}), 'default=', b_item['defaultYear'], b_item['coverage'])
+              print('common=', len(common), 'exact=', sum(1 for d in diffs if d == 0), 'medianAbs=', statistics.median(diffs), 'maxAbs=', max(diffs))
+              for year in [2021, 2022, 2023, 2024, 2025, 2026]:
+                  keys = [k for k in common if k[0] == year]
+                  if not keys:
+                      continue
+                  ds = [abs(av[k] - bv[k]) for k in keys]
+                  print('year=', year, 'common=', len(keys), 'exact=', sum(1 for d in ds if d==0), 'medianAbs=', statistics.median(ds), 'maxAbs=', max(ds))
+              only_a = sorted(set(av) - set(bv))
+              only_b = sorted(set(bv) - set(av))
+              print('onlyWDI=', len(only_a), 'onlyWPP=', len(only_b))
+              print('onlyWDI recent=', [k for k in only_a if k[0] >= 2023][:50])
+              print('onlyWPP recent=', [k for k in only_b if k[0] >= 2023][:50])
+              print('worst=')
+              for k in sorted(common, key=lambda k: abs(av[k]-bv[k]), reverse=True)[:20]:
+                  print(k, 'WDI=', av[k], 'WPP=', bv[k], 'abs=', abs(av[k]-bv[k]))
+
+              # Check whether WDI-only area-years are actual extra country coverage or just older history.
+              only_a_areas = sorted({area for _,area in only_a})
+              only_b_areas = sorted({area for _,area in only_b})
+              print('onlyWDI areas=', only_a_areas)
+              print('onlyWPP areas=', only_b_areas)
+          PY
