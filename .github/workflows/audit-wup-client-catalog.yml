@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Inspect WUP client bundles
+      - name: Locate WUP national-definition downloads
         shell: bash
         run: |
           set -euo pipefail
@@ -30,24 +30,23 @@ jobs:
           with urlopen(Request(base, headers=headers), timeout=30) as response:
           	page = response.read().decode("utf-8", errors="replace")
           scripts = sorted(set(html.unescape(v) for v in re.findall(r'src=["\']([^"\']+\.js(?:\?[^"\']*)?)["\']', page, flags=re.I)))
-          print("page-bytes", len(page), "scripts", len(scripts))
-          found = set()
+          targets = (
+          	"WUP2025-DB-National-Definitions-Population-Data.csv.gz",
+          	"WUP2025-F15-National-Definitions_percPop_by_category.xlsx",
+          	"WUP2025-M02-DataSources-National-Definitions-UrbanPercentage.xlsx",
+          )
           for script in scripts:
           	url = urljoin(base, script)
           	with urlopen(Request(url, headers=headers), timeout=30) as response:
           		text = response.read().decode("utf-8", errors="replace")
           	print("script", url, "bytes", len(text))
-          	for pattern in (
-          		r'WUP2025-[A-Za-z0-9_\-\.]+\.xlsx',
-          		r'WUP2025-[A-Za-z0-9_\-\.]+\.csv(?:\.gz)?',
-          		r'WUP2025-[A-Za-z0-9_\-\.]+\.zip',
-          	):
-          		for match in re.findall(pattern, text, flags=re.I):
-          			found.add(match)
-          	for token in ("National definitions", "National%20definitions", "UrbanPercentage", "UPopNat"):
-          		if token in text:
-          			print("contains", repr(token), "in", url)
-          print("files", len(found))
-          for filename in sorted(found):
-          	print(filename)
+          	for target in targets:
+          		start = 0
+          		while True:
+          			pos = text.find(target, start)
+          			if pos < 0:
+          				break
+          			print("TARGET", target)
+          			print(text[max(0, pos - 600):pos + len(target) + 600])
+          			start = pos + len(target)
           PY
