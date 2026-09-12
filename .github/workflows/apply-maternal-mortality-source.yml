@@ -55,7 +55,7 @@ jobs:
           \t\t\t"description": "Modellierte Müttersterblichkeitsrate je 100.000 Lebendgeburten nach der aktuellen international vergleichbaren Schätzung der UN Maternal Mortality Estimation Inter-Agency Group (WHO, UNICEF, UNFPA, World Bank Group und UNDESA). Direkte WHO-GHO-Werte sind kanonisch; die 80-%-Unsicherheitsintervalle werden mit veröffentlicht.",
           \t\t\t"unit": {"id": "per-100000-live-births", "label": "je 100.000 Lebendgeburten"},
           \t\t\t"classification": {"type": "fixed", "breaks": [5, 20, 50, 100, 300, 600]},
-          \t\t\t"valueRange": [0, 10000],
+          \t\t\t"valueRange": [0, 20000],
           \t\t\t"minAreasWithAnyValue": 190,
           \t\t\t"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
           \t\t}
