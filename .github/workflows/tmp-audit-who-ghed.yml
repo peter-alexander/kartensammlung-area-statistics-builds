@@ -1,4 +1,4 @@
-name: Temporary audit WHO GHED
+name: Temporary test WHO GHED product build
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  audit:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -20,146 +20,54 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: python -m pip install --disable-pip-version-check openpyxl requests
-      - name: Download GHED complete database
+        run: python -m pip install --disable-pip-version-check openpyxl
+      - name: Validate scripts and config
         run: |
-          curl --fail --show-error --location --retry 3 --retry-delay 3 \
-            https://apps.who.int/nha/database/Home/IndicatorsDownload/en \
-            --output /tmp/ghed.xlsx
-          ls -lh /tmp/ghed.xlsx
-      - name: Audit CHE series against WDI
+          python -m py_compile scripts/build_who_ghed.py scripts/build_world_bank.py
+          python -m json.tool config/who-ghed-indicators.json >/dev/null
+          python -m json.tool config/statistics-providers.json >/dev/null
+      - name: Build WHO GHED statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_who_ghed.py --registry "$REGISTRY_URL" 2>&1 | tee /tmp/who-ghed.log
+      - name: Validate product
         run: |
           python - <<'PY'
           import json
-          import math
-          import statistics
-          import requests
-          from openpyxl import load_workbook
+          from pathlib import Path
 
-          wb = load_workbook('/tmp/ghed.xlsx', read_only=True, data_only=True)
-          data_ws = wb['Data']
-          codebook_ws = wb['Codebook']
-          version_ws = wb['Version']
-
-          print('VERSION')
-          for row in version_ws.iter_rows(values_only=True):
-              if row and row[0]:
-                  print(row[0])
-
-          print('\nCHE CODEBOOK ROWS')
-          che_rows = []
-          for row in codebook_ws.iter_rows(min_row=2, values_only=True):
-              code = row[0]
-              name = row[1]
-              if isinstance(name, str) and 'Current Health Expenditure (CHE)' in name:
-                  che_rows.append(row)
-                  print(repr(row[:8]))
-
-          header = list(next(data_ws.iter_rows(min_row=1, max_row=1, values_only=True)))
-          header_index = {str(v): i for i, v in enumerate(header) if v is not None}
-          print('\nCHE/PPP HEADER CANDIDATES')
-          for name in header:
-              s = str(name or '').lower()
-              if s.startswith('che') or ('ppp' in s and ('che' in s or 'health' in s)):
-                  print(name)
-
-          required = ['location', 'code', 'year', 'che_gdp', 'che_pc_usd']
-          for name in required:
-              assert name in header_index, name
-
-          # Resolve the direct GHED current-health-expenditure PPP-per-capita column from the codebook.
-          ppp_candidates = []
-          for row in che_rows:
-              code, name, long_code, category1, category2, unit, currency, method = row[:8]
-              text = ' '.join(str(x or '') for x in row[:8]).lower()
-              if 'per capita' in text and ('ppp' in text or 'international' in text):
-                  ppp_candidates.append((str(code), str(name), str(long_code), str(unit), str(currency)))
-          print('\nPPP CANDIDATES=', ppp_candidates)
-          assert len(ppp_candidates) >= 1
-          # Prefer the aggregate CHE per-capita PPP indicator.
-          preferred = [c for c in ppp_candidates if c[0].lower().startswith('che')]
-          assert preferred, ppp_candidates
-          ppp_code = preferred[0][0]
-          assert ppp_code in header_index, (ppp_code, preferred)
-          print('PPP_SELECTED=', preferred[0])
-
-          cols = {
-              'SH.XPD.CHEX.GD.ZS': 'che_gdp',
-              'SH.XPD.CHEX.PC.CD': 'che_pc_usd',
-              'SH.XPD.CHEX.PP.CD': ppp_code,
+          provider = json.loads(Path('dist/statistics/who-ghed/index.json').read_text(encoding='utf-8'))
+          assert provider['provider']['id'] == 'who-ghed'
+          assert provider['provider']['license'] == 'CC BY 4.0'
+          assert len(provider['indicators']) == 3, len(provider['indicators'])
+          expected = {
+              'health-expenditure.current-percent-gdp': 'che_gdp',
+              'health-expenditure.current-per-capita-usd': 'che_pc_usd',
+              'health-expenditure.current-per-capita-ppp': 'che_ppp_pc',
           }
-          indices = {k: header_index[v] for k, v in cols.items()}
-          code_i = header_index['code']
-          year_i = header_index['year']
-
-          ghed = {indicator: {} for indicator in cols}
-          years = set()
-          codes = set()
-          for row in data_ws.iter_rows(min_row=2, values_only=True):
-              code = row[code_i]
-              year = row[year_i]
-              if not code or year is None:
-                  continue
-              code = str(code).strip()
-              year = int(year)
-              years.add(year)
-              codes.add(code)
-              for indicator, idx in indices.items():
-                  value = row[idx]
-                  if value is None or value == '':
-                      continue
-                  value = float(value)
-                  if math.isfinite(value):
-                      ghed[indicator][(code, year)] = value
-          print(f'\nGHED countries={len(codes)} years={min(years)}-{max(years)} rows={data_ws.max_row-1}')
-          for indicator, values in ghed.items():
-              iy = sorted({y for _, y in values})
-              latest = max(iy)
-              print(f'{indicator}: column={cols[indicator]} observations={len(values)} years={iy[0]}-{iy[-1]} latestCoverage={sum(1 for c,y in values if y==latest)}')
-
-          session = requests.Session()
-          for indicator, ghed_values in ghed.items():
-              url = f'https://api.worldbank.org/v2/country/all/indicator/{indicator}'
-              response = session.get(url, params={'format':'json','per_page':20000}, timeout=60)
-              response.raise_for_status()
-              payload = response.json()
-              assert isinstance(payload, list) and len(payload) == 2, indicator
-              wdi = {}
-              for obs in payload[1] or []:
-                  code = str(obs.get('countryiso3code') or '').strip()
-                  value = obs.get('value')
-                  date = obs.get('date')
-                  if code not in codes or value is None or date is None:
-                      continue
-                  try:
-                      year = int(date)
-                      value = float(value)
-                  except (TypeError, ValueError):
-                      continue
-                  if math.isfinite(value):
-                      wdi[(code, year)] = value
-
-              common_keys = sorted(set(ghed_values) & set(wdi))
-              diffs = [abs(ghed_values[k] - wdi[k]) for k in common_keys]
-              rels = [d / max(abs(ghed_values[k]), 1e-12) for k, d in zip(common_keys, diffs)]
-              exact = sum(1 for d in diffs if d == 0)
-              tol12 = sum(1 for d in diffs if d <= 1e-12)
-              tol9 = sum(1 for d in diffs if d <= 1e-9)
-              print(f'\nCOMPARE {indicator} GHED={cols[indicator]}')
-              print(f'ghed={len(ghed_values)} wdi={len(wdi)} common={len(common_keys)} exact={exact} tol1e-12={tol12} tol1e-9={tol9}')
-              print(f'medianAbs={statistics.median(diffs) if diffs else None} maxAbs={max(diffs) if diffs else None} medianRel={statistics.median(rels) if rels else None}')
-              for year in sorted({k[1] for k in common_keys})[-3:]:
-                  keys = [k for k in common_keys if k[1] == year]
-                  yd = [abs(ghed_values[k] - wdi[k]) for k in keys]
-                  print(f'year={year} common={len(keys)} exact={sum(1 for d in yd if d==0)} medianAbs={statistics.median(yd) if yd else None} maxAbs={max(yd) if yd else None}')
-              worst = sorted(common_keys, key=lambda k: abs(ghed_values[k]-wdi[k]), reverse=True)[:10]
-              print('worst:')
-              for key in worst:
-                  d = abs(ghed_values[key] - wdi[key])
-                  print(key, 'GHED=', ghed_values[key], 'WDI=', wdi[key], 'abs=', d)
-              only_ghed = sorted(set(ghed_values) - set(wdi))
-              only_wdi = sorted(set(wdi) - set(ghed_values))
-              print('onlyGHED=', len(only_ghed), 'onlyWDI=', len(only_wdi))
-              print('onlyGHED_latest=', [k for k in only_ghed if k[1] >= 2023][:30])
-              print('onlyWDI_latest=', [k for k in only_wdi if k[1] >= 2023][:30])
+          by_id = {item['id']: item for item in provider['indicators']}
+          assert set(by_id) == set(expected)
+          for indicator_id, source_column in expected.items():
+              item = by_id[indicator_id]
+              assert item['sourceIndicator'] == source_column
+              assert item['availableYears'] == list(range(2000, 2025)), (indicator_id, item['availableYears'])
+              assert item['defaultYear'] == 2023, (indicator_id, item['defaultYear'])
+              assert item['coverage']['areasWithAnyValue'] >= 190, (indicator_id, item['coverage'])
+              assert item['coverage']['areasInDefaultYear'] >= 190, (indicator_id, item['coverage'])
+              assert 1 <= item['coverage']['areasInLatestYear'] <= 50, (indicator_id, item['coverage'])
+              payload = json.loads(Path('dist/statistics/who-ghed', item['path']).read_text(encoding='utf-8'))
+              assert payload['source']['providerId'] == 'who-ghed'
+              assert payload['source']['indicator'] == source_column
+              assert payload['source']['preliminaryYears'] == [2024]
+              assert payload['source']['workbookVersion'][0] == 'WHO Global Health Expenditure Database (GHED)'
+              assert payload['observationMetadata']['2024']
+              assert all(meta == {'preliminary': True} for meta in payload['observationMetadata']['2024'].values())
+          global_index = json.loads(Path('dist/statistics/index.json').read_text(encoding='utf-8'))
+          assert any(item['id'] == 'who-ghed' for item in global_index['providers'])
+          print('snapshot=', provider['activeSnapshot'])
+          for item in provider['indicators']:
+              print(item['id'], item['coverage'])
           PY
+          du -ch dist/statistics/who-ghed/releases/*/*.json | tail -n 1
