@@ -15,58 +15,76 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build indicator inventory
+      - name: Build deployed indicator inventory
         run: |
           mkdir -p audit
           python - <<'PY'
-          import glob
           import json
+          import time
           from pathlib import Path
+          from urllib.request import Request, urlopen
 
+          BASE = "https://tiles.radlobby.at/AreaStatistics/statistics"
+          USER_AGENT = "kartensammlung-gap-audit/1"
+
+          def fetch_json(url):
+          	last = None
+          	for delay in (0, 2, 5):
+          		if delay:
+          			time.sleep(delay)
+          		try:
+          			request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+          			with urlopen(request, timeout=30) as response:
+          				return json.load(response)
+          		except Exception as error:
+          			last = error
+          	raise RuntimeError(f"Failed to fetch {url}: {last}")
+
+          global_index = fetch_json(f"{BASE}/index.json?audit=1")
           records = []
-          for filename in sorted(glob.glob("config/*indicators.json")):
-          	path = Path(filename)
-          	payload = json.loads(path.read_text(encoding="utf-8"))
-          	indicators = payload.get("indicators")
-          	if not isinstance(indicators, list):
-          		continue
-          	provider = payload.get("provider") if isinstance(payload.get("provider"), dict) else {}
-          	for indicator in indicators:
-          		if not isinstance(indicator, dict):
-          			continue
-          		unit = indicator.get("unit") if isinstance(indicator.get("unit"), dict) else {}
-          		records.append({
-          			"file": filename,
-          			"providerId": provider.get("id"),
-          			"providerName": provider.get("name"),
-          			"dataset": provider.get("dataset"),
+          for provider_entry in global_index["providers"]:
+          	provider_id = provider_entry["id"]
+          	provider_index = fetch_json(f"{BASE}/{provider_entry['index']}?audit=1")
+          	provider_meta = provider_index.get("provider") or {}
+          	for indicator in provider_index.get("indicators", []):
+          		unit = indicator.get("unit") or {}
+          		record = {
+          			"providerId": provider_id,
+          			"providerName": provider_entry.get("name"),
+          			"dataset": provider_meta.get("dataset"),
           			"id": indicator.get("id"),
           			"title": indicator.get("title"),
           			"description": indicator.get("description"),
           			"unitId": unit.get("id"),
           			"unitLabel": unit.get("label"),
+          			"defaultYear": indicator.get("defaultYear"),
+          			"availableYears": indicator.get("availableYears"),
+          			"coverage": indicator.get("coverage"),
           			"sourceIndicator": indicator.get("sourceIndicator"),
-          			"sourceCode": indicator.get("sourceCode"),
-          			"series": indicator.get("series"),
-          			"datasetCode": indicator.get("datasetCode"),
-          			"sourceVariable": indicator.get("sourceVariable"),
-          			"sourceItem": indicator.get("sourceItem"),
-          			"sourceElement": indicator.get("sourceElement"),
-          		})
+          			"path": indicator.get("path"),
+          		}
+          		if provider_id == "world-bank" and indicator.get("path"):
+          			payload = fetch_json(f"{BASE}/{provider_id}/{indicator['path']}?audit=1")
+          			source = payload.get("source") or {}
+          			record["sourceName"] = source.get("sourceName")
+          			record["sourceOrganization"] = source.get("sourceOrganization")
+          			record["sourceNote"] = source.get("sourceNote")
+          		records.append(record)
 
-          Path("audit/inventory.json").write_text(
+          Path("audit/live-inventory.json").write_text(
           	json.dumps(records, ensure_ascii=False, indent=2) + "\n",
           	encoding="utf-8",
           )
-          print(f"records={len(records)}")
-          for filename in sorted({record["file"] for record in records}):
-          	print(f"{filename}: {sum(record['file'] == filename for record in records)}")
+          print(f"providers={len(global_index['providers'])}")
+          print(f"indicators={len(records)}")
+          for provider_id in sorted({record["providerId"] for record in records}):
+          	print(f"{provider_id}: {sum(record['providerId'] == provider_id for record in records)}")
           PY
 
       - name: Upload inventory
         uses: actions/upload-artifact@v4
         with:
-          name: statistics-gap-audit
-          path: audit/inventory.json
+          name: statistics-gap-audit-live
+          path: audit/live-inventory.json
           if-no-files-found: error
           retention-days: 1
