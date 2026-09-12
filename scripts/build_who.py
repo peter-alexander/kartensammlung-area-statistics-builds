@@ -194,7 +194,7 @@ def fetch_gho_rows(
 	skip = 0
 	for _ in range(100):
 		params = urlencode({
-			"$select": "SpatialDim,SpatialDimType,TimeDim,NumericValue,Value",
+			"$select": "SpatialDim,SpatialDimType,TimeDim,NumericValue,Value,Low,High",
 			"$filter": "SpatialDimType eq 'COUNTRY'",
 			"$top": page_size,
 			"$skip": skip,
@@ -329,6 +329,8 @@ def normalize_indicator(
 				"IND_NAME": indicator.get("sourceIndicatorName", indicator["title"]),
 				"GEO_NAME_SHORT": iso3,
 				"RATE_PER_100_N": row.get("NumericValue") if row.get("NumericValue") is not None else row.get("Value"),
+				"RATE_PER_100_NL": row.get("Low"),
+				"RATE_PER_100_NU": row.get("High"),
 			})
 		print(f"WHO GHO {indicator['sourceIndicator']}: rows={len(rows)}")
 	else:

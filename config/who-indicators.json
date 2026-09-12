@@ -170,6 +170,29 @@
 			"valueRange": [0, 100],
 			"minAreasWithAnyValue": 180,
 			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "mortality.maternal-per-100000-live-births",
+			"slug": "mortality-maternal-per-100000-live-births",
+			"sourceFormat": "gho-odata",
+			"sourceIndicator": "MDG_0000000026",
+			"sourceIndicatorName": "Maternal mortality ratio (per 100 000 live births)",
+			"sourceDataset": "WHO Global Health Observatory / UN Maternal Mortality Estimation Inter-Agency Group (MMEIG)",
+			"sourceUrl": "https://data.who.int/indicators/i/C071DCB/AC597B1",
+			"downloadUrl": "https://ghoapi.azureedge.net/api/MDG_0000000026",
+			"valueField": "RATE_PER_100_N",
+			"lowerField": "RATE_PER_100_NL",
+			"upperField": "RATE_PER_100_NU",
+			"startYear": 1985,
+			"endYear": 2023,
+			"expectedReferenceYear": 2023,
+			"title": "Müttersterblichkeit",
+			"description": "Modellierte Müttersterblichkeitsrate je 100.000 Lebendgeburten nach der aktuellen international vergleichbaren Schätzung der UN Maternal Mortality Estimation Inter-Agency Group (WHO, UNICEF, UNFPA, World Bank Group und UNDESA). Direkte WHO-GHO-Werte sind kanonisch; die 80-%-Unsicherheitsintervalle werden mit veröffentlicht.",
+			"unit": {"id": "per-100000-live-births", "label": "je 100.000 Lebendgeburten"},
+			"classification": {"type": "fixed", "breaks": [5, 20, 50, 100, 300, 600]},
+			"valueRange": [0, 20000],
+			"minAreasWithAnyValue": 190,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		}
 	]
 }
