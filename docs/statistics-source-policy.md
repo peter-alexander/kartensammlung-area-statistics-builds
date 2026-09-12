@@ -233,7 +233,7 @@ Die aktuelle GHED-Datei meldet `Last updated: December 12th, 2025`; sie enthält
 
 Lizenz: **CC BY 4.0**. Die aktuelle WDI-Metadatenanzeige weist für diese ausdrücklich aus WHO GHED stammenden Reihen CC BY 4.0 aus.
 
-Entscheidung: **WHO GHED wird als eigener Provider und kanonische Quelle für alle drei CHE-Reihen integriert.** Ein WDI-Fallback ist nicht nötig, weil GHED in allen drei Reihen mindestens dieselbe und insgesamt größere Länder-/Jahresabdeckung hat. Die drei sichtbaren WDI-Doppelungen werden erst nach erfolgreicher produktiver GHED-Veröffentlichung entfernt.
+Entscheidung: **vollständig umgesetzt am 12. September 2026. WHO GHED ist der kanonische Provider für alle drei CHE-Reihen.** Ein WDI-Fallback ist nicht nötig, weil GHED in allen drei Reihen mindestens dieselbe und insgesamt größere Länder-/Jahresabdeckung hat. Die produktive GHED-Veröffentlichung lief als Run `34708549477` mit Snapshot `13bf44dede477b15`; alle drei Release-Dateien sowie Provider- und globales Manifest wurden bytegenau verifiziert. Anschließend werden die drei sichtbaren WDI-Doppelungen `SH.XPD.CHEX.GD.ZS`, `SH.XPD.CHEX.PC.CD` und `SH.XPD.CHEX.PP.CD` aus dem WDI-Provider entfernt.
 
 Produkt-Testbuild:
 
