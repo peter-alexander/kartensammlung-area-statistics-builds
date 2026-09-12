@@ -1,0 +1,72 @@
+name: Temporary statistics gap audit
+
+on:
+  push:
+    branches:
+      - audit/statistics-gap-audit
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build indicator inventory
+        run: |
+          mkdir -p audit
+          python - <<'PY'
+          import glob
+          import json
+          from pathlib import Path
+
+          records = []
+          for filename in sorted(glob.glob("config/*indicators.json")):
+          	path = Path(filename)
+          	payload = json.loads(path.read_text(encoding="utf-8"))
+          	indicators = payload.get("indicators")
+          	if not isinstance(indicators, list):
+          		continue
+          	provider = payload.get("provider") if isinstance(payload.get("provider"), dict) else {}
+          	for indicator in indicators:
+          		if not isinstance(indicator, dict):
+          			continue
+          		unit = indicator.get("unit") if isinstance(indicator.get("unit"), dict) else {}
+          		records.append({
+          			"file": filename,
+          			"providerId": provider.get("id"),
+          			"providerName": provider.get("name"),
+          			"dataset": provider.get("dataset"),
+          			"id": indicator.get("id"),
+          			"title": indicator.get("title"),
+          			"description": indicator.get("description"),
+          			"unitId": unit.get("id"),
+          			"unitLabel": unit.get("label"),
+          			"sourceIndicator": indicator.get("sourceIndicator"),
+          			"sourceCode": indicator.get("sourceCode"),
+          			"series": indicator.get("series"),
+          			"datasetCode": indicator.get("datasetCode"),
+          			"sourceVariable": indicator.get("sourceVariable"),
+          			"sourceItem": indicator.get("sourceItem"),
+          			"sourceElement": indicator.get("sourceElement"),
+          		})
+
+          Path("audit/inventory.json").write_text(
+          	json.dumps(records, ensure_ascii=False, indent=2) + "\n",
+          	encoding="utf-8",
+          )
+          print(f"records={len(records)}")
+          for filename in sorted({record["file"] for record in records}):
+          	print(f"{filename}: {sum(record['file'] == filename for record in records)}")
+          PY
+
+      - name: Upload inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: statistics-gap-audit
+          path: audit/inventory.json
+          if-no-files-found: error
+          retention-days: 1
