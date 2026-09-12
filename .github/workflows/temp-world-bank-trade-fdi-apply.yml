@@ -1,0 +1,34 @@
+name: Temporary World Bank trade and FDI patch
+
+on:
+  push:
+    branches:
+      - feature/world-bank-trade-fdi
+    paths:
+      - "scripts/temp-add-world-bank-trade-fdi.py"
+      - ".github/workflows/temp-world-bank-trade-fdi-apply.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/world-bank-trade-fdi
+      - name: Patch config
+        run: |
+          python scripts/temp-add-world-bank-trade-fdi.py
+          python -m json.tool config/world-bank-indicators.json >/dev/null
+      - name: Commit product patch
+        run: |
+          rm scripts/temp-add-world-bank-trade-fdi.py
+          git config user.name "peter-alexander"
+          git config user.email "15900922+peter-alexander@users.noreply.github.com"
+          git add config/world-bank-indicators.json scripts/temp-add-world-bank-trade-fdi.py
+          git commit -m "Add World Bank trade and FDI indicators"
+          git push origin HEAD:feature/world-bank-trade-fdi
