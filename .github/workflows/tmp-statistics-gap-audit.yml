@@ -11,6 +11,7 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,21 +35,21 @@ jobs:
           			time.sleep(delay)
           		try:
           			request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-          			with urlopen(request, timeout=30) as response:
+          			with urlopen(request, timeout=20) as response:
           				return json.load(response)
           		except Exception as error:
           			last = error
           	raise RuntimeError(f"Failed to fetch {url}: {last}")
 
-          global_index = fetch_json(f"{BASE}/index.json?audit=1")
+          global_index = fetch_json(f"{BASE}/index.json?audit=2")
           records = []
           for provider_entry in global_index["providers"]:
           	provider_id = provider_entry["id"]
-          	provider_index = fetch_json(f"{BASE}/{provider_entry['index']}?audit=1")
+          	provider_index = fetch_json(f"{BASE}/{provider_entry['index']}?audit=2")
           	provider_meta = provider_index.get("provider") or {}
           	for indicator in provider_index.get("indicators", []):
           		unit = indicator.get("unit") or {}
-          		record = {
+          		records.append({
           			"providerId": provider_id,
           			"providerName": provider_entry.get("name"),
           			"dataset": provider_meta.get("dataset"),
@@ -62,14 +63,7 @@ jobs:
           			"coverage": indicator.get("coverage"),
           			"sourceIndicator": indicator.get("sourceIndicator"),
           			"path": indicator.get("path"),
-          		}
-          		if provider_id == "world-bank" and indicator.get("path"):
-          			payload = fetch_json(f"{BASE}/{provider_id}/{indicator['path']}?audit=1")
-          			source = payload.get("source") or {}
-          			record["sourceName"] = source.get("sourceName")
-          			record["sourceOrganization"] = source.get("sourceOrganization")
-          			record["sourceNote"] = source.get("sourceNote")
-          		records.append(record)
+          		})
 
           Path("audit/live-inventory.json").write_text(
           	json.dumps(records, ensure_ascii=False, indent=2) + "\n",
@@ -84,7 +78,7 @@ jobs:
       - name: Upload inventory
         uses: actions/upload-artifact@v4
         with:
-          name: statistics-gap-audit-live
+          name: statistics-gap-audit-live-indexes
           path: audit/live-inventory.json
           if-no-files-found: error
           retention-days: 1
