@@ -1,0 +1,110 @@
+name: Temporary patch ILOSTAT unemployment
+
+on:
+  push:
+    branches:
+      - feature/ilostat-unemployment
+    paths:
+      - ".github/workflows/tmp-patch-ilostat-unemployment.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/ilostat-unemployment
+
+      - name: Add direct ILOSTAT unemployment indicators
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("config/ilostat-indicators.json")
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          indicators = payload["indicators"]
+          ids = {item["id"] for item in indicators}
+
+          additions = [
+          	{
+          		"id": "labour.unemployment-15plus-percent",
+          		"slug": "labour-unemployment-15plus-percent",
+          		"sourceDataset": "UNE_2EAP_SEX_AGE_RT_A",
+          		"filters": {"sex": "SEX_T", "classif1": "AGE_YTHADULT_YGE15"},
+          		"title": "Arbeitslosenquote (15+)",
+          		"description": "Anteil der Arbeitslosen an der Erwerbsbevölkerung ab 15 Jahren, beide Geschlechter; ILO-modellierte Schätzung.",
+          		"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+          		"classification": {"type": "fixed", "breaks": [3, 5, 7, 10, 15, 25]},
+          		"minAreasWithAnyValue": 185,
+          		"minAreasInDefaultYear": 180,
+          		"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+          	},
+          	{
+          		"id": "labour.unemployment-youth-15-24-percent",
+          		"slug": "labour-unemployment-youth-15-24-percent",
+          		"sourceDataset": "UNE_2EAP_SEX_AGE_RT_A",
+          		"filters": {"sex": "SEX_T", "classif1": "AGE_YTHADULT_Y15-24"},
+          		"title": "Jugendarbeitslosenquote (15–24)",
+          		"description": "Anteil der Arbeitslosen an der Erwerbsbevölkerung im Alter von 15 bis 24 Jahren, beide Geschlechter; ILO-modellierte Schätzung.",
+          		"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+          		"classification": {"type": "fixed", "breaks": [5, 10, 15, 20, 30, 50]},
+          		"minAreasWithAnyValue": 185,
+          		"minAreasInDefaultYear": 180,
+          		"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+          	},
+          ]
+
+          for addition in additions:
+          	if addition["id"] in ids:
+          		raise SystemExit(f"Indicator already exists: {addition['id']}")
+
+          insert_at = next(
+          	index + 1
+          	for index, item in enumerate(indicators)
+          	if item["id"] == "labour.employment-population-15plus-percent"
+          )
+          indicators[insert_at:insert_at] = additions
+          path.write_text(json.dumps(payload, ensure_ascii=False, indent="\t") + "\n", encoding="utf-8")
+          print(f"indicators={len(indicators)}")
+          PY
+
+      - name: Validate config and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m json.tool config/ilostat-indicators.json >/dev/null
+          python -m py_compile scripts/build_ilostat.py scripts/build_ilostat_entry.py scripts/build_world_bank.py
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?patch=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_ilostat_entry.py --registry "$REGISTRY_URL"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("dist/statistics/ilostat/index.json").read_text(encoding="utf-8"))
+          by_id = {item["id"]: item for item in payload["indicators"]}
+          expected = {
+          	"labour.unemployment-15plus-percent": (2025, 180),
+          	"labour.unemployment-youth-15-24-percent": (2025, 180),
+          }
+          for indicator_id, (default_year, min_areas) in expected.items():
+          	item = by_id[indicator_id]
+          	assert item["defaultYear"] == default_year, (indicator_id, item["defaultYear"])
+          	assert item["coverage"]["areasInDefaultYear"] >= min_areas, (indicator_id, item["coverage"])
+          	assert item["availableYears"][0] == 1991, (indicator_id, item["availableYears"][0])
+          	assert item["availableYears"][-1] >= 2027, (indicator_id, item["availableYears"][-1])
+          	print(indicator_id, item["coverage"])
+          PY
+
+      - name: Commit product change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/ilostat-indicators.json
+          git commit -m "Add direct ILOSTAT unemployment indicators"
+          git push origin HEAD:feature/ilostat-unemployment
