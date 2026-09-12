@@ -160,6 +160,24 @@ Numerischer Vergleich:
 
 Entscheidung: **FAOSTAT ist für Waldanteil und absolute Waldfläche kanonisch.** Die sichtbaren WDI-Doppelungen `AG.LND.FRST.ZS` und `AG.LND.FRST.K2` werden entfernt. Für die wenigen historischen Länder-/Jahrlücken bleibt WDI ausschließlich als explizit markierter Fallback innerhalb der direkten FAOSTAT-Kennzahlen erhalten. Direkte aktuelle FAOSTAT-Werte haben immer Vorrang; ein älterer WDI-Distributionsstand darf eine aktuelle FRA-Revision niemals überschreiben.
 
+### WDI versus UN World Urbanization Prospects (WUP 2025)
+
+Die WDI-Reihe `SP.URB.TOTL.IN.ZS` (Urban population, % of total) weist in den World-Bank-Metadaten ausdrücklich die UN DESA Population Division und *World Urbanization Prospects – National definitions* als Quelle aus. Für den direkten Vergleich wird deshalb nicht die international harmonisierte DEGURBA-Reihe verwendet, sondern die fachlich identische WUP-2025-Reihe nach den jeweils nationalen Definitionen städtischer Gebiete.
+
+Direkte Quelle ist der von UN DESA für Datenbank- und Statistiknutzung veröffentlichte Bulk-CSV `WUP2025-DB-National-Definitions-Population-Data.csv.gz`. Verwendet werden ausschließlich `LocTypeName=Country/Area`, `Category=Urban` und die Spalte `percPop` zur Jahresmitte. WUP 2025 enthält Schätzungen für 1950–2025 und Projektionen bis 2050; die Kartensammlung verwirft alle Jahre nach 2025 ausdrücklich und veröffentlicht in dieser Kennzahl keine Projektionen. Die Daten stehen unter CC BY 3.0 IGO.
+
+Numerischer Vergleich mit WDI:
+
+- Direkte WUP-Reihe: 18.012 Beobachtungen, 237 Länder/Gebiete, 1950–2025.
+- WDI `SP.URB.TOTL.IN.ZS`: 14.256 Beobachtungen, 216 Länder/Gebiete, 1960–2025.
+- 14.256 gemeinsame Länder-Jahr-Werte; **14.256/14.256 sind numerisch exakt identisch** (`max |Differenz| = 0`).
+- WDI besitzt **keine einzige** Länder-Jahr-Beobachtung außerhalb der direkten WUP-Abdeckung.
+- WUP besitzt 3.756 zusätzliche Beobachtungen: 2.370 Werte aus der zusätzlichen Historie 1950–1959 und ab 1960 in jedem Jahr 21 zusätzliche Länder/Gebiete.
+- 2025: WUP 237 Länder/Gebiete gegenüber 216 in WDI. Zu den zusätzlichen Gebieten gehören unter anderem Taiwan, Cookinseln, Niue, Vatikanstadt, Westsahara, Anguilla, Saint-Barthélemy, Guernsey, Jersey und mehrere französische Überseegebiete.
+- Der WUP-Bulkdatensatz enthält 97.269 Zeilen. Für `Country/Area` + `Urban` liegen 23.937 Zeilen für 1950–2050 vor; 5.925 Projektionszeilen für 2026–2050 werden beim Build verworfen.
+
+Entscheidung: **UN World Urbanization Prospects 2025 ist für den Urbanisierungsgrad kanonisch.** Die sichtbare WDI-Doppelung `SP.URB.TOTL.IN.ZS` wird vollständig entfernt. Ein WDI-Fallback ist nicht erforderlich, weil alle WDI-Werte bereits exakt in der direkten WUP-Reihe enthalten sind und WDI weder historische noch geografische Zusatzabdeckung bietet.
+
 ## 6. Nächste Bereinigungsblöcke
 
 ### Arbeitsmarkt

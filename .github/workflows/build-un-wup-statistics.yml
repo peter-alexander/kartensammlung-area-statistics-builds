@@ -1,0 +1,213 @@
+name: Build UN WUP statistics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "43 4 4 * *"
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "config/un-wup-indicators.json"
+      - "config/world-bank-indicators.json"
+      - "scripts/build_un_wup.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-un-wup-statistics.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "config/statistics-providers.json"
+      - "config/un-wup-indicators.json"
+      - "config/world-bank-indicators.json"
+      - "scripts/build_un_wup.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-un-wup-statistics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-un-wup-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate scripts
+        run: |
+          bash -n .github/scripts/deploy-world-bank-statistics.sh
+          python -m py_compile scripts/build_un_wup.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/un-wup-indicators.json >/dev/null
+          python -m json.tool config/world-bank-indicators.json >/dev/null
+
+      - name: Build UN WUP statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_un_wup.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/un-wup.log
+
+      - name: Validate UN WUP output
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path("config/un-wup-indicators.json").read_text(encoding="utf-8"))
+          provider = json.loads(Path("dist/statistics/un-wup/index.json").read_text(encoding="utf-8"))
+          global_index = json.loads(Path("dist/statistics/index.json").read_text(encoding="utf-8"))
+
+          assert provider["provider"]["id"] == "un-wup"
+          assert provider["provider"]["license"] == "CC BY 3.0 IGO"
+          assert len(provider["indicators"]) == len(config["indicators"]) == 1
+          assert any(item["id"] == "un-wup" for item in global_index["providers"])
+          assert provider["dataset"]["revision"] == "2025"
+          assert provider["dataset"]["estimateEndYear"] == 2025
+          assert provider["dataset"]["sourceCountryAreas"] >= 230
+          assert provider["dataset"]["mappedSourceAreas"] >= 230
+          assert provider["dataset"]["sourceStartYear"] <= 1950
+          assert provider["dataset"]["sourceEndYear"] == 2050
+          assert provider["dataset"]["projectionRowsSkipped"] > 0
+          assert provider["dataset"]["ignoredIso3Codes"] == []
+          assert set(provider["dataset"]["categories"]) >= {"Rural", "Urban", "Total"}
+          assert provider["dataset"]["bytes"] >= 3000000
+          assert provider["dataset"]["rows"] >= 90000
+
+          item = provider["indicators"][0]
+          cfg = config["indicators"][0]
+          coverage = item["coverage"]
+          assert item["id"] == "urban-population.percent"
+          assert item["sourceIndicator"] == "percPop"
+          assert item["availableYears"][0] <= 1950
+          assert item["availableYears"][-1] == 2025
+          assert item["defaultYear"] >= cfg["minimumDefaultYear"]
+          assert coverage["areasWithAnyValue"] >= cfg["minAreasWithAnyValue"]
+          assert coverage["areasInDefaultYear"] >= cfg["minAreasInDefaultYear"]
+          assert coverage["observations"] >= 18000
+
+          payload = json.loads(Path("dist/statistics/un-wup", item["path"]).read_text(encoding="utf-8"))
+          assert payload["source"]["providerId"] == "un-wup"
+          assert payload["source"]["indicator"] == "percPop"
+          assert payload["source"]["filters"]["LocTypeName"] == "Country/Area"
+          assert payload["source"]["filters"]["Category"] == "Urban"
+          assert payload["source"]["filters"]["maximumYear"] == 2025
+          assert payload["source"]["filters"]["valueColumn"] == "percPop"
+          assert payload["source"]["sourceInvariants"] == config["sourceInvariants"]
+          assert max(map(int, payload["values"])) == 2025
+
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"retrievedAt={provider['retrievedAt']}")
+          print(
+          	f"{item['id']}: defaultYear={item['defaultYear']} "
+          	f"areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+          	f"years={item['availableYears'][0]}-{item['availableYears'][-1]} "
+          	f"observations={coverage['observations']}"
+          )
+          PY
+          du -h dist/statistics/un-wup/index.json
+          du -ch dist/statistics/un-wup/releases/*/*.json | tail -n 1
+
+      - name: Upload statistics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: un-wup-statistics-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Deploy to tiles.radlobby.at
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          PROVIDER_ID: un-wup
+        run: |
+          chmod +x .github/scripts/deploy-world-bank-statistics.sh
+          .github/scripts/deploy-world-bank-statistics.sh dist/statistics
+
+      - name: Verify browser access and public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          check_file() {
+          	local url="$1"
+          	local local_file="$2"
+          	local output="$3"
+          	local headers
+          	local allow_origin
+          	headers="$(mktemp)"
+          	curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          		--header "Origin: ${BROWSER_ORIGIN}" --dump-header "$headers" \
+          		--output "$output" "${url}?${CACHE_BUST}"
+          	cmp "$local_file" "$output"
+          	allow_origin="$(awk '
+          		BEGIN { IGNORECASE = 1 }
+          		tolower($1) == "access-control-allow-origin:" {
+          			value = $0
+          			sub(/^[^:]+:[[:space:]]*/, "", value)
+          			gsub(/\r/, "", value)
+          			print value
+          		}
+          	' "$headers" | tail -n 1)"
+          	rm -f "$headers"
+          	if [ "$allow_origin" != "*" ] && [ "$allow_origin" != "$BROWSER_ORIGIN" ]; then
+          		echo "CORS check failed for ${url}: Access-Control-Allow-Origin='${allow_origin:-<missing>}'" >&2
+          		exit 1
+          	fi
+          }
+
+          check_file "${PUBLIC_BASE}/index.json" "dist/statistics/index.json" /tmp/public-statistics-index.json
+          check_file "${PUBLIC_BASE}/un-wup/index.json" "dist/statistics/un-wup/index.json" /tmp/public-un-wup-index.json
+          while IFS= read -r path; do
+          	mkdir -p "/tmp/public-un-wup/$(dirname "$path")"
+          	check_file \
+          		"${PUBLIC_BASE}/un-wup/${path}" \
+          		"dist/statistics/un-wup/${path}" \
+          		"/tmp/public-un-wup/${path}"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/un-wup/index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
+          PY
+          )
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: un-wup-statistics-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30

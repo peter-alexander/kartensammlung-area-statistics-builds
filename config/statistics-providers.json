@@ -32,6 +32,11 @@
 			"index": "un-wpp/index.json"
 		},
 		{
+			"id": "un-wup",
+			"name": "UN World Urbanization Prospects",
+			"index": "un-wup/index.json"
+		},
+		{
 			"id": "un-igme",
 			"name": "UN IGME",
 			"index": "un-igme/index.json"

@@ -1,0 +1,40 @@
+{
+	"schema": "kartensammlung.un-wup-statistics/v1",
+	"downloadUrl": "https://population.un.org/wup/assets/Download/Countries%20and%20Aggregates/WUP2025-DB-National-Definitions-Population-Data.csv.gz",
+	"revision": "2025",
+	"estimateEndYear": 2025,
+	"provider": {
+		"id": "un-wup",
+		"name": "UN DESA Population Division",
+		"dataset": "World Urbanization Prospects 2025",
+		"license": "CC BY 3.0 IGO",
+		"licenseUrl": "https://creativecommons.org/licenses/by/3.0/igo/",
+		"attribution": "United Nations, Department of Economic and Social Affairs, Population Division"
+	},
+	"sourceInvariants": {
+		"locationType": "Country/Area",
+		"category": "Urban",
+		"valueColumn": "percPop",
+		"timeReference": "Mid-Year",
+		"minimumSourceCountryAreas": 230,
+		"minimumSourceStartYear": 1950,
+		"sourceProjectionEndYear": 2050
+	},
+	"broadCoverageFraction": 0.85,
+	"indicators": [
+		{
+			"id": "urban-population.percent",
+			"slug": "urban-population-percent",
+			"sourceIndicator": "percPop",
+			"title": "Urbanisierungsgrad",
+			"description": "Anteil der in städtischen Gebieten lebenden Bevölkerung an der Gesamtbevölkerung nach der jeweils nationalen Definition städtischer Gebiete.",
+			"unit": {"id":"percent","label":"Prozent","symbol":"%"},
+			"classification": {"type":"fixed","breaks":[20,40,60,75,90,98]},
+			"minAreasWithAnyValue": 230,
+			"minAreasInDefaultYear": 230,
+			"minimumDefaultYear": 2025,
+			"minimumLatestYear": 2025
+		}
+	],
+	"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND", "country:TWN", "country:COK", "country:VAT"]
+}
