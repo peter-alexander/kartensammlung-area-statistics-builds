@@ -29,8 +29,8 @@
 				"type": "fixed",
 				"breaks": [2.5, 5, 10, 15, 25, 40]
 			},
-			"minAreasWithAnyValue": 160,
-			"minAreasInDefaultPeriod": 150,
+			"minAreasWithAnyValue": 165,
+			"minAreasInDefaultPeriod": 160,
 			"minimumDefaultPeriodEndYear": 2025,
 			"requiredAreas": ["country:IND"],
 			"valueRange": [0, 100]
@@ -51,8 +51,8 @@
 				"scale": "logarithmic",
 				"breaks": [0.1, 0.5, 1, 5, 20, 100]
 			},
-			"minAreasWithAnyValue": 100,
-			"minAreasInDefaultPeriod": 100,
+			"minAreasWithAnyValue": 130,
+			"minAreasInDefaultPeriod": 95,
 			"minimumDefaultPeriodEndYear": 2025,
 			"requiredAreas": ["country:IND"],
 			"valueRange": [0, 1000]
@@ -73,7 +73,7 @@
 				"type": "fixed",
 				"breaks": [5, 10, 20, 30, 50, 70]
 			},
-			"minAreasWithAnyValue": 130,
+			"minAreasWithAnyValue": 150,
 			"minAreasInDefaultPeriod": 130,
 			"minimumDefaultPeriodEndYear": 2025,
 			"requiredAreas": ["country:AUT", "country:DEU", "country:USA"],
@@ -95,7 +95,7 @@
 				"scale": "logarithmic",
 				"breaks": [0.1, 0.5, 1, 5, 20, 100]
 			},
-			"minAreasWithAnyValue": 130,
+			"minAreasWithAnyValue": 150,
 			"minAreasInDefaultPeriod": 130,
 			"minimumDefaultPeriodEndYear": 2025,
 			"requiredAreas": ["country:AUT", "country:DEU", "country:USA"],
@@ -117,8 +117,8 @@
 				"type": "fixed",
 				"breaks": [0.5, 2.5, 5, 10, 20, 40]
 			},
-			"minAreasWithAnyValue": 130,
-			"minAreasInDefaultPeriod": 130,
+			"minAreasWithAnyValue": 145,
+			"minAreasInDefaultPeriod": 125,
 			"minimumDefaultPeriodEndYear": 2025,
 			"requiredAreas": ["country:AUT", "country:DEU", "country:USA"],
 			"valueRange": [0, 100]
@@ -139,8 +139,8 @@
 				"scale": "logarithmic",
 				"breaks": [0.1, 0.5, 1, 5, 20, 50]
 			},
-			"minAreasWithAnyValue": 130,
-			"minAreasInDefaultPeriod": 100,
+			"minAreasWithAnyValue": 145,
+			"minAreasInDefaultPeriod": 115,
 			"minimumDefaultPeriodEndYear": 2025,
 			"requiredAreas": ["country:AUT", "country:DEU", "country:USA"],
 			"valueRange": [0, 1000]
