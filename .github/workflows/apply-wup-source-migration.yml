@@ -1,0 +1,80 @@
+name: Apply WUP source migration
+
+on:
+  push:
+    branches:
+      - audit/un-wup-urbanization
+    paths:
+      - ".github/workflows/apply-wup-source-migration.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: audit/un-wup-urbanization
+
+      - name: Apply minimal source migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          wdi_path = Path("config/world-bank-indicators.json")
+          lines = wdi_path.read_text(encoding="utf-8").splitlines(keepends=True)
+          needle = '"id":"urban-population.percent"'
+          matches = [index for index, line in enumerate(lines) if needle in line]
+          if len(matches) != 1:
+          	raise SystemExit(f"Expected exactly one WDI urbanization row, found {len(matches)}")
+          del lines[matches[0]]
+          wdi_path.write_text("".join(lines), encoding="utf-8")
+
+          policy_path = Path("docs/statistics-source-policy.md")
+          policy = policy_path.read_text(encoding="utf-8")
+          marker = "## 6. Nächste Bereinigungsblöcke"
+          if marker not in policy:
+          	raise SystemExit("Source-policy insertion marker not found")
+          heading = "### WDI versus UN World Urbanization Prospects (WUP 2025)"
+          if heading in policy:
+          	raise SystemExit("WUP audit section already present")
+          section = '''### WDI versus UN World Urbanization Prospects (WUP 2025)
+
+Die WDI-Reihe `SP.URB.TOTL.IN.ZS` (Urban population, % of total) weist in den World-Bank-Metadaten ausdrücklich die UN DESA Population Division und *World Urbanization Prospects – National definitions* als Quelle aus. Für den direkten Vergleich wird deshalb nicht die international harmonisierte DEGURBA-Reihe verwendet, sondern die fachlich identische WUP-2025-Reihe nach den jeweils nationalen Definitionen städtischer Gebiete.
+
+Direkte Quelle ist der von UN DESA für Datenbank- und Statistiknutzung veröffentlichte Bulk-CSV `WUP2025-DB-National-Definitions-Population-Data.csv.gz`. Verwendet werden ausschließlich `LocTypeName=Country/Area`, `Category=Urban` und die Spalte `percPop` zur Jahresmitte. WUP 2025 enthält Schätzungen für 1950–2025 und Projektionen bis 2050; die Kartensammlung verwirft alle Jahre nach 2025 ausdrücklich und veröffentlicht in dieser Kennzahl keine Projektionen. Die Daten stehen unter CC BY 3.0 IGO.
+
+Numerischer Vergleich mit WDI:
+
+- Direkte WUP-Reihe: 18.012 Beobachtungen, 237 Länder/Gebiete, 1950–2025.
+- WDI `SP.URB.TOTL.IN.ZS`: 14.256 Beobachtungen, 216 Länder/Gebiete, 1960–2025.
+- 14.256 gemeinsame Länder-Jahr-Werte; **14.256/14.256 sind numerisch exakt identisch** (`max |Differenz| = 0`).
+- WDI besitzt **keine einzige** Länder-Jahr-Beobachtung außerhalb der direkten WUP-Abdeckung.
+- WUP besitzt 3.756 zusätzliche Beobachtungen: 2.370 Werte aus der zusätzlichen Historie 1950–1959 und ab 1960 in jedem Jahr 21 zusätzliche Länder/Gebiete.
+- 2025: WUP 237 Länder/Gebiete gegenüber 216 in WDI. Zu den zusätzlichen Gebieten gehören unter anderem Taiwan, Cookinseln, Niue, Vatikanstadt, Westsahara, Anguilla, Saint-Barthélemy, Guernsey, Jersey und mehrere französische Überseegebiete.
+- Der WUP-Bulkdatensatz enthält 97.269 Zeilen. Für `Country/Area` + `Urban` liegen 23.937 Zeilen für 1950–2050 vor; 5.925 Projektionszeilen für 2026–2050 werden beim Build verworfen.
+
+Entscheidung: **UN World Urbanization Prospects 2025 ist für den Urbanisierungsgrad kanonisch.** Die sichtbare WDI-Doppelung `SP.URB.TOTL.IN.ZS` wird vollständig entfernt. Ein WDI-Fallback ist nicht erforderlich, weil alle WDI-Werte bereits exakt in der direkten WUP-Reihe enthalten sind und WDI weder historische noch geografische Zusatzabdeckung bietet.
+
+'''
+          policy_path.write_text(policy.replace(marker, section + marker, 1), encoding="utf-8")
+          PY
+
+          python -m json.tool config/world-bank-indicators.json >/dev/null
+          git diff --check
+          git diff -- config/world-bank-indicators.json docs/statistics-source-policy.md
+
+      - name: Commit migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/world-bank-indicators.json docs/statistics-source-policy.md
+          git commit -m "Move urbanization to direct UN WUP source"
+          git push origin HEAD:audit/un-wup-urbanization
