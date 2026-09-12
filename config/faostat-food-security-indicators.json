@@ -1,0 +1,149 @@
+{
+	"schema": "kartensammlung.faostat-food-security-statistics/v1",
+	"documentationUrl": "https://www.fao.org/faostat/en/#data/FS",
+	"bulkUrl": "https://bulks-faostat.fao.org/production/Food_Security_Data_E_All_Data_(Normalized).zip",
+	"termsUrl": "https://www.fao.org/contact-us/terms/db-terms-of-use/en/",
+	"minimumLatestPeriodEndYear": 2025,
+	"provider": {
+		"id": "faostat",
+		"name": "FAOSTAT",
+		"dataset": "Suite of Food Security Indicators",
+		"license": "Creative Commons Attribution 4.0 International",
+		"licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+		"attribution": "Food and Agriculture Organization of the United Nations (FAO), FAOSTAT"
+	},
+	"indicators": [
+		{
+			"id": "food-security.undernourishment-prevalence",
+			"slug": "undernourishment-prevalence",
+			"sourceItemCode": "210041",
+			"sourceUnit": "%",
+			"title": "Unterernährung – Anteil der Bevölkerung",
+			"description": "Anteil der Bevölkerung, dessen gewöhnliche Nahrungsenergieaufnahme unter dem Mindestenergiebedarf liegt. FAOSTAT veröffentlicht diese Kennzahl als gleitenden Dreijahresdurchschnitt.",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [2.5, 5, 10, 15, 25, 40]
+			},
+			"minAreasWithAnyValue": 165,
+			"minAreasInDefaultPeriod": 160,
+			"minimumDefaultPeriodEndYear": 2025,
+			"requiredAreas": ["country:IND"],
+			"valueRange": [0, 100]
+		},
+		{
+			"id": "food-security.undernourished-people",
+			"slug": "undernourished-people",
+			"sourceItemCode": "210011",
+			"sourceUnit": "million No",
+			"title": "Unterernährte Menschen",
+			"description": "Geschätzte Zahl der unterernährten Menschen. FAOSTAT veröffentlicht diese Kennzahl als gleitenden Dreijahresdurchschnitt.",
+			"unit": {
+				"id": "million-people",
+				"label": "Millionen Menschen"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [0.1, 0.5, 1, 5, 20, 100]
+			},
+			"minAreasWithAnyValue": 130,
+			"minAreasInDefaultPeriod": 95,
+			"minimumDefaultPeriodEndYear": 2025,
+			"requiredAreas": ["country:IND"],
+			"valueRange": [0, 1000]
+		},
+		{
+			"id": "food-security.moderate-severe-food-insecurity-prevalence",
+			"slug": "moderate-severe-food-insecurity-prevalence",
+			"sourceItemCode": "210091",
+			"sourceUnit": "%",
+			"title": "Mittlere oder schwere Ernährungsunsicherheit – Anteil",
+			"description": "Anteil der Gesamtbevölkerung mit mittlerer oder schwerer Ernährungsunsicherheit nach der Food Insecurity Experience Scale (FIES). Dreijahresdurchschnitt.",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [5, 10, 20, 30, 50, 70]
+			},
+			"minAreasWithAnyValue": 150,
+			"minAreasInDefaultPeriod": 130,
+			"minimumDefaultPeriodEndYear": 2025,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA"],
+			"valueRange": [0, 100]
+		},
+		{
+			"id": "food-security.moderate-severe-food-insecure-people",
+			"slug": "moderate-severe-food-insecure-people",
+			"sourceItemCode": "210081",
+			"sourceUnit": "million No",
+			"title": "Menschen mit mittlerer oder schwerer Ernährungsunsicherheit",
+			"description": "Geschätzte Zahl der Menschen mit mittlerer oder schwerer Ernährungsunsicherheit nach der Food Insecurity Experience Scale (FIES). Dreijahresdurchschnitt.",
+			"unit": {
+				"id": "million-people",
+				"label": "Millionen Menschen"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [0.1, 0.5, 1, 5, 20, 100]
+			},
+			"minAreasWithAnyValue": 150,
+			"minAreasInDefaultPeriod": 130,
+			"minimumDefaultPeriodEndYear": 2025,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA"],
+			"valueRange": [0, 2000]
+		},
+		{
+			"id": "food-security.severe-food-insecurity-prevalence",
+			"slug": "severe-food-insecurity-prevalence",
+			"sourceItemCode": "210401",
+			"sourceUnit": "%",
+			"title": "Schwere Ernährungsunsicherheit – Anteil",
+			"description": "Anteil der Gesamtbevölkerung mit schwerer Ernährungsunsicherheit nach der Food Insecurity Experience Scale (FIES). Dreijahresdurchschnitt.",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [0.5, 2.5, 5, 10, 20, 40]
+			},
+			"minAreasWithAnyValue": 145,
+			"minAreasInDefaultPeriod": 125,
+			"minimumDefaultPeriodEndYear": 2025,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA"],
+			"valueRange": [0, 100]
+		},
+		{
+			"id": "food-security.severe-food-insecure-people",
+			"slug": "severe-food-insecure-people",
+			"sourceItemCode": "210071",
+			"sourceUnit": "million No",
+			"title": "Menschen mit schwerer Ernährungsunsicherheit",
+			"description": "Geschätzte Zahl der Menschen mit schwerer Ernährungsunsicherheit nach der Food Insecurity Experience Scale (FIES). Dreijahresdurchschnitt.",
+			"unit": {
+				"id": "million-people",
+				"label": "Millionen Menschen"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [0.1, 0.5, 1, 5, 20, 50]
+			},
+			"minAreasWithAnyValue": 145,
+			"minAreasInDefaultPeriod": 115,
+			"minimumDefaultPeriodEndYear": 2025,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA"],
+			"valueRange": [0, 1000]
+		}
+	]
+}
