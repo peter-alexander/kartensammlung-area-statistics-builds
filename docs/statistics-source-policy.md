@@ -158,7 +158,7 @@ Status: **umgesetzt am 12. September 2026.**
 
 Mehrere WDI-Reihen stammen fachlich aus WHO-Datenbanken. Der erste WHO-Bereinigungsbatch umfasst Suizidsterblichkeit und vorzeitige NCD-Sterblichkeit.
 
-Status erster Batch: **direkte WHO-Migration umgesetzt; Entfernung der vier WDI-Doppelungen erfolgt erst nach erfolgreicher produktiver WHO-Veröffentlichung.**
+Status erster Batch: **vollständig umgesetzt am 12. September 2026.**
 
 #### Suizidsterblichkeit
 
@@ -181,6 +181,8 @@ Testbuild des neuen WHO-Providers:
 - Suizid Männer: 4.016 direkte + 54 Fallbacks
 - Suizid Frauen: 4.024 direkte + 46 Fallbacks
 - jeweils 185 Länder im Standardjahr 2021
+- produktiver WHO-Snapshot: `a33516af1b331847` (Run `34705969833`)
+- alle sechs WHO-Release-Dateien und beide Manifeste wurden bytegenau verifiziert; erst danach wurde der vorherige WHO-Snapshot entfernt
 
 #### Vorzeitige NCD-Sterblichkeit
 
@@ -197,6 +199,8 @@ Testbuild:
 
 - 4.024 direkte WHO-Beobachtungen + 46 WDI-Fallbacks
 - 185 Länder im Standardjahr 2021
+
+Konsequenz nach erfolgreicher WHO-Produktion: Die vier sichtbaren WDI-Doppelungen `SH.STA.SUIC.P5`, `SH.STA.SUIC.MA.P5`, `SH.STA.SUIC.FE.P5` und `SH.DYN.NCOM.ZS` wurden aus dem WDI-Provider entfernt. Die zusätzliche WDI-Abdeckung bleibt ausschließlich als explizit markierter Fallback innerhalb der kanonischen WHO-Kennzahlen erhalten.
 
 #### Nächste WHO-Prüfungen
 
