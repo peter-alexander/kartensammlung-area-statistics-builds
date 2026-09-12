@@ -1,0 +1,48 @@
+name: Temporary WHO WDI health audit
+
+on:
+  push:
+    branches:
+      - audit/who-wdi-health
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Inspect direct WHO datasets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv
+          import io
+          import urllib.request
+
+          SOURCES = {
+          	"suicide": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/16BBF41_ALL_LATEST.csv",
+          	"ncd": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/1F96863_ALL_LATEST.csv",
+          }
+
+          def fetch(url):
+          	req = urllib.request.Request(url, headers={"User-Agent":"kartensammlung-who-audit/1", "Accept":"text/csv,*/*"})
+          	with urllib.request.urlopen(req, timeout=120) as response:
+          		return response.read()
+
+          for name, url in SOURCES.items():
+          	raw = fetch(url)
+          	rows = list(csv.DictReader(io.StringIO(raw.decode("utf-8-sig"))))
+          	print(f"=== {name} bytes={len(raw)} rows={len(rows)} ===")
+          	print("fields=" + ",".join(rows[0].keys()))
+          	for field in rows[0].keys():
+          		if field.startswith("DIM_") or field.startswith("RATE_") or field.startswith("NUM_") or field.startswith("PERCENT"):
+          			values = sorted({str(row.get(field, "")).strip() for row in rows if str(row.get(field, "")).strip()})
+          			preview = values[:30]
+          			print(f"{field}: distinct={len(values)} preview={preview}")
+          	print("sample0=" + repr(rows[0]))
+          	if len(rows) > 1:
+          		print("sample1=" + repr(rows[1]))
+          PY
