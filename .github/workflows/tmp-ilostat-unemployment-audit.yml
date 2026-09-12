@@ -1,0 +1,66 @@
+name: Temporary ILOSTAT unemployment audit
+
+on:
+  push:
+    branches:
+      - audit/ilostat-unemployment
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Inspect ILOSTAT unemployment datasets
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import urllib.parse
+          import urllib.request
+
+          def fetch(url):
+          	req = urllib.request.Request(url, headers={"User-Agent":"kartensammlung-ilostat-audit/1"})
+          	with urllib.request.urlopen(req, timeout=120) as r:
+          		return r.read()
+
+          toc_url = "https://rplumber.ilo.org/metadata/toc/indicator/?lang=en"
+          toc = list(csv.DictReader(io.StringIO(fetch(toc_url).decode("utf-8-sig"))))
+          matches = []
+          for row in toc:
+          	label = (row.get("indicator.label") or "").strip()
+          	if "unemployment rate by sex and age" in label.lower() and "ilo modelled estimates" in label.lower() and (row.get("freq") or "").strip() == "A":
+          		matches.append(row)
+          print(f"toc_matches={len(matches)}")
+          for row in matches:
+          	print("MATCH", row.get("id"), row.get("indicator.label"), "freq=" + str(row.get("freq")))
+
+          if len(matches) != 1:
+          	raise SystemExit(f"Expected exactly one annual ILOEST unemployment-rate-by-age dataset, got {len(matches)}")
+          dataset_id = matches[0]["id"]
+          params = urllib.parse.urlencode({"id": dataset_id, "type":"code", "format":".csv", "channel":"ilostat"})
+          url = "https://rplumber.ilo.org/data/indicator/?" + params
+          rows = list(csv.DictReader(io.StringIO(fetch(url).decode("utf-8-sig"))))
+          print(f"dataset={dataset_id} rows={len(rows)}")
+          print("fields=" + ",".join(rows[0].keys()))
+          for field in ("sex", "classif1", "classif2"):
+          	values = sorted({(row.get(field) or "").strip() for row in rows if (row.get(field) or "").strip()})
+          	print(f"{field}_values={values[:100]}")
+          years = sorted({int(row["time"]) for row in rows if str(row.get("time","")).isdigit()})
+          print(f"years={years[0]}-{years[-1]} count={len(years)}")
+
+          def report(filters, name):
+          	selected = [row for row in rows if all((row.get(k) or "").strip() == v for k,v in filters.items())]
+          	areas = {row["ref_area"] for row in selected}
+          	latest = max(int(row["time"]) for row in selected)
+          	latest_areas = {row["ref_area"] for row in selected if int(row["time"]) == latest}
+          	print(f"{name}: filters={filters} rows={len(selected)} areas={len(areas)} latest={latest} latestAreas={len(latest_areas)}")
+
+          age_values = sorted({(row.get("classif1") or "").strip() for row in rows if (row.get("classif1") or "").strip()})
+          for age in age_values:
+          	if "YGE15" in age or "Y15Y24" in age or "Y15T24" in age:
+          		report({"sex":"SEX_T", "classif1":age}, age)
+          PY
