@@ -1,0 +1,146 @@
+name: Control country geometry without M49
+
+on:
+  push:
+    branches:
+      - test/country-geometry-control
+    paths:
+      - ".github/workflows/temp-country-geometry-control.yml"
+      - "scripts/build_countries.py"
+      - "scripts/inspect_overture_countries.py"
+      - "config/country-code-overrides.json"
+      - "config/country-compositions.json"
+      - "config/overture-excluded-country-codes.json"
+      - "requirements.txt"
+      - ".github/scripts/tippecanoe-country-geometry.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TIPPECANOE_VERSION: "2.79.0"
+      TIPPECANOE_SHA256: "b0fd9df49b6efc988288ea48774822c6de19eb48428017f27ee0b3b01d44f05d"
+      OVERTURE_RELEASE: "2026-08-19.0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          pip install --requirement requirements.txt
+          pip install pmtiles==3.7.0
+
+      - name: Inspect country and dependency coverage
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          python scripts/inspect_overture_countries.py --release "${OVERTURE_RELEASE}" 2>&1 | tee diagnostics/overture-coverage.log
+
+      - name: Install Tippecanoe
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes gcc g++ make libsqlite3-dev zlib1g-dev
+          curl --fail --location --silent --show-error \
+            "https://github.com/felt/tippecanoe/archive/refs/tags/${TIPPECANOE_VERSION}.tar.gz" \
+            --output /tmp/tippecanoe.tar.gz
+          echo "${TIPPECANOE_SHA256}  /tmp/tippecanoe.tar.gz" | sha256sum --check --strict
+          tar --extract --gzip --file /tmp/tippecanoe.tar.gz --directory /tmp
+          make --directory "/tmp/tippecanoe-${TIPPECANOE_VERSION}" --jobs "$(nproc)"
+          sudo make --directory "/tmp/tippecanoe-${TIPPECANOE_VERSION}" install
+          tippecanoe --version
+
+      - name: Build country geometry
+        shell: bash
+        run: |
+          set -o pipefail
+          chmod +x .github/scripts/tippecanoe-country-geometry.sh
+          python scripts/build_countries.py \
+            --release "${OVERTURE_RELEASE}" \
+            --tippecanoe "$GITHUB_WORKSPACE/.github/scripts/tippecanoe-country-geometry.sh" \
+            2>&1 | tee diagnostics/build.log
+
+      - name: Verify country label retention
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pmtiles.convert import pmtiles_to_mbtiles
+
+          pmtiles_to_mbtiles(
+          	"dist/world-admin.pmtiles",
+          	"/tmp/world-admin.mbtiles",
+          )
+          PY
+          test -s /tmp/world-admin.mbtiles
+          tippecanoe-decode \
+            -c \
+            -Z0 \
+            -z8 \
+            -l country_label \
+            -y area_id \
+            /tmp/world-admin.mbtiles \
+            > diagnostics/country-labels.geojsonseq
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          registry = json.loads(
+          	Path("dist/area-registry-countries.json").read_text(encoding="utf-8")
+          )
+          expected_ids = {area["area_id"] for area in registry["areas"]}
+          ids_by_zoom = {zoom: set() for zoom in range(9)}
+
+          for raw_line in Path("diagnostics/country-labels.geojsonseq").read_text(
+          	encoding="utf-8"
+          ).splitlines():
+          	line = raw_line.strip().lstrip("\x1e")
+          	if not line:
+          		continue
+          	feature = json.loads(line)
+          	tippecanoe = feature.get("tippecanoe") or {}
+          	properties = feature.get("properties") or {}
+          	zoom = int(tippecanoe.get("zoom", -1))
+          	area_id = properties.get("area_id")
+          	if zoom in ids_by_zoom and area_id:
+          		ids_by_zoom[zoom].add(str(area_id))
+
+          problems = []
+          for zoom, area_ids in ids_by_zoom.items():
+          	missing = sorted(expected_ids - area_ids)
+          	extra = sorted(area_ids - expected_ids)
+          	print(
+          		f"country_label z{zoom}: {len(area_ids)}/{len(expected_ids)} unique areas"
+          	)
+          	if missing or extra:
+          		problems.append(
+          			f"z{zoom}: missing={missing[:10]} extra={extra[:10]}"
+          		)
+
+          if problems:
+          	raise SystemExit(
+          		"Country label PMTiles retention check failed: " + "; ".join(problems)
+          	)
+          PY
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: country-geometry-control-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 7
