@@ -51,6 +51,7 @@ SSL_VERIFY="${LFTP_SSL_VERIFY:-no}"
 LFTP_RETRIES="${LFTP_RETRIES:-10}"
 LFTP_RETRY_DELAY="${LFTP_RETRY_DELAY:-15}"
 LFTP_NET_TIMEOUT="${LFTP_NET_TIMEOUT:-30}"
+LFTP_TEMP_FILE_NAME=".in.${PROVIDER_ID}.${GITHUB_RUN_ID:-manual}-${GITHUB_RUN_ATTEMPT:-0}.*"
 
 LFTP_CMDS="$(mktemp)"
 trap 'rm -f "$LFTP_CMDS"' EXIT
@@ -75,7 +76,12 @@ trap 'rm -f "$LFTP_CMDS"' EXIT
 		echo "mirror -R --delete --verbose \"$local_dir\" \"$remote_dir\""
 	done
 
-	# Publish manifests only after every release file is in place.
+	# Publish manifests only after every release file is in place. lftp first
+	# uploads each manifest to a run-specific temporary file in the same remote
+	# directory and then renames it into place, so readers never observe a
+	# truncated index while parallel provider workflows are deploying.
+	echo "set xfer:use-temp-file true"
+	echo "set xfer:temp-file-name \"$LFTP_TEMP_FILE_NAME\""
 	echo "mkdir -p -f \"${REMOTE_BASE}/${PROVIDER_ID}\""
 	echo "put \"$PROVIDER_INDEX\" -o \"${REMOTE_BASE}/${PROVIDER_ID}/index.json\""
 	echo "put \"$GLOBAL_INDEX\" -o \"${REMOTE_BASE}/index.json\""
