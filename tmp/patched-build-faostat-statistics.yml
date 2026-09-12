@@ -1,0 +1,315 @@
+name: Build FAOSTAT statistics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "53 5 17 * *"
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "config/faostat-indicators.json"
+      - "scripts/build_faostat.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-faostat-statistics.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "config/statistics-providers.json"
+      - "config/faostat-indicators.json"
+      - "scripts/build_faostat.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-faostat-statistics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-faostat-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate scripts
+        run: |
+          bash -n .github/scripts/deploy-world-bank-statistics.sh
+          python -m py_compile scripts/build_faostat.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/faostat-indicators.json >/dev/null
+
+      - name: Build FAOSTAT statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_faostat.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/faostat.log
+
+      - name: Validate FAOSTAT artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          provider_path = Path("dist/statistics/faostat/index.json")
+          diagnostics_path = Path("dist/statistics/faostat/diagnostics.json")
+          config_path = Path("config/faostat-indicators.json")
+          global_index_path = Path("dist/statistics/index.json")
+
+          provider = json.loads(provider_path.read_text(encoding="utf-8"))
+          diagnostics = json.loads(diagnostics_path.read_text(encoding="utf-8"))
+          config = json.loads(config_path.read_text(encoding="utf-8"))
+          global_index = json.loads(global_index_path.read_text(encoding="utf-8"))
+
+          if config.get("schema") != "kartensammlung.faostat-statistics/v2":
+          	raise SystemExit("Unexpected FAOSTAT config schema")
+          if provider.get("provider", {}).get("id") != "faostat":
+          	raise SystemExit("FAOSTAT provider id mismatch")
+          if diagnostics.get("schema") != "kartensammlung.faostat-build-diagnostics/v2":
+          	raise SystemExit("Unexpected FAOSTAT diagnostics schema")
+          if not any(item.get("id") == "faostat" for item in global_index.get("providers", [])):
+          	raise SystemExit("FAOSTAT missing from global statistics index")
+
+          indicators = provider.get("indicators") or []
+          configured_indicators = config.get("indicators") or []
+          if len(indicators) != 26 or len(configured_indicators) != 26:
+          	raise SystemExit(f"Expected 26 FAOSTAT indicators, found provider={len(indicators)} config={len(configured_indicators)}")
+
+          expected_datasets = {"food-security", "healthy-diet", "land-use", "fertilizers-nutrient", "temperature-change", "production-indices", "livestock-patterns", "pesticides-use", "emissions-indicators"}
+          source_datasets = (provider.get("dataset") or {}).get("datasets") or []
+          if {item.get("id") for item in source_datasets} != expected_datasets:
+          	raise SystemExit("FAOSTAT provider dataset set mismatch")
+          if {item.get("id") for item in diagnostics.get("datasets", [])} != expected_datasets:
+          	raise SystemExit("FAOSTAT diagnostics dataset set mismatch")
+
+          registry = provider.get("areaRegistry") or {}
+          if registry.get("areaCount") != 250:
+          	raise SystemExit(f"Expected 250 registry country areas, got {registry.get('areaCount')}")
+          if registry.get("m49AreaCount") != 249:
+          	raise SystemExit(f"Expected 249 M49-coded registry areas, got {registry.get('m49AreaCount')}")
+
+          config_by_id = {item["id"]: item for item in configured_indicators}
+          diagnostic_indicators = diagnostics.get("indicators") or {}
+          provider_ids = {item["id"] for item in indicators}
+          if provider_ids != set(config_by_id) or provider_ids != set(diagnostic_indicators):
+          	raise SystemExit("FAOSTAT indicator sets differ between config, provider index and diagnostics")
+
+          for indicator in indicators:
+          	indicator_id = indicator["id"]
+          	configured = config_by_id[indicator_id]
+          	coverage = indicator.get("coverage") or {}
+          	if indicator.get("datasetId") != configured["datasetId"]:
+          		raise SystemExit(f"Dataset mismatch for {indicator_id}")
+          	if indicator.get("frequency") != configured["frequency"]:
+          		raise SystemExit(f"Frequency mismatch for {indicator_id}")
+          	if coverage.get("registryAreas") != 250:
+          		raise SystemExit(f"Expected registryAreas=250 for {indicator_id}, got {coverage.get('registryAreas')}")
+          	if int(coverage.get("areasWithAnyValue", 0)) < int(configured["minAreasWithAnyValue"]):
+          		raise SystemExit(f"Any-value coverage below configured minimum for {indicator_id}")
+          	if int(coverage.get("areasInDefaultYear", 0)) < int(configured["minAreasInDefaultYear"]):
+          		raise SystemExit(f"Default-year coverage below configured minimum for {indicator_id}")
+          	if int(coverage.get("latestYear", 0)) < int(configured["minimumLatestYear"]):
+          		raise SystemExit(f"Latest year below configured minimum for {indicator_id}")
+          	if int(indicator.get("defaultYear", 0)) < int(configured["minimumDefaultYear"]):
+          		raise SystemExit(f"Default year below configured minimum for {indicator_id}")
+
+          	payload_path = Path("dist/statistics/faostat") / indicator["path"]
+          	payload = json.loads(payload_path.read_text(encoding="utf-8"))
+          	if payload.get("schema") != "kartensammlung.statistics-indicator/v1":
+          		raise SystemExit(f"Invalid indicator payload schema for {indicator_id}")
+          	if payload.get("indicator", {}).get("id") != indicator_id:
+          		raise SystemExit(f"Indicator payload id mismatch for {indicator_id}")
+          	if payload.get("defaultYear") != indicator.get("defaultYear"):
+          		raise SystemExit(f"Default year mismatch for {indicator_id}")
+          	if payload.get("availableYears") != indicator.get("availableYears"):
+          		raise SystemExit(f"Available years mismatch for {indicator_id}")
+
+          	if configured["frequency"] == "three-year-average":
+          		period_labels = indicator.get("periodLabels") or {}
+          		default_year = str(indicator["defaultYear"])
+          		if period_labels.get(default_year) != coverage.get("defaultPeriod"):
+          			raise SystemExit(f"Period label mismatch for {indicator_id}")
+          		if not coverage.get("defaultPeriod"):
+          			raise SystemExit(f"Missing default period for {indicator_id}")
+          	else:
+          		if indicator.get("periodLabels"):
+          			raise SystemExit(f"Annual indicator unexpectedly has period labels: {indicator_id}")
+
+          for indicator_id in (
+          	"food-security.undernourishment-prevalence",
+          	"food-security.undernourished-people",
+          	"food-security.moderate-severe-food-insecurity-prevalence",
+          	"food-security.moderate-severe-food-insecure-people",
+          	"food-security.severe-food-insecurity-prevalence",
+          	"food-security.severe-food-insecure-people",
+          ):
+          	ignored = diagnostic_indicators[indicator_id].get("ignoredSourceAreas") or {}
+          	if ignored.get("001") != "World":
+          		raise SystemExit(f"World aggregate was not explicitly ignored for {indicator_id}")
+          	if ignored.get("159") != "China":
+          		raise SystemExit(f"FAOSTAT China aggregate M49 159 was not ignored for {indicator_id}")
+
+          for indicator_id in (
+          	"food-security.undernourishment-prevalence",
+          	"food-security.undernourished-people",
+          	"food-security.severe-food-insecure-people",
+          ):
+          	if int(diagnostic_indicators[indicator_id].get("censoredValues", 0)) <= 0:
+          		raise SystemExit(f"Expected censored values for {indicator_id}")
+
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"retrievedAt={provider['retrievedAt']}")
+          print(f"registry={registry.get('m49AreaCount')}/{registry.get('areaCount')} M49-coded countries")
+          for source in source_datasets:
+          	print(f"dataset={source['code']} rows={source['rows']} bytes={source['bytes']} lastModified={source.get('lastModified')}")
+          for indicator in indicators:
+          	coverage = indicator["coverage"]
+          	diagnostic = diagnostic_indicators[indicator["id"]]
+          	period = coverage.get("defaultPeriod") or str(indicator["defaultYear"])
+          	print(
+          		f"{indicator['id']}: dataset={indicator['datasetId']} default={period} "
+          		f"areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+          		f"any={coverage['areasWithAnyValue']} latest={coverage['areasInLatestYear']} "
+          		f"censored={diagnostic['censoredValues']}"
+          	)
+          PY
+          du -h dist/statistics/faostat/index.json
+          du -ch dist/statistics/faostat/releases/*/*.json | tail -n 1
+
+      - name: Upload statistics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: faostat-statistics-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Deploy to tiles.radlobby.at
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          PROVIDER_ID: faostat
+        run: |
+          chmod +x .github/scripts/deploy-world-bank-statistics.sh
+          .github/scripts/deploy-world-bank-statistics.sh dist/statistics
+
+      - name: Verify browser access to public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="cors=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          check_cors() {
+          	local url="$1"
+          	local output="$2"
+          	local range="${3:-}"
+          	local headers
+          	local allow_origin
+          	headers="$(mktemp)"
+          	if [ -n "$range" ]; then
+          		curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          			--header "Origin: ${BROWSER_ORIGIN}" --range "$range" \
+          			--dump-header "$headers" --output "$output" "${url}?${CACHE_BUST}"
+          	else
+          		curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          			--header "Origin: ${BROWSER_ORIGIN}" \
+          			--dump-header "$headers" --output "$output" "${url}?${CACHE_BUST}"
+          	fi
+          	allow_origin="$(awk '
+          		BEGIN { IGNORECASE = 1 }
+          		tolower($1) == "access-control-allow-origin:" {
+          			value = $0
+          			sub(/^[^:]+:[[:space:]]*/, "", value)
+          			gsub(/\r/, "", value)
+          			print value
+          		}
+          	' "$headers" | tail -n 1)"
+          	rm -f "$headers"
+          	if [ "$allow_origin" != "*" ] && [ "$allow_origin" != "$BROWSER_ORIGIN" ]; then
+          		echo "CORS check failed for ${url}: Access-Control-Allow-Origin='${allow_origin:-<missing>}'" >&2
+          		exit 1
+          	fi
+          	echo "CORS OK: ${url} -> ${allow_origin}"
+          }
+
+          check_cors "${PUBLIC_BASE}/index.json" /tmp/browser-statistics-index.json
+          check_cors "${PUBLIC_BASE}/faostat/index.json" /tmp/browser-faostat-index.json
+          while IFS= read -r path; do
+          	check_cors "${PUBLIC_BASE}/faostat/${path}" /dev/null 0-0
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("/tmp/browser-faostat-index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
+          PY
+          )
+
+      - name: Verify public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          	"${PUBLIC_BASE}/index.json?${CACHE_BUST}" --output /tmp/public-statistics-index.json
+          cmp dist/statistics/index.json /tmp/public-statistics-index.json
+
+          curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          	"${PUBLIC_BASE}/faostat/index.json?${CACHE_BUST}" --output /tmp/public-faostat-index.json
+          cmp dist/statistics/faostat/index.json /tmp/public-faostat-index.json
+
+          while IFS= read -r path; do
+          	local_file="dist/statistics/faostat/${path}"
+          	public_file="/tmp/public-$(basename "$path")"
+          	curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          		"${PUBLIC_BASE}/faostat/${path}?${CACHE_BUST}" --output "$public_file"
+          	cmp "$local_file" "$public_file"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/faostat/index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
+          PY
+          )
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: faostat-statistics-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
