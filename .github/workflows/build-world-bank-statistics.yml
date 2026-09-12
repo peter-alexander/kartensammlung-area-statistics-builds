@@ -1,4 +1,4 @@
-name: Build World Bank statistics
+name: Build World Bank WDI statistics
 
 on:
   workflow_dispatch:
@@ -47,7 +47,7 @@ jobs:
           bash -n .github/scripts/deploy-world-bank-statistics.sh
           python -m py_compile scripts/build_world_bank.py
 
-      - name: Build World Bank statistics
+      - name: Build World Bank WDI statistics
         shell: bash
         run: |
           set -o pipefail
@@ -93,7 +93,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes lftp
 
-      - name: Deploy to tiles.radlobby.at
+      - name: Deploy and verify on tiles.radlobby.at
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
@@ -102,52 +102,6 @@ jobs:
         run: |
           chmod +x .github/scripts/deploy-world-bank-statistics.sh
           .github/scripts/deploy-world-bank-statistics.sh dist/statistics
-
-      - name: Verify public statistics
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        shell: bash
-        run: |
-          set -euo pipefail
-          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
-          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          CURL_RETRY=(
-          	--connect-timeout 10
-          	--max-time 30
-          	--retry 2
-          	--retry-delay 2
-          	--retry-all-errors
-          )
-
-          curl --fail --silent --show-error --location \
-            "${CURL_RETRY[@]}" \
-            "${PUBLIC_BASE}/index.json?${CACHE_BUST}" \
-            --output /tmp/public-statistics-index.json
-          cmp dist/statistics/index.json /tmp/public-statistics-index.json
-
-          curl --fail --silent --show-error --location \
-            "${CURL_RETRY[@]}" \
-            "${PUBLIC_BASE}/world-bank/index.json?${CACHE_BUST}" \
-            --output /tmp/public-world-bank-index.json
-          cmp dist/statistics/world-bank/index.json /tmp/public-world-bank-index.json
-
-          while IFS= read -r path; do
-            curl --fail --silent --show-error --location \
-              "${CURL_RETRY[@]}" \
-              --range 0-0 \
-              --output /dev/null \
-              "${PUBLIC_BASE}/world-bank/${path}?${CACHE_BUST}"
-          done < <(
-            python - <<'PY'
-          import json
-          from pathlib import Path
-
-          payload = json.loads(
-          	Path("dist/statistics/world-bank/index.json").read_text(encoding="utf-8")
-          )
-          for indicator in payload["indicators"]:
-          	print(indicator["path"])
-          PY
-          )
 
       - name: Upload diagnostics on failure
         if: failure()
