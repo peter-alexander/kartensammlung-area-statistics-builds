@@ -140,7 +140,7 @@
 				"breaks": [0.1, 0.5, 1, 5, 20, 50]
 			},
 			"minAreasWithAnyValue": 130,
-			"minAreasInDefaultPeriod": 130,
+			"minAreasInDefaultPeriod": 100,
 			"minimumDefaultPeriodEndYear": 2025,
 			"requiredAreas": ["country:AUT", "country:DEU", "country:USA"],
 			"valueRange": [0, 1000]
