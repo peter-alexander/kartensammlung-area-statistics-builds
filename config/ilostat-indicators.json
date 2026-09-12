@@ -41,6 +41,32 @@
 			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		},
 		{
+			"id": "labour.unemployment-15plus-percent",
+			"slug": "labour-unemployment-15plus-percent",
+			"sourceDataset": "UNE_2EAP_SEX_AGE_RT_A",
+			"filters": {"sex": "SEX_T", "classif1": "AGE_YTHADULT_YGE15"},
+			"title": "Arbeitslosenquote (15+)",
+			"description": "Anteil der Arbeitslosen an der Erwerbsbevölkerung ab 15 Jahren, beide Geschlechter; ILO-modellierte Schätzung.",
+			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [3, 5, 7, 10, 15, 25]},
+			"minAreasWithAnyValue": 185,
+			"minAreasInDefaultYear": 180,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "labour.unemployment-youth-15-24-percent",
+			"slug": "labour-unemployment-youth-15-24-percent",
+			"sourceDataset": "UNE_2EAP_SEX_AGE_RT_A",
+			"filters": {"sex": "SEX_T", "classif1": "AGE_YTHADULT_Y15-24"},
+			"title": "Jugendarbeitslosenquote (15–24)",
+			"description": "Anteil der Arbeitslosen an der Erwerbsbevölkerung im Alter von 15 bis 24 Jahren, beide Geschlechter; ILO-modellierte Schätzung.",
+			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [5, 10, 15, 20, 30, 50]},
+			"minAreasWithAnyValue": 185,
+			"minAreasInDefaultYear": 180,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
 			"id": "labour.neet-youth-percent",
 			"slug": "labour-neet-youth-percent",
 			"sourceDataset": "EIP_2EET_SEX_RT_A",
