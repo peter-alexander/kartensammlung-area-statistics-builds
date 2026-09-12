@@ -50,30 +50,42 @@ def main() -> None:
 				raise RuntimeError(f"{source_id}: expected one normalized CSV, got {csv_names}")
 			name = csv_names[0]
 			reader = csv.DictReader(io.StringIO(decode(zf.read(name))))
-			rows = list(reader)
-		fields = reader.fieldnames or []
-		print(f"\nSOURCE {source_id} code={code} bytes={len(blob)} rows={len(rows)} file={name}")
+			fields = reader.fieldnames or []
+			row_count = 0
+			min_year = None
+			max_year = None
+			items: dict[tuple[str,str], dict[str, object]] = {}
+			for r in reader:
+				row_count += 1
+				year_text = str(r.get("Year", "")).strip()
+				year = int(year_text) if year_text.isdigit() else None
+				if year is not None:
+					min_year = year if min_year is None else min(min_year, year)
+					max_year = year if max_year is None else max(max_year, year)
+				item = str(r.get("Item", "")).strip()
+				item_code = str(r.get("Item Code", "")).strip()
+				if not item or not (KEYWORDS.search(item) or source_id in ("pesticides-use","emissions-totals","production-indices")):
+					continue
+				key = (item_code, item)
+				entry = items.setdefault(key, {"combos": set(), "latest": None, "mapped": set()})
+				entry["combos"].add((str(r.get("Element Code","")).strip(), str(r.get("Element","")).strip(), str(r.get("Unit","")).strip()))
+				if year is None:
+					continue
+				latest = entry["latest"]
+				if latest is None or year > latest:
+					entry["latest"] = year
+					entry["mapped"] = set()
+				if year == entry["latest"]:
+					code_m49 = norm_m49(r.get("Area Code (M49)",""))
+					if code_m49 in valid_m49:
+						entry["mapped"].add(code_m49)
+		print(f"\nSOURCE {source_id} code={code} bytes={len(blob)} rows={row_count} file={name}")
 		print("FIELDS", fields)
-		years = [int(r["Year"]) for r in rows if str(r.get("Year","")).isdigit()]
-		print("YEARS", min(years, default="?"), max(years, default="?"))
-		items = {}
-		for r in rows:
-			item = str(r.get("Item", "")).strip()
-			item_code = str(r.get("Item Code", "")).strip()
-			if item and (KEYWORDS.search(item) or source_id in ("pesticides-use","emissions-totals","production-indices")):
-				items[(item_code,item)] = None
+		print("YEARS", min_year, max_year)
 		print(f"ITEMS matched={len(items)}")
-		for item_code,item in sorted(items)[:400]:
-			sub = [r for r in rows if str(r.get("Item Code","")).strip()==item_code]
-			combos = {}
-			for r in sub:
-				elc = str(r.get("Element Code","")).strip(); el = str(r.get("Element","")).strip(); unit = str(r.get("Unit","")).strip()
-				combos[(elc,el,unit)] = None
-			latest = max((int(r["Year"]) for r in sub if str(r.get("Year","")).isdigit()), default=None)
-			latest_rows = [r for r in sub if latest is not None and str(r.get("Year"))==str(latest)]
-			mapped = len({norm_m49(r.get("Area Code (M49)","")) for r in latest_rows if norm_m49(r.get("Area Code (M49)","")) in valid_m49})
-			combo_text = "; ".join(f"{ec}:{e} [{u}]" for ec,e,u in sorted(combos))
-			print(f"ITEM {item_code} | {item} | latest={latest} mappedLatest={mapped} | {combo_text}")
+		for (item_code,item), entry in sorted(items.items())[:400]:
+			combo_text = "; ".join(f"{ec}:{e} [{u}]" for ec,e,u in sorted(entry["combos"]))
+			print(f"ITEM {item_code} | {item} | latest={entry['latest']} mappedLatest={len(entry['mapped'])} | {combo_text}")
 
 
 if __name__ == "__main__":
