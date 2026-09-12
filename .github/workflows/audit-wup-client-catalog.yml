@@ -1,0 +1,53 @@
+name: Audit WUP client catalogue
+
+on:
+  push:
+    branches:
+      - audit/un-wup-urbanization
+    paths:
+      - ".github/workflows/audit-wup-client-catalog.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Inspect WUP client bundles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import html
+          import re
+          from urllib.parse import urljoin
+          from urllib.request import Request, urlopen
+
+          base = "https://population.un.org/wup/downloads"
+          headers = {"User-Agent": "Kartensammlung-WUP-Audit/1.0"}
+          with urlopen(Request(base, headers=headers), timeout=30) as response:
+          	page = response.read().decode("utf-8", errors="replace")
+          scripts = sorted(set(html.unescape(v) for v in re.findall(r'src=["\']([^"\']+\.js(?:\?[^"\']*)?)["\']', page, flags=re.I)))
+          print("page-bytes", len(page), "scripts", len(scripts))
+          found = set()
+          for script in scripts:
+          	url = urljoin(base, script)
+          	with urlopen(Request(url, headers=headers), timeout=30) as response:
+          		text = response.read().decode("utf-8", errors="replace")
+          	print("script", url, "bytes", len(text))
+          	for pattern in (
+          		r'WUP2025-[A-Za-z0-9_\-\.]+\.xlsx',
+          		r'WUP2025-[A-Za-z0-9_\-\.]+\.csv(?:\.gz)?',
+          		r'WUP2025-[A-Za-z0-9_\-\.]+\.zip',
+          	):
+          		for match in re.findall(pattern, text, flags=re.I):
+          			found.add(match)
+          	for token in ("National definitions", "National%20definitions", "UrbanPercentage", "UPopNat"):
+          		if token in text:
+          			print("contains", repr(token), "in", url)
+          print("files", len(found))
+          for filename in sorted(found):
+          	print(filename)
+          PY
