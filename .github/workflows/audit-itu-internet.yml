@@ -1,0 +1,48 @@
+name: Audit ITU internet
+
+on:
+  push:
+    branches:
+      - audit/itu-internet
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Probe ITU DataHub API
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.request
+
+          urls = [
+          	"https://api.datahub.itu.int/v2/dictionaries/getbyid/11624",
+          	"https://api.datahub.itu.int/v2/data/bycode/11624",
+          ]
+          for url in urls:
+          	print(f"URL={url}")
+          	req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-audit/1.0"})
+          	with urllib.request.urlopen(req, timeout=60) as response:
+          		body = response.read()
+          		print(f"status={response.status} bytes={len(body)} contentType={response.headers.get('Content-Type')}")
+          		try:
+          			payload = json.loads(body)
+          		except Exception:
+          			print(body[:1000].decode("utf-8", errors="replace"))
+          			continue
+          		print(f"type={type(payload).__name__}")
+          		if isinstance(payload, dict):
+          			print("keys=" + ",".join(sorted(payload.keys())))
+          			print(json.dumps(payload, ensure_ascii=False)[:5000])
+          		elif isinstance(payload, list):
+          			print(f"items={len(payload)}")
+          			print(json.dumps(payload[:3], ensure_ascii=False)[:5000])
+          PY
