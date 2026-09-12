@@ -1,0 +1,22 @@
+name: Temporary WHO WDI health audit 2
+
+on:
+  push:
+    branches:
+      - audit/who-wdi-health-2
+    paths:
+      - ".github/workflows/tmp-who-wdi-health-2.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Inspect direct WHO series
+        run: python .github/scripts/tmp_inspect_who_health_2.py
