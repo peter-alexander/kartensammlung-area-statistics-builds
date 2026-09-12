@@ -3,7 +3,7 @@
 	"providers": [
 		{
 			"id": "world-bank",
-			"name": "World Bank",
+			"name": "World Bank WDI",
 			"index": "world-bank/index.json"
 		},
 		{
