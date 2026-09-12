@@ -146,7 +146,21 @@ jobs:
           	feature = json.loads(line)
           	tippecanoe = feature.get("tippecanoe") or {}
           	properties = feature.get("properties") or {}
-          	zoom = int(tippecanoe.get("zoom", -1))
+          	minzoom = tippecanoe.get("minzoom")
+          	maxzoom = tippecanoe.get("maxzoom")
+          	if minzoom is None or maxzoom is None:
+          		raise SystemExit(
+          			"Country label PMTiles retention check found a feature without "
+          			"tippecanoe.minzoom/maxzoom"
+          		)
+          	minzoom = int(minzoom)
+          	maxzoom = int(maxzoom)
+          	if minzoom != maxzoom:
+          		raise SystemExit(
+          			"Country label PMTiles retention check found a feature with "
+          			f"different minzoom/maxzoom: {minzoom}/{maxzoom}"
+          		)
+          	zoom = minzoom
           	area_id = properties.get("area_id")
           	if zoom in ids_by_zoom and area_id:
           		ids_by_zoom[zoom].add(str(area_id))
