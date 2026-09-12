@@ -7,7 +7,6 @@ on:
       - feature/faostat-batch3
     paths:
       - "scripts/apply_faostat_batch3.py"
-      - ".github/workflows/temp-faostat-batch3-diagnose.yml"
 
 permissions:
   contents: write
@@ -26,11 +25,10 @@ jobs:
           python scripts/apply_faostat_batch3.py
           python -m py_compile scripts/build_faostat.py
           python -m json.tool config/faostat-indicators.json >/dev/null
-      - name: Remove temporary diagnostics
+      - name: Remove temporary scripts
         run: |
           rm scripts/diagnose_faostat_batch3.py
           rm scripts/apply_faostat_batch3.py
-          rm .github/workflows/temp-faostat-batch3-diagnose.yml
       - name: Commit product changes
         run: |
           git config user.name "peter-alexander"
