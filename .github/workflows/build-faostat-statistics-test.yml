@@ -80,6 +80,11 @@ jobs:
           	if (indicator.get("periodLabels") or {}).get("2025") != "2023-2025":
           		raise SystemExit(f"Missing 2023-2025 period label for {indicator.get('id')}")
           	coverage = indicator.get("coverage") or {}
+          	if coverage.get("registryAreas") != 250:
+          		raise SystemExit(
+          			f"Expected indicator registryAreas=250 for {indicator.get('id')}, "
+          			f"got {coverage.get('registryAreas')}"
+          		)
           	if coverage.get("defaultPeriod") != "2023-2025":
           		raise SystemExit(f"Unexpected default period for {indicator.get('id')}: {coverage.get('defaultPeriod')}")
 
