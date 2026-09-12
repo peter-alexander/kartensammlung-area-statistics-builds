@@ -69,6 +69,6 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add config/who-indicators.json scripts/build_who.py .github/workflows/build-who-statistics.yml docs/statistics-source-policy.md
+          git add config/who-indicators.json scripts/build_who.py docs/statistics-source-policy.md
           git commit -m "Add direct WHO DTP immunization series"
           git push origin HEAD:feature/who-dtp
