@@ -1,0 +1,61 @@
+name: Temporary remove WDI WHO mortality duplicates
+
+on:
+  push:
+    branches:
+      - feature/remove-wdi-who-mortality
+    paths:
+      - ".github/workflows/tmp-remove-wdi-who-mortality.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/remove-wdi-who-mortality
+
+      - name: Apply duplicate removal
+        run: |
+          set -euo pipefail
+          python .github/scripts/tmp_remove_wdi_who_mortality.py
+          python -m json.tool config/world-bank-indicators.json >/dev/null
+          git diff --check
+          git diff --stat
+
+      - name: Validate World Bank WDI build
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/build_world_bank.py
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?patch=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_world_bank.py --registry "$REGISTRY_URL"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/world-bank/index.json").read_text(encoding="utf-8"))
+          ids = {item["id"] for item in payload["indicators"]}
+          removed = {
+          	"mortality.suicide-per-100000",
+          	"mortality.suicide-male-per-100000",
+          	"mortality.suicide-female-per-100000",
+          	"mortality.ncd-premature-percent",
+          }
+          assert len(ids) == 46, len(ids)
+          assert not (ids & removed), sorted(ids & removed)
+          print("snapshot=" + payload["activeSnapshot"])
+          print("indicators=" + str(len(ids)))
+          PY
+
+      - name: Commit product changes
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/world-bank-indicators.json docs/statistics-source-policy.md
+          git commit -m "Remove WHO-origin WDI mortality duplicates"
+          git push origin HEAD:feature/remove-wdi-who-mortality
