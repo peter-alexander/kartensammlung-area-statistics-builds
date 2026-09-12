@@ -69,7 +69,7 @@ jobs:
           from pathlib import Path
 
           provider = json.loads(Path("dist/statistics/who/index.json").read_text(encoding="utf-8"))
-          assert len(provider["indicators"]) == 8, len(provider["indicators"])
+          assert len(provider["indicators"]) == 9, len(provider["indicators"])
           by_id = {item["id"]: item for item in provider["indicators"]}
           annual_ids = {
           	"mortality.suicide-per-100000",
@@ -122,6 +122,30 @@ jobs:
           assert "indicatorUuid" not in measles_payload["source"]
           assert measles_payload["indicator"]["confidenceIntervals"] == {"available": False}
           assert measles_payload.get("observationMetadata")
+
+          maternal = by_id["mortality.maternal-per-100000-live-births"]
+          assert maternal["frequency"] == "annual"
+          assert maternal["availableYears"] == list(range(1985, 2024)), maternal["availableYears"]
+          assert maternal["defaultYear"] == 2023, maternal["defaultYear"]
+          assert maternal["coverage"]["areasWithAnyValue"] == 195, maternal["coverage"]
+          assert maternal["coverage"]["areasInDefaultYear"] == 195, maternal["coverage"]
+          assert maternal["coverage"]["directObservations"] == 7605, maternal["coverage"]
+          assert maternal["coverage"]["fallbackObservations"] == 0, maternal["coverage"]
+          assert maternal["confidenceIntervals"] is True
+          maternal_payload = json.loads(Path("dist/statistics/who", maternal["path"]).read_text(encoding="utf-8"))
+          assert maternal_payload["source"]["providerId"] == "who"
+          assert maternal_payload["source"]["indicator"] == "MDG_0000000026"
+          assert maternal_payload["source"]["sourceFormat"] == "gho-odata"
+          assert maternal_payload["source"]["timeCoverage"] == {"startYear": 1985, "endYear": 2023}
+          assert "fallback" not in maternal_payload["source"]
+          assert "indicatorUuid" not in maternal_payload["source"]
+          assert maternal_payload["indicator"]["confidenceIntervals"]["available"] is True
+          maternal_intervals = sum(
+              len(values) for values in maternal_payload["confidenceIntervals"]["values"].values()
+          )
+          assert maternal_intervals == 7605, maternal_intervals
+          assert "country:COK" in maternal_payload["values"]["2023"]
+          assert not maternal_payload.get("observationMetadata")
 
           print(f"snapshot={provider['activeSnapshot']}")
           print(f"retrievedAt={provider['retrievedAt']}")

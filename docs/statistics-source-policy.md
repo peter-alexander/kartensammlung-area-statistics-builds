@@ -300,6 +300,21 @@ Direkte WHO-Quelle: Global Health Observatory, `WHS8_110`, WHO/UNICEF Estimates 
 
 Entscheidung: **WHO ist kanonisch.** `WHS8_110` wird direkt aus dem WHO-GHO-OData-Endpunkt gebaut. WDI `SH.IMM.MEAS` ergänzt ausschließlich 1980–1999 sowie Länder-/Jahrlücken als explizit markierter Fallback. Die sichtbare WDI-Doppelung wird entfernt.
 
+#### Müttersterblichkeit
+
+WDI `SH.STA.MMRT` ist die modellierte Müttersterblichkeitsrate der UN Maternal Mortality Estimation Inter-Agency Group (MMEIG). Die fachlich zuständige gemeinsame Schätzgruppe besteht aus WHO, UNICEF, UNFPA, World Bank Group und UNDESA/Population Division. Die direkte WHO-GHO-Reihe verwendet den Indikator `MDG_0000000026` (SDG 3.1.1). WHO veröffentlichte am 7. April 2025 die neue MMEIG-Runde „Trends in maternal mortality 2000 to 2023“ und bezeichnet sie ausdrücklich als die aktuellsten international vergleichbaren MMEIG-Schätzungen; die neue Runde ersetzt frühere Schätzstände.
+
+Numerischer Vergleich des aktuellen WHO-GHO-Stands mit WDI:
+
+- WHO direkt: 7.605 Beobachtungen, 195 Länder, 1985–2023; in jedem Jahr 195 Länder.
+- WDI: 7.566 Beobachtungen, 194 Länder, 1985–2023; in jedem Jahr 194 Länder.
+- 7.566 gemeinsame Länder-Jahr-Werte; **7.481/7.566 WDI-Werte entsprechen exakt der auf ganze Zahlen gerundeten aktuellen WHO-Schätzung.**
+- WHO besitzt zusätzlich alle 39 Jahreswerte der Cookinseln; WDI besitzt keinen einzigen zusätzlichen Länder-Jahr-Wert.
+- Für alle 7.605 direkten WHO-Beobachtungen stehen Unter- und Obergrenzen des von MMEIG verwendeten 80-%-Unsicherheitsintervalls zur Verfügung.
+- 85 gemeinsame Werte weichen über reine Rundung hinaus ab. Sie betreffen Kenia (39 Jahre), Mosambik (39), Luxemburg (4) sowie Haiti, Pakistan und Sudan (je 1). Bei Kenia liegen 35 der 39 WDI-Werte sogar außerhalb des aktuellen WHO-Unsicherheitsintervalls. Das ist ein deutlicher Revisionsstand-Unterschied und kein fachlicher Mehrwert von WDI.
+
+Entscheidung: **WHO/MMEIG ist kanonisch.** Die direkte aktuelle GHO-Reihe hat größere Abdeckung, höhere numerische Präzision und vollständige 80-%-Unsicherheitsintervalle. WDI `SH.STA.MMRT` wird als sichtbare Doppelung entfernt. Ein WDI-Fallback ist nicht erforderlich, weil WDI keine einzige zusätzliche Länder-Jahr-Beobachtung besitzt; ältere WDI-Schätzstände dürfen aktuelle MMEIG-Revisionen nicht überschreiben.
+
 Status des offenen WHO/WDI-Gesundheitsaudits: **abgeschlossen am 12. September 2026.**
 
 ### Weitere Themen
