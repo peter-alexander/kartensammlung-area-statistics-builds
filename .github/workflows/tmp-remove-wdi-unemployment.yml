@@ -24,43 +24,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          config_path = Path("config/world-bank-indicators.json")
-          text = config_path.read_text(encoding="utf-8")
-          lines = text.splitlines(keepends=True)
-          matches = [line for line in lines if '"id":"unemployment.total-percent"' in line]
-          assert len(matches) == 1, len(matches)
-          text = "".join(line for line in lines if '"id":"unemployment.total-percent"' not in line)
-          payload = json.loads(text)
-          assert len(payload["indicators"]) == 50
-          assert all(item["id"] != "unemployment.total-percent" for item in payload["indicators"])
-          config_path.write_text(text, encoding="utf-8")
-
-          policy_path = Path("docs/statistics-source-policy.md")
-          policy = policy_path.read_text(encoding="utf-8")
-          old = '''Geplanter Ablauf:
-
-1. direkte ILOSTAT-Gesamtarbeitslosenquote integrieren,
-2. Jugendarbeitslosigkeit prüfen und gegebenenfalls ebenfalls direkt integrieren,
-3. historische und aktuelle Abdeckung mit WDI vergleichen,
-4. Werte in den gemeinsamen Jahren numerisch vergleichen,
-5. WDI-Arbeitslosenquote entfernen, wenn die direkte ILOSTAT-Reihe gleichwertig oder besser ist.
-'''
-          new = '''Status: **umgesetzt am 12. September 2026.**
-
-- Direkte ILOSTAT-Reihe: `UNE_2EAP_SEX_AGE_RT_A`, beide Geschlechter, 15+.
-- Zusätzlich wurde die direkte Jugendarbeitslosenquote für 15–24-Jährige aus derselben ILOEST-Reihe integriert.
-- Beide direkten Reihen decken 188 Länder über den Gesamtzeitraum und 183 Länder im letzten Nicht-Prognosejahr 2025 ab; ILOEST-Prognosen beginnen 2026.
-- WDI `SL.UEM.TOTL.ZS` und die direkte ILOSTAT-Gesamtarbeitslosenquote wurden über 6.496 gemeinsame Länder-Jahr-Werte verglichen: **6.496/6.496 Werte waren exakt identisch**.
-- Im Jahr 2025 waren alle 181 gemeinsamen Länderwerte exakt identisch.
-- Konsequenz: ILOSTAT ist die kanonische Quelle; die WDI-Doppelung `unemployment.total-percent` wurde entfernt.
-'''
-          assert old in policy
-          policy_path.write_text(policy.replace(old, new, 1), encoding="utf-8")
-          PY
+          python .github/scripts/tmp_remove_wdi_unemployment.py
           python -m json.tool config/world-bank-indicators.json >/dev/null
           git diff --check
           git diff --stat
@@ -72,16 +36,7 @@ jobs:
           python -m py_compile scripts/build_world_bank.py
           REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?patch=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           python scripts/build_world_bank.py --registry "$REGISTRY_URL"
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          payload = json.loads(Path("dist/statistics/world-bank/index.json").read_text(encoding="utf-8"))
-          ids = [item["id"] for item in payload["indicators"]]
-          assert len(ids) == 50, len(ids)
-          assert "unemployment.total-percent" not in ids
-          print("snapshot=" + payload["activeSnapshot"])
-          print("indicators=" + str(len(ids)))
-          PY
+          python -c 'import json; from pathlib import Path; p=json.loads(Path("dist/statistics/world-bank/index.json").read_text()); ids=[i["id"] for i in p["indicators"]]; assert len(ids)==50; assert "unemployment.total-percent" not in ids; print("snapshot="+p["activeSnapshot"]); print("indicators="+str(len(ids)))'
 
       - name: Commit product changes
         shell: bash
