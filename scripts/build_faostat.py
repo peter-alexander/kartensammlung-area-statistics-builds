@@ -107,9 +107,11 @@ def validate_config(payload: Any) -> dict[str, Any]:
 	for indicator in indicators:
 		if not isinstance(indicator, dict):
 			raise ValueError("FAOSTAT indicator entries must be objects.")
-		for key in ("id", "slug", "datasetId", "title", "description", "sourceUnit", "frequency"):
+		for key in ("id", "slug", "datasetId", "title", "description", "frequency"):
 			if not str(indicator.get(key, "")).strip():
 				raise ValueError(f"FAOSTAT indicator entry is missing {key}.")
+		if "sourceUnit" not in indicator or not isinstance(indicator["sourceUnit"], str):
+			raise ValueError(f"FAOSTAT indicator {indicator.get('id', '<unknown>')} has invalid sourceUnit.")
 		indicator_id = str(indicator["id"])
 		slug = str(indicator["slug"])
 		dataset_id = str(indicator["datasetId"])
