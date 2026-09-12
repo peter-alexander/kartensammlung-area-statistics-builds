@@ -88,10 +88,10 @@ jobs:
 
           indicators = provider.get("indicators") or []
           configured_indicators = config.get("indicators") or []
-          if len(indicators) != 18 or len(configured_indicators) != 18:
-          	raise SystemExit(f"Expected 18 FAOSTAT indicators, found provider={len(indicators)} config={len(configured_indicators)}")
+          if len(indicators) != 25 or len(configured_indicators) != 25:
+          	raise SystemExit(f"Expected 25 FAOSTAT indicators, found provider={len(indicators)} config={len(configured_indicators)}")
 
-          expected_datasets = {"food-security", "healthy-diet", "land-use", "fertilizers-nutrient", "temperature-change"}
+          expected_datasets = {"food-security", "healthy-diet", "land-use", "fertilizers-nutrient", "temperature-change", "production-indices", "livestock-patterns", "pesticides-use", "emissions-indicators"}
           source_datasets = (provider.get("dataset") or {}).get("datasets") or []
           if {item.get("id") for item in source_datasets} != expected_datasets:
           	raise SystemExit("FAOSTAT provider dataset set mismatch")
