@@ -8,7 +8,7 @@ import math
 import statistics
 import time
 import zipfile
-from collections import Counter, defaultdict
+from collections import Counter
 from typing import Any
 from urllib.request import Request, urlopen
 
@@ -160,7 +160,7 @@ def load_wdi(code: str, allowed_iso3: set[str]) -> dict[tuple[str, int], float]:
 		try:
 			year = int(row.get("date"))
 			value = float(row.get("value"))
-		 except (TypeError, ValueError):
+		except (TypeError, ValueError):
 			continue
 		if math.isfinite(value):
 			values[(iso3, year)] = value
