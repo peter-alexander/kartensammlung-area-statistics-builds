@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import argparse
-from collections import Counter, defaultdict
+from collections import defaultdict
 import csv
 from datetime import datetime, timezone
 import hashlib
@@ -20,34 +20,27 @@ import zipfile
 import build_world_bank as common
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG = ROOT / "config" / "faostat-food-security-indicators.json"
+DEFAULT_CONFIG = ROOT / "config" / "faostat-indicators.json"
 DEFAULT_PROVIDERS = ROOT / "config" / "statistics-providers.json"
 DEFAULT_OUTPUT_DIR = ROOT / "dist" / "statistics"
 DEFAULT_REGISTRY = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
 USER_AGENT = "kartensammlung-area-statistics-builds/1"
-EXPECTED_DATA_FILE = "Food_Security_Data_E_All_Data_(Normalized).csv"
-EXPECTED_AREA_FILE = "Food_Security_Data_E_AreaCodes.csv"
-EXPECTED_FLAG_FILE = "Food_Security_Data_E_Flags.csv"
-REQUIRED_FIELDS = {
+BASE_REQUIRED_FIELDS = {
 	"Area Code (M49)",
 	"Area",
-	"Item Code",
-	"Item",
-	"Element",
 	"Year",
 	"Unit",
 	"Value",
 	"Flag",
-	"Note",
 }
 PERIOD_RE = re.compile(r"^([12]\d{3})-([12]\d{3})$")
+YEAR_RE = re.compile(r"^[12]\d{3}$")
 CENSORED_RE = re.compile(r"^\s*([<>])\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*$")
+SUPPORTED_FREQUENCIES = {"annual", "three-year-average"}
 
 
 def parse_args() -> argparse.Namespace:
-	parser = argparse.ArgumentParser(
-		description="Build normalized country statistics from FAOSTAT Suite of Food Security Indicators."
-	)
+	parser = argparse.ArgumentParser(description="Build normalized country statistics from selected FAOSTAT datasets.")
 	parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
 	parser.add_argument("--providers", type=Path, default=DEFAULT_PROVIDERS)
 	parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
@@ -65,22 +58,12 @@ def read_json(path: Path) -> Any:
 
 
 def validate_config(payload: Any) -> dict[str, Any]:
-	if not isinstance(payload, dict) or payload.get("schema") != "kartensammlung.faostat-food-security-statistics/v1":
-		raise ValueError("Invalid FAOSTAT food-security statistics config.")
+	if not isinstance(payload, dict) or payload.get("schema") != "kartensammlung.faostat-statistics/v2":
+		raise ValueError("Invalid FAOSTAT statistics config.")
 
-	documentation_url = str(payload.get("documentationUrl", "")).strip()
-	bulk_url = str(payload.get("bulkUrl", "")).strip()
 	terms_url = str(payload.get("termsUrl", "")).strip()
-	if not documentation_url.startswith("https://www.fao.org/faostat/"):
-		raise ValueError("FAOSTAT documentationUrl must use www.fao.org/faostat over HTTPS.")
-	if not bulk_url.startswith("https://bulks-faostat.fao.org/production/") or not bulk_url.endswith(".zip"):
-		raise ValueError("FAOSTAT bulkUrl must point to the production bulk ZIP.")
 	if not terms_url.startswith("https://www.fao.org/"):
 		raise ValueError("FAOSTAT termsUrl must use fao.org over HTTPS.")
-
-	minimum_latest = payload.get("minimumLatestPeriodEndYear")
-	if not isinstance(minimum_latest, int) or not 2000 <= minimum_latest <= 2200:
-		raise ValueError("FAOSTAT minimumLatestPeriodEndYear is invalid.")
 
 	provider = payload.get("provider")
 	if not isinstance(provider, dict) or provider.get("id") != "faostat":
@@ -89,38 +72,73 @@ def validate_config(payload: Any) -> dict[str, Any]:
 		if not str(provider.get(key, "")).strip():
 			raise ValueError(f"FAOSTAT provider metadata is missing {key}.")
 
+	datasets = payload.get("datasets")
+	if not isinstance(datasets, list) or not datasets:
+		raise ValueError("FAOSTAT config requires datasets.")
+	dataset_by_id: dict[str, dict[str, Any]] = {}
+	for dataset in datasets:
+		if not isinstance(dataset, dict):
+			raise ValueError("FAOSTAT dataset entries must be objects.")
+		for key in ("id", "code", "name", "documentationUrl", "bulkUrl", "dataFile", "flagFile"):
+			if not str(dataset.get(key, "")).strip():
+				raise ValueError(f"FAOSTAT dataset entry is missing {key}.")
+		dataset_id = str(dataset["id"])
+		if dataset_id in dataset_by_id:
+			raise ValueError(f"Duplicate FAOSTAT dataset id: {dataset_id}")
+		if not str(dataset["documentationUrl"]).startswith("https://www.fao.org/faostat/"):
+			raise ValueError(f"FAOSTAT dataset {dataset_id} has invalid documentationUrl.")
+		bulk_url = str(dataset["bulkUrl"])
+		if not bulk_url.startswith("https://bulks-faostat.fao.org/production/") or not bulk_url.endswith(".zip"):
+			raise ValueError(f"FAOSTAT dataset {dataset_id} has invalid bulkUrl.")
+		minimum_rows = dataset.get("minimumRows")
+		if not isinstance(minimum_rows, int) or minimum_rows <= 0:
+			raise ValueError(f"FAOSTAT dataset {dataset_id} has invalid minimumRows.")
+		label_fields = dataset.get("sourceLabelFields", [])
+		if not isinstance(label_fields, list) or not label_fields or any(not str(value).strip() for value in label_fields):
+			raise ValueError(f"FAOSTAT dataset {dataset_id} has invalid sourceLabelFields.")
+		dataset_by_id[dataset_id] = dataset
+
 	indicators = payload.get("indicators")
 	if not isinstance(indicators, list) or not indicators:
 		raise ValueError("FAOSTAT config requires indicators.")
-
 	ids: set[str] = set()
 	slugs: set[str] = set()
-	source_codes: set[str] = set()
+	source_keys: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
 	for indicator in indicators:
 		if not isinstance(indicator, dict):
 			raise ValueError("FAOSTAT indicator entries must be objects.")
-		for key in ("id", "slug", "sourceItemCode", "title", "description", "sourceUnit"):
+		for key in ("id", "slug", "datasetId", "title", "description", "sourceUnit", "frequency"):
 			if not str(indicator.get(key, "")).strip():
 				raise ValueError(f"FAOSTAT indicator entry is missing {key}.")
 		indicator_id = str(indicator["id"])
 		slug = str(indicator["slug"])
-		source_code = str(indicator["sourceItemCode"])
+		dataset_id = str(indicator["datasetId"])
+		if dataset_id not in dataset_by_id:
+			raise ValueError(f"FAOSTAT indicator {indicator_id} references unknown dataset {dataset_id}.")
 		if indicator_id in ids:
 			raise ValueError(f"Duplicate FAOSTAT indicator id: {indicator_id}")
 		if slug in slugs:
 			raise ValueError(f"Duplicate FAOSTAT indicator slug: {slug}")
-		if source_code in source_codes:
-			raise ValueError(f"Duplicate FAOSTAT source item code: {source_code}")
 		ids.add(indicator_id)
 		slugs.add(slug)
-		source_codes.add(source_code)
+
+		frequency = str(indicator["frequency"])
+		if frequency not in SUPPORTED_FREQUENCIES:
+			raise ValueError(f"FAOSTAT indicator {indicator_id} has unsupported frequency {frequency}.")
+		filters = indicator.get("sourceFilters")
+		if not isinstance(filters, dict) or not filters or any(not str(key).strip() or not str(value).strip() for key, value in filters.items()):
+			raise ValueError(f"FAOSTAT indicator {indicator_id} has invalid sourceFilters.")
+		source_key = (dataset_id, tuple(sorted((str(key), str(value)) for key, value in filters.items())))
+		if source_key in source_keys:
+			raise ValueError(f"Duplicate FAOSTAT source filter combination for {indicator_id}.")
+		source_keys.add(source_key)
 
 		unit = indicator.get("unit")
 		if not isinstance(unit, dict) or not str(unit.get("id", "")).strip() or not str(unit.get("label", "")).strip():
 			raise ValueError(f"FAOSTAT indicator {indicator_id} has invalid unit metadata.")
 		common.validate_classification(indicator_id, indicator.get("classification"))
 
-		for key in ("minAreasWithAnyValue", "minAreasInDefaultPeriod", "minimumDefaultPeriodEndYear"):
+		for key in ("minAreasWithAnyValue", "minAreasInDefaultYear", "minimumLatestYear", "minimumDefaultYear"):
 			value = indicator.get(key)
 			if not isinstance(value, int) or value <= 0:
 				raise ValueError(f"FAOSTAT indicator {indicator_id} has invalid {key}.")
@@ -148,13 +166,7 @@ def fetch_bytes(url: str, timeout: int) -> tuple[bytes, dict[str, str]]:
 	for attempt, delay in enumerate(delays, start=1):
 		if delay:
 			time.sleep(delay)
-		request = Request(
-			url,
-			headers={
-				"Accept": "application/zip,application/octet-stream,*/*",
-				"User-Agent": USER_AGENT,
-			},
-		)
+		request = Request(url, headers={"Accept": "application/zip,application/octet-stream,*/*", "User-Agent": USER_AGENT})
 		try:
 			with urlopen(request, timeout=timeout) as response:
 				data = response.read()
@@ -207,7 +219,6 @@ def load_registry_by_m49(source: str, timeout: int) -> tuple[dict[str, str], dic
 	areas = payload.get("areas")
 	if not isinstance(areas, list) or not areas:
 		raise ValueError("Area registry has no areas.")
-
 	area_by_m49: dict[str, str] = {}
 	country_count = 0
 	for area in areas:
@@ -226,19 +237,20 @@ def load_registry_by_m49(source: str, timeout: int) -> tuple[dict[str, str], dic
 		if m49 in area_by_m49:
 			raise RuntimeError(f"Duplicate M49 code in area registry: {m49}")
 		area_by_m49[m49] = area_id
-
-	if country_count < 240:
-		raise RuntimeError(f"Area registry unexpectedly small: {country_count} country areas.")
-	if len(area_by_m49) < 240:
-		raise RuntimeError(f"Area registry has unexpectedly few M49-coded countries: {len(area_by_m49)}.")
+	if country_count < 240 or len(area_by_m49) < 240:
+		raise RuntimeError(f"Area registry unexpectedly small: countries={country_count} m49={len(area_by_m49)}")
 	for required in ("040", "276", "840", "356", "156"):
 		if required not in area_by_m49:
 			raise RuntimeError(f"Area registry M49 sanity check failed: {required} is missing.")
 	return area_by_m49, payload, country_count
 
 
-def parse_period(raw: Any) -> tuple[str, int]:
+def parse_observation_time(raw: Any, frequency: str) -> tuple[int, str | None]:
 	text = str(raw if raw is not None else "").strip()
+	if frequency == "annual":
+		if YEAR_RE.fullmatch(text) is None:
+			raise RuntimeError(f"Expected an annual FAOSTAT year, got {text!r}.")
+		return int(text), None
 	match = PERIOD_RE.fullmatch(text)
 	if match is None:
 		raise RuntimeError(f"Expected a three-year FAOSTAT period, got {text!r}.")
@@ -246,19 +258,13 @@ def parse_period(raw: Any) -> tuple[str, int]:
 	end = int(match.group(2))
 	if end - start != 2:
 		raise RuntimeError(f"Expected a three-year FAOSTAT period, got {text!r}.")
-	return text, end
+	return end, text
 
 
-def parse_value(
-	raw: Any,
-	indicator_id: str,
-	m49: str,
-	period: str,
-) -> tuple[int | float | None, dict[str, Any]]:
+def parse_value(raw: Any, indicator_id: str, m49: str, time_label: str) -> tuple[int | float | None, dict[str, Any]]:
 	text = str(raw if raw is not None else "").strip()
 	if not text:
 		return None, {}
-
 	metadata: dict[str, Any] = {}
 	censored = CENSORED_RE.fullmatch(text)
 	if censored:
@@ -266,53 +272,22 @@ def parse_value(
 		value = common.normalize_number(censored.group(2))
 		metadata["valueQualifier"] = "less-than" if operator == "<" else "greater-than"
 		metadata["displayValue"] = f"{operator}{censored.group(2)}"
-		if operator == "<":
-			metadata["upperBound"] = value
-		else:
-			metadata["lowerBound"] = value
+		metadata["upperBound" if operator == "<" else "lowerBound"] = value
 	else:
 		try:
 			value = common.normalize_number(text)
 		except (TypeError, ValueError) as error:
-			raise RuntimeError(
-				f"Invalid FAOSTAT value for {indicator_id} M49={m49} {period}: {text!r}"
-			) from error
-
+			raise RuntimeError(f"Invalid FAOSTAT value for {indicator_id} M49={m49} {time_label}: {text!r}") from error
 	if not math.isfinite(float(value)):
-		raise RuntimeError(f"Non-finite FAOSTAT value for {indicator_id} M49={m49} {period}.")
+		raise RuntimeError(f"Non-finite FAOSTAT value for {indicator_id} M49={m49} {time_label}.")
 	return value, metadata
-
-
-def choose_default_year(
-	indicator: dict[str, Any],
-	available_years: list[int],
-	values_by_year: dict[int, dict[str, int | float]],
-) -> int:
-	minimum = int(indicator["minAreasInDefaultPeriod"])
-	eligible = [year for year in available_years if len(values_by_year[year]) >= minimum]
-	if not eligible:
-		raise RuntimeError(
-			f"FAOSTAT has no sufficiently complete default period for {indicator['id']}: "
-			f"expected at least {minimum} mapped areas."
-		)
-	default_year = eligible[-1]
-	if default_year < int(indicator["minimumDefaultPeriodEndYear"]):
-		raise RuntimeError(
-			f"FAOSTAT default period for {indicator['id']} is unexpectedly old: endpoint {default_year}."
-		)
-	return default_year
 
 
 def flag_descriptions(rows: list[dict[str, str]], fields: list[str]) -> dict[str, str]:
 	if not rows:
 		return {}
 	flag_field = "Flag" if "Flag" in fields else fields[0] if fields else ""
-	description_candidates = [
-		"Description",
-		"Flag Description",
-		"Meaning",
-	]
-	description_field = next((name for name in description_candidates if name in fields), "")
+	description_field = next((name for name in ("Description", "Flag Description", "Meaning") if name in fields), "")
 	if not flag_field or not description_field:
 		return {}
 	result: dict[str, str] = {}
@@ -324,51 +299,70 @@ def flag_descriptions(rows: list[dict[str, str]], fields: list[str]) -> dict[str
 	return dict(sorted(result.items()))
 
 
+def source_indicator_code(indicator: dict[str, Any]) -> str:
+	return ";".join(f"{key}={value}" for key, value in sorted(indicator["sourceFilters"].items()))
+
+
+def source_indicator_name(rows: list[dict[str, str]], dataset: dict[str, Any]) -> str:
+	fields = [str(field) for field in dataset["sourceLabelFields"]]
+	names = {
+		" – ".join(str(row.get(field, "")).strip() for field in fields if str(row.get(field, "")).strip())
+		for row in rows
+	}
+	names.discard("")
+	if len(names) != 1:
+		raise RuntimeError(f"FAOSTAT source label changed or is ambiguous: {sorted(names)}")
+	return next(iter(names))
+
+
+def choose_default_year(indicator: dict[str, Any], years: list[int], values_by_year: dict[int, dict[str, int | float]]) -> int:
+	minimum = int(indicator["minAreasInDefaultYear"])
+	eligible = [year for year in years if len(values_by_year[year]) >= minimum]
+	if not eligible:
+		raise RuntimeError(f"FAOSTAT has no sufficiently complete default year for {indicator['id']}: expected at least {minimum} mapped areas.")
+	default_year = eligible[-1]
+	if default_year < int(indicator["minimumDefaultYear"]):
+		raise RuntimeError(f"FAOSTAT default year for {indicator['id']} is unexpectedly old: {default_year}.")
+	return default_year
+
+
 def build_indicator_payload(
 	config: dict[str, Any],
+	dataset: dict[str, Any],
 	indicator: dict[str, Any],
 	rows: list[dict[str, str]],
 	area_by_m49: dict[str, str],
 	registry_country_count: int,
-	source_url: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
 	indicator_id = str(indicator["id"])
-	source_code = str(indicator["sourceItemCode"])
-	source_rows = [
-		row
-		for row in rows
-		if str(row.get("Item Code", "")).strip() == source_code
-		and str(row.get("Element", "")).strip() == "Value"
-	]
+	filters = {str(key): str(value) for key, value in indicator["sourceFilters"].items()}
+	source_rows = [row for row in rows if all(str(row.get(field, "")).strip() == expected for field, expected in filters.items())]
 	if not source_rows:
-		raise RuntimeError(f"FAOSTAT source item is missing: {source_code} ({indicator_id}).")
+		raise RuntimeError(f"FAOSTAT source series is missing for {indicator_id}: {filters}")
+	series_name = source_indicator_name(source_rows, dataset)
+	frequency = str(indicator["frequency"])
 
 	values_by_year: dict[int, dict[str, int | float]] = defaultdict(dict)
 	metadata_by_year: dict[int, dict[str, dict[str, Any]]] = defaultdict(dict)
 	period_labels: dict[int, str] = {}
 	areas_with_any_value: set[str] = set()
-	source_names: set[str] = set()
 	ignored_source_areas: dict[str, str] = {}
 	censored_count = 0
 	missing_count = 0
 	source_units: set[str] = set()
-
 	min_value, max_value = (float(value) for value in indicator["valueRange"])
+
 	for row in source_rows:
 		unit = str(row.get("Unit", "")).strip()
 		source_units.add(unit)
 		if unit != str(indicator["sourceUnit"]):
-			raise RuntimeError(
-				f"Unexpected FAOSTAT unit for {indicator_id}: {unit!r}; expected {indicator['sourceUnit']!r}."
-			)
-
-		period, end_year = parse_period(row.get("Year"))
-		existing_period = period_labels.get(end_year)
-		if existing_period is not None and existing_period != period:
-			raise RuntimeError(
-				f"Conflicting FAOSTAT periods for endpoint {end_year}: {existing_period!r} vs {period!r}."
-			)
-		period_labels[end_year] = period
+			raise RuntimeError(f"Unexpected FAOSTAT unit for {indicator_id}: {unit!r}; expected {indicator['sourceUnit']!r}.")
+		year, period = parse_observation_time(row.get("Year"), frequency)
+		if period is not None:
+			existing_period = period_labels.get(year)
+			if existing_period is not None and existing_period != period:
+				raise RuntimeError(f"Conflicting FAOSTAT periods for endpoint {year}: {existing_period!r} vs {period!r}.")
+			period_labels[year] = period
 
 		m49 = normalize_m49(row.get("Area Code (M49)"))
 		if not m49:
@@ -379,76 +373,55 @@ def build_indicator_payload(
 			ignored_source_areas[m49] = area_name
 			continue
 
-		value, observation = parse_value(row.get("Value"), indicator_id, m49, period)
+		time_label = period or str(year)
+		value, observation = parse_value(row.get("Value"), indicator_id, m49, time_label)
 		if value is None:
 			missing_count += 1
 			continue
 		numeric = float(value)
 		if numeric < min_value or numeric > max_value:
-			raise RuntimeError(
-				f"FAOSTAT value outside configured range for {indicator_id} "
-				f"M49={m49} {period}: {value} not in {indicator['valueRange']}"
-			)
-		if area_id in values_by_year[end_year]:
-			raise RuntimeError(f"Duplicate FAOSTAT value for {indicator_id} {period} {area_id}.")
-		values_by_year[end_year][area_id] = value
+			raise RuntimeError(f"FAOSTAT value outside configured range for {indicator_id} M49={m49} {time_label}: {value} not in {indicator['valueRange']}")
+		if area_id in values_by_year[year]:
+			raise RuntimeError(f"Duplicate FAOSTAT value for {indicator_id} {time_label} {area_id}.")
+		values_by_year[year][area_id] = value
 		areas_with_any_value.add(area_id)
-		source_names.add(str(row.get("Item", "")).strip())
 
 		flag = str(row.get("Flag", "")).strip()
 		note = str(row.get("Note", "")).strip()
+		release = str(row.get("Release", "")).strip()
 		if observation.get("valueQualifier"):
 			censored_count += 1
 		if flag:
 			observation["sourceFlag"] = flag
 		if note:
 			observation["sourceNote"] = note
+		if release:
+			observation["sourceRelease"] = release
 		if observation:
-			metadata_by_year[end_year][area_id] = observation
+			metadata_by_year[year][area_id] = observation
 
-	if len(source_names) != 1:
-		raise RuntimeError(f"FAOSTAT item name changed or is ambiguous for {source_code}: {sorted(source_names)}")
 	if len(areas_with_any_value) < int(indicator["minAreasWithAnyValue"]):
-		raise RuntimeError(
-			f"FAOSTAT indicator {indicator_id} maps only {len(areas_with_any_value)} areas; "
-			f"expected at least {indicator['minAreasWithAnyValue']}."
-		)
+		raise RuntimeError(f"FAOSTAT indicator {indicator_id} maps only {len(areas_with_any_value)} areas; expected at least {indicator['minAreasWithAnyValue']}.")
 	if not values_by_year:
 		raise RuntimeError(f"FAOSTAT returned no mapped values for {indicator_id}.")
-
 	available_years = sorted(values_by_year)
-	if available_years[-1] < int(config["minimumLatestPeriodEndYear"]):
-		raise RuntimeError(
-			f"FAOSTAT indicator {indicator_id} is unexpectedly old: latest endpoint {available_years[-1]}."
-		)
+	if available_years[-1] < int(indicator["minimumLatestYear"]):
+		raise RuntimeError(f"FAOSTAT indicator {indicator_id} is unexpectedly old: latest year {available_years[-1]}.")
 	default_year = choose_default_year(indicator, available_years, values_by_year)
 	for area_id in indicator["requiredAreas"]:
 		if area_id not in values_by_year[default_year]:
-			raise RuntimeError(
-				f"Required area {area_id} has no FAOSTAT value for {indicator_id} "
-				f"in default period {period_labels[default_year]}."
-			)
+			raise RuntimeError(f"Required area {area_id} has no FAOSTAT value for {indicator_id} in default year {default_year}.")
 
 	sorted_values = {
-		str(year): {
-			area_id: values_by_year[year][area_id]
-			for area_id in sorted(values_by_year[year])
-		}
+		str(year): {area_id: values_by_year[year][area_id] for area_id in sorted(values_by_year[year])}
 		for year in available_years
 	}
 	sorted_metadata = {
-		str(year): {
-			area_id: metadata_by_year[year][area_id]
-			for area_id in sorted(metadata_by_year[year])
-		}
+		str(year): {area_id: metadata_by_year[year][area_id] for area_id in sorted(metadata_by_year[year])}
 		for year in sorted(metadata_by_year)
 		if metadata_by_year[year]
 	}
-	sorted_period_labels = {
-		str(year): period_labels[year]
-		for year in sorted(period_labels)
-		if year in values_by_year
-	}
+	sorted_period_labels = {str(year): period_labels[year] for year in sorted(period_labels) if year in values_by_year}
 
 	provider = config["provider"]
 	indicator_metadata: dict[str, Any] = {
@@ -456,11 +429,23 @@ def build_indicator_payload(
 		"title": indicator["title"],
 		"description": indicator["description"],
 		"areaLevel": "country",
-		"frequency": "three-year-average",
+		"frequency": frequency,
 		"unit": indicator["unit"],
 	}
 	if isinstance(indicator.get("classification"), dict):
 		indicator_metadata["classification"] = indicator["classification"]
+
+	coverage: dict[str, Any] = {
+		"registryAreas": registry_country_count,
+		"areasWithAnyValue": len(areas_with_any_value),
+		"latestYear": available_years[-1],
+		"areasInLatestYear": len(values_by_year[available_years[-1]]),
+		"defaultYear": default_year,
+		"areasInDefaultYear": len(values_by_year[default_year]),
+	}
+	if sorted_period_labels:
+		coverage["latestPeriod"] = period_labels[available_years[-1]]
+		coverage["defaultPeriod"] = period_labels[default_year]
 
 	payload: dict[str, Any] = {
 		"schema": "kartensammlung.statistics-indicator/v1",
@@ -468,39 +453,34 @@ def build_indicator_payload(
 		"source": {
 			"providerId": provider["id"],
 			"providerName": provider["name"],
-			"dataset": provider["dataset"],
-			"indicator": source_code,
-			"sourceIndicatorName": next(iter(source_names)),
+			"dataset": dataset["name"],
+			"datasetCode": dataset["code"],
+			"indicator": source_indicator_code(indicator),
+			"sourceIndicatorName": series_name,
 			"license": provider["license"],
 			"licenseUrl": provider["licenseUrl"],
 			"attribution": provider["attribution"],
-			"url": source_url,
-			"documentationUrl": config["documentationUrl"],
+			"url": dataset["bulkUrl"],
+			"documentationUrl": dataset["documentationUrl"],
 			"termsUrl": config["termsUrl"],
 		},
 		"availableYears": available_years,
 		"defaultYear": default_year,
-		"periodLabels": sorted_period_labels,
-		"coverage": {
-			"registryAreas": registry_country_count,
-			"areasWithAnyValue": len(areas_with_any_value),
-			"latestYear": available_years[-1],
-			"latestPeriod": period_labels[available_years[-1]],
-			"areasInLatestYear": len(values_by_year[available_years[-1]]),
-			"defaultPeriod": period_labels[default_year],
-			"areasInDefaultYear": len(values_by_year[default_year]),
-		},
+		"coverage": coverage,
 		"values": sorted_values,
 	}
+	if sorted_period_labels:
+		payload["periodLabels"] = sorted_period_labels
 	if sorted_metadata:
 		payload["observationMetadata"] = sorted_metadata
 
 	diagnostics = {
+		"datasetId": dataset["id"],
 		"sourceRows": len(source_rows),
 		"mappedAreas": len(areas_with_any_value),
-		"firstPeriod": period_labels[available_years[0]],
-		"latestPeriod": period_labels[available_years[-1]],
-		"defaultPeriod": period_labels[default_year],
+		"firstYear": available_years[0],
+		"latestYear": available_years[-1],
+		"defaultYear": default_year,
 		"defaultCoverage": len(values_by_year[default_year]),
 		"latestCoverage": len(values_by_year[available_years[-1]]),
 		"censoredValues": censored_count,
@@ -508,30 +488,63 @@ def build_indicator_payload(
 		"ignoredSourceAreas": dict(sorted(ignored_source_areas.items())),
 		"sourceUnits": sorted(source_units),
 	}
-	print(
-		f"{indicator_id}: mapped={len(areas_with_any_value)} "
+	if sorted_period_labels:
+		diagnostics["firstPeriod"] = period_labels[available_years[0]]
+		diagnostics["latestPeriod"] = period_labels[available_years[-1]]
+		diagnostics["defaultPeriod"] = period_labels[default_year]
+
+	period_summary = (
 		f"periods={period_labels[available_years[0]]}..{period_labels[available_years[-1]]} "
-		f"default={period_labels[default_year]} defaultCoverage={len(values_by_year[default_year])} "
-		f"censored={censored_count} missingMappedRows={missing_count}"
+		if sorted_period_labels else f"years={available_years[0]}-{available_years[-1]} "
+	)
+	print(
+		f"{indicator_id}: dataset={dataset['code']} mapped={len(areas_with_any_value)} {period_summary}"
+		f"default={default_year} defaultCoverage={len(values_by_year[default_year])} "
+		f"latestCoverage={len(values_by_year[available_years[-1]])} censored={censored_count}"
 	)
 	return payload, diagnostics
 
 
 def canonical_bytes(payload: Any) -> bytes:
-	return json.dumps(
-		payload,
-		ensure_ascii=False,
-		sort_keys=True,
-		separators=(",", ":"),
-	).encode("utf-8")
+	return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 def write_json(path: Path, payload: Any) -> None:
 	path.parent.mkdir(parents=True, exist_ok=True)
-	path.write_text(
-		json.dumps(payload, ensure_ascii=False, indent="\t") + "\n",
-		encoding="utf-8",
-	)
+	path.write_text(json.dumps(payload, ensure_ascii=False, indent="\t") + "\n", encoding="utf-8")
+
+
+def load_dataset(dataset: dict[str, Any], indicators: list[dict[str, Any]], timeout: int) -> tuple[list[dict[str, str]], dict[str, Any]]:
+	url = str(dataset["bulkUrl"])
+	data, headers = fetch_bytes(url, timeout)
+	with zipfile.ZipFile(io.BytesIO(data)) as archive:
+		rows, fields, encoding = read_csv_from_archive(archive, str(dataset["dataFile"]))
+		flag_rows, flag_fields, _ = read_csv_from_archive(archive, str(dataset["flagFile"]))
+	required_fields = set(BASE_REQUIRED_FIELDS)
+	for indicator in indicators:
+		required_fields.update(str(field) for field in indicator["sourceFilters"])
+	missing_fields = sorted(required_fields - set(fields))
+	if missing_fields:
+		raise RuntimeError(f"FAOSTAT dataset {dataset['id']} schema changed: missing fields {missing_fields}.")
+	if len(rows) < int(dataset["minimumRows"]):
+		raise RuntimeError(f"FAOSTAT dataset {dataset['id']} unexpectedly small: {len(rows)} rows.")
+	metadata: dict[str, Any] = {
+		"id": dataset["id"],
+		"code": dataset["code"],
+		"name": dataset["name"],
+		"documentationUrl": dataset["documentationUrl"],
+		"sourceUrl": url,
+		"encoding": encoding,
+		"bytes": len(data),
+		"rows": len(rows),
+		"flagDescriptions": flag_descriptions(flag_rows, flag_fields),
+	}
+	if headers.get("last-modified"):
+		metadata["lastModified"] = headers["last-modified"]
+	if headers.get("etag"):
+		metadata["etag"] = headers["etag"]
+	print(f"FAOSTAT dataset {dataset['code']}: bytes={len(data)} rows={len(rows)} encoding={encoding} lastModified={metadata.get('lastModified')}")
+	return rows, metadata
 
 
 def main() -> None:
@@ -543,41 +556,36 @@ def main() -> None:
 		raise RuntimeError(f"Provider {provider['id']} is missing from statistics-providers.json.")
 
 	area_by_m49, registry_payload, registry_country_count = load_registry_by_m49(args.registry, args.timeout)
-	source_url = str(config["bulkUrl"])
-	data, headers = fetch_bytes(source_url, args.timeout)
+	print(f"FAOSTAT registry: countries={registry_country_count} M49={len(area_by_m49)}")
 
-	with zipfile.ZipFile(io.BytesIO(data)) as archive:
-		rows, fields, encoding = read_csv_from_archive(archive, EXPECTED_DATA_FILE)
-		flag_rows, flag_fields, _flag_encoding = read_csv_from_archive(archive, EXPECTED_FLAG_FILE)
-		if EXPECTED_AREA_FILE not in archive.namelist():
-			raise RuntimeError(f"FAOSTAT ZIP is missing {EXPECTED_AREA_FILE}.")
+	dataset_by_id = {str(dataset["id"]): dataset for dataset in config["datasets"]}
+	indicators_by_dataset: dict[str, list[dict[str, Any]]] = defaultdict(list)
+	for indicator in config["indicators"]:
+		indicators_by_dataset[str(indicator["datasetId"])].append(indicator)
 
-	missing_fields = sorted(REQUIRED_FIELDS - set(fields))
-	if missing_fields:
-		raise RuntimeError(f"FAOSTAT CSV schema changed: missing fields {missing_fields}.")
-	if len(rows) < 250000:
-		raise RuntimeError(f"FAOSTAT food-security CSV unexpectedly small: {len(rows)} rows.")
-
-	print(
-		f"FAOSTAT source: url={source_url} bytes={len(data)} rows={len(rows)} "
-		f"columns={len(fields)} encoding={encoding} registryCountries={registry_country_count} "
-		f"registryM49={len(area_by_m49)}"
-	)
+	rows_by_dataset: dict[str, list[dict[str, str]]] = {}
+	dataset_metadata: list[dict[str, Any]] = []
+	for dataset in config["datasets"]:
+		dataset_id = str(dataset["id"])
+		rows, metadata = load_dataset(dataset, indicators_by_dataset[dataset_id], args.timeout)
+		rows_by_dataset[dataset_id] = rows
+		dataset_metadata.append(metadata)
 
 	indicator_payloads: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = []
 	for indicator in config["indicators"]:
+		dataset = dataset_by_id[str(indicator["datasetId"])]
 		payload, diagnostics = build_indicator_payload(
 			config,
+			dataset,
 			indicator,
-			rows,
+			rows_by_dataset[str(indicator["datasetId"])],
 			area_by_m49,
 			registry_country_count,
-			source_url,
 		)
 		indicator_payloads.append((indicator, payload, diagnostics))
 
 	hasher = hashlib.sha256()
-	for indicator, payload, _diagnostics in sorted(indicator_payloads, key=lambda item: item[0]["id"]):
+	for indicator, payload, _ in sorted(indicator_payloads, key=lambda item: item[0]["id"]):
 		hasher.update(str(indicator["id"]).encode("utf-8"))
 		hasher.update(b"\0")
 		hasher.update(canonical_bytes(payload))
@@ -589,7 +597,6 @@ def main() -> None:
 	release_dir = provider_dir / "releases" / snapshot
 	index_indicators: list[dict[str, Any]] = []
 	diagnostic_indicators: dict[str, Any] = {}
-
 	for indicator, payload, diagnostics in indicator_payloads:
 		filename = f"{indicator['slug']}.json"
 		write_json(release_dir / filename, payload)
@@ -598,15 +605,17 @@ def main() -> None:
 			"title": indicator["title"],
 			"description": indicator["description"],
 			"areaLevel": "country",
-			"frequency": "three-year-average",
+			"frequency": indicator["frequency"],
 			"unit": indicator["unit"],
-			"sourceIndicator": indicator["sourceItemCode"],
+			"datasetId": indicator["datasetId"],
+			"sourceIndicator": source_indicator_code(indicator),
 			"path": f"releases/{snapshot}/{filename}",
 			"availableYears": payload["availableYears"],
 			"defaultYear": payload["defaultYear"],
-			"periodLabels": payload["periodLabels"],
 			"coverage": payload["coverage"],
 		}
+		if payload.get("periodLabels"):
+			item["periodLabels"] = payload["periodLabels"]
 		if isinstance(indicator.get("classification"), dict):
 			item["classification"] = indicator["classification"]
 		index_indicators.append(item)
@@ -621,20 +630,6 @@ def main() -> None:
 	if args.registry.startswith(("https://", "http://")):
 		registry_source["url"] = args.registry
 
-	dataset: dict[str, Any] = {
-		"documentationUrl": config["documentationUrl"],
-		"sourceUrl": source_url,
-		"termsUrl": config["termsUrl"],
-		"encoding": encoding,
-		"bytes": len(data),
-		"periodType": "three-year-average",
-		"flagDescriptions": flag_descriptions(flag_rows, flag_fields),
-	}
-	if headers.get("last-modified"):
-		dataset["lastModified"] = headers["last-modified"]
-	if headers.get("etag"):
-		dataset["etag"] = headers["etag"]
-
 	now = utc_now()
 	provider_index = {
 		"schema": "kartensammlung.statistics-provider-index/v1",
@@ -642,7 +637,11 @@ def main() -> None:
 		"retrievedAt": now.isoformat().replace("+00:00", "Z"),
 		"activeSnapshot": snapshot,
 		"areaRegistry": registry_source,
-		"dataset": dataset,
+		"dataset": {
+			"name": provider["dataset"],
+			"termsUrl": config["termsUrl"],
+			"datasets": dataset_metadata,
+		},
 		"indicators": index_indicators,
 	}
 	write_json(provider_dir / "index.json", provider_index)
@@ -650,14 +649,14 @@ def main() -> None:
 	write_json(
 		provider_dir / "diagnostics.json",
 		{
-			"schema": "kartensammlung.faostat-build-diagnostics/v1",
+			"schema": "kartensammlung.faostat-build-diagnostics/v2",
 			"snapshot": snapshot,
 			"registryCountryAreas": registry_country_count,
 			"registryM49Areas": len(area_by_m49),
+			"datasets": dataset_metadata,
 			"indicators": diagnostic_indicators,
 		},
 	)
-
 	print(f"Built FAOSTAT snapshot {snapshot}")
 	print(f"Provider index: {provider_dir / 'index.json'}")
 	print(f"Indicators: {len(index_indicators)}")
