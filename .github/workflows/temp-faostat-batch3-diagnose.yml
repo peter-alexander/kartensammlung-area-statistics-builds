@@ -1,0 +1,27 @@
+name: Temporary FAOSTAT batch 3 diagnostics
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/faostat-batch3
+    paths:
+      - "scripts/diagnose_faostat_batch3.py"
+      - ".github/workflows/temp-faostat-batch3-diagnose.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Diagnose current FAOSTAT domains
+        run: python scripts/diagnose_faostat_batch3.py
