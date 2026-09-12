@@ -329,6 +329,7 @@ def build_indicator_payload(
 	indicator: dict[str, Any],
 	rows: list[dict[str, str]],
 	area_by_m49: dict[str, str],
+	registry_country_count: int,
 	source_url: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
 	indicator_id = str(indicator["id"])
@@ -481,7 +482,7 @@ def build_indicator_payload(
 		"defaultYear": default_year,
 		"periodLabels": sorted_period_labels,
 		"coverage": {
-			"registryAreas": len(area_by_m49),
+			"registryAreas": registry_country_count,
 			"areasWithAnyValue": len(areas_with_any_value),
 			"latestYear": available_years[-1],
 			"latestPeriod": period_labels[available_years[-1]],
@@ -570,6 +571,7 @@ def main() -> None:
 			indicator,
 			rows,
 			area_by_m49,
+			registry_country_count,
 			source_url,
 		)
 		indicator_payloads.append((indicator, payload, diagnostics))
