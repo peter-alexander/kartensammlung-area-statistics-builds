@@ -13,12 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Inspect ILOSTAT unemployment datasets
+      - name: Inspect and compare ILOSTAT unemployment datasets
         shell: bash
         run: |
           python - <<'PY'
           import csv
           import io
+          import json
+          import statistics
           import urllib.parse
           import urllib.request
 
@@ -37,30 +39,74 @@ jobs:
           print(f"toc_matches={len(matches)}")
           for row in matches:
           	print("MATCH", row.get("id"), row.get("indicator.label"), "freq=" + str(row.get("freq")))
-
           if len(matches) != 1:
           	raise SystemExit(f"Expected exactly one annual ILOEST unemployment-rate-by-age dataset, got {len(matches)}")
+
           dataset_id = matches[0]["id"]
           params = urllib.parse.urlencode({"id": dataset_id, "type":"code", "format":".csv", "channel":"ilostat"})
-          url = "https://rplumber.ilo.org/data/indicator/?" + params
-          rows = list(csv.DictReader(io.StringIO(fetch(url).decode("utf-8-sig"))))
+          api_url = "https://rplumber.ilo.org/data/indicator/?" + params
+          rows = list(csv.DictReader(io.StringIO(fetch(api_url).decode("utf-8-sig"))))
           print(f"dataset={dataset_id} rows={len(rows)}")
           print("fields=" + ",".join(rows[0].keys()))
-          for field in ("sex", "classif1", "classif2"):
-          	values = sorted({(row.get(field) or "").strip() for row in rows if (row.get(field) or "").strip()})
-          	print(f"{field}_values={values[:100]}")
-          years = sorted({int(row["time"]) for row in rows if str(row.get("time","")).isdigit()})
-          print(f"years={years[0]}-{years[-1]} count={len(years)}")
+          print("sex_values=" + str(sorted({(row.get("sex") or "").strip() for row in rows if (row.get("sex") or "").strip()})))
+          print("classif1_values=" + str(sorted({(row.get("classif1") or "").strip() for row in rows if (row.get("classif1") or "").strip()})))
 
-          def report(filters, name):
-          	selected = [row for row in rows if all((row.get(k) or "").strip() == v for k,v in filters.items())]
-          	areas = {row["ref_area"] for row in selected}
-          	latest = max(int(row["time"]) for row in selected)
-          	latest_areas = {row["ref_area"] for row in selected if int(row["time"]) == latest}
-          	print(f"{name}: filters={filters} rows={len(selected)} areas={len(areas)} latest={latest} latestAreas={len(latest_areas)}")
+          registry = json.loads(fetch("https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?audit=ilostat-unemployment").decode("utf-8"))
+          iso_to_area = {}
+          for area in registry["areas"]:
+          	iso3 = (area.get("codes") or {}).get("iso3") or area.get("iso3")
+          	if iso3:
+          		iso_to_area[str(iso3).upper()] = area["area_id"]
+          print(f"registry_iso3={len(iso_to_area)}")
 
-          age_values = sorted({(row.get("classif1") or "").strip() for row in rows if (row.get("classif1") or "").strip()})
-          for age in age_values:
-          	if "YGE15" in age or "Y15Y24" in age or "Y15T24" in age:
-          		report({"sex":"SEX_T", "classif1":age}, age)
+          def collect(age):
+          	values = {}
+          	for row in rows:
+          		if (row.get("sex") or "").strip() != "SEX_T" or (row.get("classif1") or "").strip() != age:
+          			continue
+          		iso3 = (row.get("ref_area") or "").strip().upper()
+          		area_id = iso_to_area.get(iso3)
+          		if not area_id:
+          			continue
+          		year = int(row["time"])
+          		values.setdefault(year, {})[area_id] = float(row["obs_value"])
+          	return values
+
+          total = collect("AGE_YTHADULT_YGE15")
+          youth = collect("AGE_YTHADULT_Y15-24")
+          for name, values in (("total", total), ("youth15-24", youth)):
+          	years = sorted(values)
+          	areas = set().union(*(set(v) for v in values.values()))
+          	for y in (2025, 2026, 2027):
+          		print(f"{name}: year={y} areas={len(values.get(y, {}))}")
+          	print(f"{name}: years={years[0]}-{years[-1]} areasAny={len(areas)}")
+
+          wdi_index = json.loads(fetch("https://tiles.radlobby.at/AreaStatistics/statistics/world-bank/index.json?audit=ilostat-unemployment").decode("utf-8"))
+          wdi_entry = next(item for item in wdi_index["indicators"] if item["id"] == "unemployment.total-percent")
+          wdi = json.loads(fetch("https://tiles.radlobby.at/AreaStatistics/statistics/world-bank/" + wdi_entry["path"] + "?audit=ilostat-unemployment").decode("utf-8"))
+          abs_diffs = []
+          exact = 0
+          comparisons = 0
+          by_year = []
+          for year_text, wdi_values in wdi["values"].items():
+          	year = int(year_text)
+          	ilo_values = total.get(year, {})
+          	common = sorted(set(wdi_values) & set(ilo_values))
+          	if not common:
+          		continue
+          	year_diffs = []
+          	year_exact = 0
+          	for area_id in common:
+          		d = abs(float(wdi_values[area_id]) - float(ilo_values[area_id]))
+          		year_diffs.append(d)
+          		abs_diffs.append(d)
+          		comparisons += 1
+          		if d == 0:
+          			exact += 1
+          			year_exact += 1
+          	by_year.append((year, len(common), statistics.median(year_diffs), year_exact / len(common)))
+          print(f"WDI-vs-ILO: comparisons={comparisons} exactFraction={exact/comparisons:.6f} medianAbsDiff={statistics.median(abs_diffs):.12g}")
+          print(f"WDI-vs-ILO latest={by_year[-1]}")
+          for row in by_year[-5:]:
+          	print("WDI-vs-ILO year", row)
           PY
