@@ -211,7 +211,7 @@ Direkte WHO-Quelle: World Health Data Hub, `WHS4_100`, UUID `F8E084C`. Die Direk
 - WHO direkt deckt im Jahr 2024 193 Länder ab, WDI 192.
 - WDI liefert vor allem die Historie 1980–1999 sowie einzelne Länder-/Jahrlücken; WHO direkt enthält zusätzlich Cookinseln und Niue.
 
-Entscheidung: **WHO ist kanonisch.** Die direkte WHO-Reihe wird für 2000–2024 verwendet; WDI ergänzt ausschließlich frühere Jahre und Lücken als explizit markierter Fallback. Die sichtbare WDI-Doppelung wird erst nach erfolgreicher WHO-Produktion entfernt.
+Entscheidung: **WHO ist kanonisch.** Die direkte WHO-Reihe wird für 2000–2024 verwendet; WDI ergänzt ausschließlich frühere Jahre und Lücken als explizit markierter Fallback. Die produktive WHO-Veröffentlichung wurde unter Snapshot `94452f4dbc452a01` (Run `34707302423`) erfolgreich abgeschlossen: alle sieben WHO-Release-Dateien und beide Manifeste wurden bytegenau verifiziert, danach wurde der vorherige WHO-Snapshot entfernt. Anschließend wurde die sichtbare WDI-Doppelung `SH.IMM.IDPT` aus dem WDI-Provider entfernt; die historische Abdeckung 1980–1999 und einzelne Länder-/Jahrlücken bleiben innerhalb der kanonischen WHO-Reihe als explizit markierte WDI-Fallbacks erhalten.
 
 #### Nächste WHO-Prüfungen
 
