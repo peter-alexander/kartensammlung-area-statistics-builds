@@ -25,96 +25,31 @@ jobs:
             'https://datacatalogfiles.worldbank.org/ddh-published/0067055/DR0095956/ITU_DH.csv' \
             --output /tmp/ITU_DH.csv
 
-      - name: Break down WDI fallback coverage
+      - name: Inspect ITU Internet source invariants
         shell: bash
         run: |
           python - <<'PY'
           import csv
-          import json
-          import math
-          import urllib.request
-          from collections import Counter, defaultdict
+          from collections import defaultdict
           from pathlib import Path
 
-          UA = 'kartensammlung-area-statistics-audit/1'
-
-          def get_json(url):
-          	req = urllib.request.Request(url, headers={'User-Agent': UA, 'Accept': 'application/json'})
-          	with urllib.request.urlopen(req, timeout=90) as response:
-          		return json.load(response)
-
-          registry = get_json('https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json')
-          iso3s = {
-          	str(area.get('codes', {}).get('iso3', '')).strip().upper()
-          	for area in registry['areas']
-          	if len(str(area.get('codes', {}).get('iso3', '')).strip()) == 3
-          }
-
-          direct = {}
-          statuses = Counter()
-          confidences = Counter()
+          fields = (
+          	'STRUCTURE', 'STRUCTURE_ID', 'ACTION', 'UNIT_MULT', 'UNIT_MEASURE',
+          	'UNIT_TYPE', 'AGG_METHOD', 'DATABASE_ID', 'OBS_CONF', 'FREQ',
+          	'TIME_FORMAT', 'OBS_STATUS', 'DECIMALS',
+          )
+          values = defaultdict(set)
+          total = 0
           with Path('/tmp/ITU_DH.csv').open('r', encoding='utf-8-sig', newline='') as f:
           	for row in csv.DictReader(f):
           		if row['INDICATOR'] != 'IT_NET_USER':
           			continue
           		if (row['SEX'], row['AGE'], row['URBANISATION'], row['COMP_BREAKDOWN_1'], row['COMP_BREAKDOWN_2'], row['COMP_BREAKDOWN_3']) != ('_T', '_T', '_T', '_Z', '_Z', '_Z'):
           			continue
-          		iso3 = row['REF_AREA'].strip().upper()
-          		if iso3 not in iso3s:
-          			continue
-          		try:
-          			year = int(row['TIME_PERIOD'])
-          			value = float(row['OBS_VALUE'])
-          		except (TypeError, ValueError):
-          			continue
-          		if not math.isfinite(value):
-          			continue
-          		direct[(iso3, year)] = value
-          		statuses[row['OBS_STATUS']] += 1
-          		confidences[row['OBS_CONF']] += 1
-
-          payload = get_json('https://api.worldbank.org/v2/country/all/indicator/IT.NET.USER.ZS?format=json&per_page=20000')
-          wdi = {}
-          for row in payload[1]:
-          	iso3 = str(row.get('countryiso3code') or '').strip().upper()
-          	if iso3 not in iso3s or row.get('value') is None:
-          		continue
-          	try:
-          		year = int(row['date'])
-          		value = float(row['value'])
-          	except (TypeError, ValueError):
-          		continue
-          	if math.isfinite(value):
-          		wdi[(iso3, year)] = value
-
-          itu_only = sorted(set(direct) - set(wdi))
-          wdi_only = sorted(set(wdi) - set(direct))
-          pre2000 = [key for key in wdi_only if key[1] < 2000]
-          post2000 = [key for key in wdi_only if key[1] >= 2000]
-          print(f'direct={len(direct)} wdi={len(wdi)} ituOnly={len(itu_only)} wdiOnly={len(wdi_only)}')
-          print(f'wdiOnlyPre2000={len(pre2000)} areas={len({iso for iso, _ in pre2000})}')
-          print(f'wdiOnlyFrom2000={len(post2000)} areas={len({iso for iso, _ in post2000})}')
-          print(f'obsStatus={dict(statuses)}')
-          print(f'obsConfidence={dict(confidences)}')
-
-          by_year = Counter(year for _, year in post2000)
-          print('WDI-only from 2000 by year:')
-          for year, count in sorted(by_year.items()):
-          	print(f'  {year}: {count}')
-
-          by_area = defaultdict(list)
-          for iso3, year in post2000:
-          	by_area[iso3].append(year)
-          print('WDI-only from 2000 by area:')
-          for iso3, years in sorted(by_area.items(), key=lambda item: (-len(item[1]), item[0])):
-          	print(f'  {iso3}: n={len(years)} years={min(years)}-{max(years)} values=' + ','.join(str(y) for y in years))
-
-          direct_2024 = {iso for iso, year in direct if year == 2024}
-          wdi_2024 = {iso for iso, year in wdi if year == 2024}
-          direct_2025 = {iso for iso, year in direct if year == 2025}
-          wdi_2025 = {iso for iso, year in wdi if year == 2025}
-          print('2024 ITU-only areas=' + ','.join(sorted(direct_2024 - wdi_2024)))
-          print('2024 WDI-only areas=' + ','.join(sorted(wdi_2024 - direct_2024)))
-          print('2025 ITU-only areas=' + ','.join(sorted(direct_2025 - wdi_2025)))
-          print('2025 WDI-only areas=' + ','.join(sorted(wdi_2025 - direct_2025)))
+          		total += 1
+          		for field in fields:
+          			values[field].add(row[field])
+          print(f'totalRows={total}')
+          for field in fields:
+          	print(f'{field}={sorted(values[field])!r}')
           PY
