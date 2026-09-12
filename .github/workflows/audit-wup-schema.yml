@@ -1,0 +1,44 @@
+name: Audit WUP schema
+
+on:
+  push:
+    branches:
+      - audit/un-wup-urbanization
+    paths:
+      - ".github/workflows/audit-wup-schema.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Inspect national-definition bulk CSV
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv
+          import gzip
+          import io
+          from collections import Counter
+          from urllib.request import Request, urlopen
+
+          url = "https://population.un.org/wup/assets/Download/Countries%20and%20Aggregates/WUP2025-DB-National-Definitions-Population-Data.csv.gz"
+          with urlopen(Request(url, headers={"User-Agent": "Kartensammlung-WUP-Audit/1.0"}), timeout=60) as response:
+          	compressed = response.read()
+          	print("status", response.status, "compressed-bytes", len(compressed), "last-modified", response.headers.get("Last-Modified"))
+          text = gzip.decompress(compressed).decode("utf-8-sig")
+          reader = csv.DictReader(io.StringIO(text))
+          rows = list(reader)
+          print("uncompressed-bytes", len(text.encode("utf-8")), "rows", len(rows))
+          print("columns", reader.fieldnames)
+          for row in rows[:6]:
+          	print("sample", row)
+          for field in reader.fieldnames or []:
+          	values = Counter(row.get(field, "") for row in rows)
+          	if len(values) <= 30:
+          		print("VALUES", field, len(values), values.most_common(30))
+          PY
