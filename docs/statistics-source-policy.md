@@ -108,27 +108,37 @@ Entscheidung: **beide dauerhaft behalten.** Die aktuelle WDI-Metadatenbank nennt
 
 Entscheidung: **beide dauerhaft behalten.** Auch die aktuelle WDI-Metadatenbank nennt UN WPP, nationale Statistikämter und Eurostat gemeinsam als Quellen. Zusätzlich beschreibt WDI die Nutzung registrierter Lebendgeburten sowie, je nach Datenlage, Zensus-/Survey-Daten, Extrapolationen und Modelle. Damit bildet WDI bewusst eine andere, gemischte Datenreihe als die reine WPP-Serie ab.
 
-#### Säuglingssterblichkeit
+#### Kindersterblichkeit: direkte UN-IGME-Integration
 
-`world-bank:mortality.infant-per-1000` und `un-wpp:infant-mortality.rate` sind keine identischen Reihen.
+Die frühere Prüfung gegen UN World Population Prospects bleibt methodisch relevant: WPP und IGME sind unterschiedliche Modellreihen. Deshalb bleiben die vorhandenen WPP-Reihen weiterhin bestehen. Zusätzlich wurde nun die eigentliche Originalquelle der drei WDI-Kindersterblichkeitsreihen direkt integriert: die United Nations Inter-agency Group for Child Mortality Estimation (UN IGME) über die UNICEF-SDMX-API.
 
-- 11.830 gemeinsame Werte
-- mediane absolute Differenz etwa 1,53 je 1.000 Lebendgeburten
-- 2024 median etwa 1,34 je 1.000
+Verwendete direkte IGME-Indikatoren:
 
-Die WDI-Reihe basiert auf der UN Inter-agency Group for Child Mortality Estimation (IGME), während die vorhandene direkte UN-Reihe aus WPP stammt.
+- `CME_MRY0`: Säuglingssterblichkeit (Infant mortality rate),
+- `CME_MRM0`: Neugeborenensterblichkeit (Neonatal mortality rate),
+- `CME_MRY0T4`: Sterblichkeit unter 5 Jahren (Under-five mortality rate).
 
-Entscheidung: **beide vorerst behalten**. Mittelfristig soll geprüft werden, ob IGME direkt integriert werden kann; dann wäre die direkte IGME-Reihe gegenüber WDI zu bevorzugen.
+Alle drei Reihen werden für beide Geschlechter zusammen (`SEX=_T`) bezogen und sind in Todesfällen bzw. Sterbewahrscheinlichkeiten je 1.000 Lebendgeburten angegeben. Die UNICEF-SDMX-Antwort kennzeichnet die Datenquelle ausdrücklich als `UN_IGME` und liefert zu jeder einzelnen Beobachtung Unter- und Obergrenze des 90-%-Unsicherheitsintervalls.
 
-#### Unter-5-Sterblichkeit
+Numerischer Vergleich mit WDI:
 
-`world-bank:mortality.under5-per-1000` und `un-wpp:under-five-mortality.rate` sind ebenfalls methodisch verschieden.
+- Neugeborenensterblichkeit `SH.DYN.NMRT`: 10.070 gemeinsame Länder-Jahr-Werte. **10.070/10.070** WDI-Werte entsprechen exakt der auf eine Dezimalstelle gerundeten direkten IGME-Schätzung. UN IGME enthält zusätzlich 343 Länder-Jahr-Werte; WDI enthält keinen einzigen zusätzlichen Wert.
+- Säuglingssterblichkeit `SP.DYN.IMRT.IN`: 11.830 gemeinsame Werte. **11.830/11.830** entsprechen exakt `round(IGME, 1)`. UN IGME enthält zusätzlich 1.395 Länder-Jahr-Werte; WDI enthält keinen zusätzlichen Wert.
+- Unter-5-Sterblichkeit `SH.DYN.MORT`: 11.861 gemeinsame Werte. **11.861/11.861** entsprechen exakt `round(IGME, 1)`. UN IGME enthält zusätzlich 1.434 Länder-Jahr-Werte; WDI enthält keinen zusätzlichen Wert.
+- Die maximale Differenz zwischen direkter IGME-Schätzung und WDI beträgt bei allen drei Reihen weniger als 0,05 je 1.000 und ist vollständig durch die WDI-Rundung auf eine Dezimalstelle erklärt.
+- Direkte UN-IGME-Abdeckung im Jahr 2024: jeweils 200 Länder gegenüber 196 in WDI.
+- Historie: Säuglings- und Unter-5-Sterblichkeit 1931–2024, Neugeborenensterblichkeit 1951–2024. WDI beginnt jeweils erst 1960.
+- Unsicherheitsintervalle: direktes IGME **für 100 % der Beobachtungen**; WDI verteilt nur die gerundeten Punktwerte.
 
-- 11.861 gemeinsame Werte
-- mediane absolute Differenz etwa 0,56 je 1.000
-- 2024 median etwa 1,02 je 1.000
+Entscheidung: **UN IGME ist für alle drei Kennzahlen kanonisch.** Die sichtbaren WDI-Doppelungen `SP.DYN.IMRT.IN`, `SH.DYN.NMRT` und `SH.DYN.MORT` werden vollständig entfernt. Ein WDI-Fallback ist nicht erforderlich, weil WDI keine einzige zusätzliche Länder-Jahr-Beobachtung besitzt. Die vorhandenen WPP-Kindersterblichkeitsreihen bleiben als methodisch eigenständige UN-WPP-Modellreihen bestehen.
 
-Entscheidung: **beide vorerst behalten; direkte IGME-Integration prüfen.**
+Testbuild des direkten Providers:
+
+- Säuglingssterblichkeit: 13.225 Beobachtungen, 200 Länder, 1931–2024,
+- Neugeborenensterblichkeit: 10.413 Beobachtungen, 200 Länder, 1951–2024,
+- Unter-5-Sterblichkeit: 13.295 Beobachtungen, 200 Länder, 1931–2024,
+- jeweils Standardjahr 2024 mit 200 Ländern,
+- 90-%-Unsicherheitsintervalle vollständig für alle 36.933 Beobachtungen vorhanden.
 
 ### WDI versus FAOSTAT
 

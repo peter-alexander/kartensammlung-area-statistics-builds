@@ -1,0 +1,196 @@
+name: Build UN IGME statistics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 18 * *"
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "config/un-igme-indicators.json"
+      - "scripts/build_un_igme.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-un-igme-statistics.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "config/statistics-providers.json"
+      - "config/un-igme-indicators.json"
+      - "scripts/build_un_igme.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-un-igme-statistics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-un-igme-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate scripts
+        run: |
+          bash -n .github/scripts/deploy-world-bank-statistics.sh
+          python -m py_compile scripts/build_un_igme.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/un-igme-indicators.json >/dev/null
+
+      - name: Build UN IGME statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_un_igme.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/un-igme.log
+
+      - name: Validate UN IGME output
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          provider = json.loads(Path("dist/statistics/un-igme/index.json").read_text(encoding="utf-8"))
+          assert len(provider["indicators"]) == 3, len(provider["indicators"])
+          assert provider["dataset"]["dataSource"] == "UN_IGME"
+          assert provider["dataset"]["confidenceIntervalLevel"] == 0.9
+          expected = {
+          	"mortality.infant-per-1000": "CME_MRY0",
+          	"mortality.neonatal-per-1000": "CME_MRM0",
+          	"mortality.under5-per-1000": "CME_MRY0T4",
+          }
+          by_id = {item["id"]: item for item in provider["indicators"]}
+          assert set(by_id) == set(expected)
+          for indicator_id, source_indicator in expected.items():
+          	item = by_id[indicator_id]
+          	assert item["sourceIndicator"] == source_indicator
+          	assert item["defaultYear"] >= 2024
+          	assert item["coverage"]["areasInDefaultYear"] >= 195
+          	assert item["coverage"]["confidenceIntervalObservations"] == item["coverage"]["observations"]
+          	assert item["confidenceIntervals"] is True
+          	payload = json.loads(Path("dist/statistics/un-igme", item["path"]).read_text(encoding="utf-8"))
+          	assert payload["source"]["providerId"] == "un-igme"
+          	assert payload["source"]["dataSource"] == "UN_IGME"
+          	assert payload["indicator"]["confidenceIntervals"]["level"] == 0.9
+          	assert payload["confidenceIntervals"]["level"] == 0.9
+          	assert set(payload["confidenceIntervals"]["values"]) == {str(year) for year in payload["availableYears"]}
+
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"retrievedAt={provider['retrievedAt']}")
+          for indicator in provider["indicators"]:
+          	coverage = indicator["coverage"]
+          	print(
+          		f"{indicator['id']}: defaultYear={indicator['defaultYear']} "
+          		f"areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+          		f"years={indicator['availableYears'][0]}-{indicator['availableYears'][-1]} "
+          		f"observations={coverage['observations']}"
+          	)
+          PY
+          du -h dist/statistics/un-igme/index.json
+          du -ch dist/statistics/un-igme/releases/*/*.json | tail -n 1
+
+      - name: Upload statistics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: un-igme-statistics-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Deploy to tiles.radlobby.at
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          PROVIDER_ID: un-igme
+        run: |
+          chmod +x .github/scripts/deploy-world-bank-statistics.sh
+          .github/scripts/deploy-world-bank-statistics.sh dist/statistics
+
+      - name: Verify browser access and public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          check_file() {
+          	local url="$1"
+          	local local_file="$2"
+          	local output="$3"
+          	local headers
+          	local allow_origin
+          	headers="$(mktemp)"
+          	curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          		--header "Origin: ${BROWSER_ORIGIN}" --dump-header "$headers" \
+          		--output "$output" "${url}?${CACHE_BUST}"
+          	cmp "$local_file" "$output"
+          	allow_origin="$(awk '
+          		BEGIN { IGNORECASE = 1 }
+          		tolower($1) == "access-control-allow-origin:" {
+          			value = $0
+          			sub(/^[^:]+:[[:space:]]*/, "", value)
+          			gsub(/\r/, "", value)
+          			print value
+          		}
+          	' "$headers" | tail -n 1)"
+          	rm -f "$headers"
+          	if [ "$allow_origin" != "*" ] && [ "$allow_origin" != "$BROWSER_ORIGIN" ]; then
+          		echo "CORS check failed for ${url}: Access-Control-Allow-Origin='${allow_origin:-<missing>}'" >&2
+          		exit 1
+          	fi
+          }
+
+          check_file "${PUBLIC_BASE}/index.json" "dist/statistics/index.json" /tmp/public-statistics-index.json
+          check_file "${PUBLIC_BASE}/un-igme/index.json" "dist/statistics/un-igme/index.json" /tmp/public-un-igme-index.json
+          while IFS= read -r path; do
+          	mkdir -p "/tmp/public-un-igme/$(dirname "$path")"
+          	check_file \
+          		"${PUBLIC_BASE}/un-igme/${path}" \
+          		"dist/statistics/un-igme/${path}" \
+          		"/tmp/public-un-igme/${path}"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/un-igme/index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
+          PY
+          )
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: un-igme-statistics-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
