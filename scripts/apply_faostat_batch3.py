@@ -7,7 +7,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config" / "faostat-indicators.json"
 BUILDER = ROOT / "scripts" / "build_faostat.py"
-WORKFLOW = ROOT / ".github" / "workflows" / "build-faostat-statistics.yml"
 
 NEW_DATASETS = [
 	{"id":"production-indices","code":"QI","name":"Production Indices","documentationUrl":"https://www.fao.org/faostat/en/#data/QI","bulkUrl":"https://bulks-faostat.fao.org/production/Production_Indices_E_All_Data_(Normalized).zip","dataFile":"Production_Indices_E_All_Data_(Normalized).csv","flagFile":"Production_Indices_E_Flags.csv","minimumRows":1900000,"sourceLabelFields":["Item","Element"]},
@@ -84,19 +83,8 @@ def main() -> None:
 		raise SystemExit("Builder validation block not found")
 	BUILDER.write_text(builder.replace(old, new, 1), encoding="utf-8")
 
-	workflow = WORKFLOW.read_text(encoding="utf-8")
-	workflow = workflow.replace('len(indicators) != 18 or len(configured_indicators) != 18', 'len(indicators) != 25 or len(configured_indicators) != 25')
-	workflow = workflow.replace('Expected 18 FAOSTAT indicators', 'Expected 25 FAOSTAT indicators')
-	old_set = 'expected_datasets = {"food-security", "healthy-diet", "land-use", "fertilizers-nutrient", "temperature-change"}'
-	new_set = 'expected_datasets = {"food-security", "healthy-diet", "land-use", "fertilizers-nutrient", "temperature-change", "production-indices", "livestock-patterns", "pesticides-use", "emissions-indicators"}'
-	if old_set not in workflow:
-		raise SystemExit("Workflow dataset set not found")
-	workflow = workflow.replace(old_set, new_set, 1)
-	WORKFLOW.write_text(workflow, encoding="utf-8")
-
-	# Validate generated product files before removing temporary helpers.
 	json.loads(CONFIG.read_text(encoding="utf-8"))
-	print("Applied FAOSTAT batch 3: 9 datasets, 25 indicators")
+	print("Applied FAOSTAT batch 3 data + builder: 9 datasets, 25 indicators")
 
 
 if __name__ == "__main__":
