@@ -248,12 +248,43 @@ Produkt-Testbuild:
 - `PPP/Kopf`: 4.609 Beobachtungen, 195 Länder, Standardjahr 2023 mit 194 Ländern
 - 2024: jeweils 22 vorläufige Länderwerte; nicht als Standardjahr ausgewählt
 
-#### Nächste WHO-Prüfungen
+#### Ärzte
 
-Noch einzeln zu prüfen sind insbesondere:
+Die direkte WHO-Reihe `HWF_0001` misst die Ärztedichte je 10.000 Einwohner. Für den Vergleich wurde sie auf je 1.000 Einwohner skaliert. WDI `SH.MED.PHYS.ZS` nennt ausdrücklich WHO Global Health Workforce Statistics, OECD und nationale Daten als gemeinsame Quellen und ist daher keine reine WHO-Kopie.
 
-- Ärzte sowie Pflege-/Hebammenpersonal,
-- Masern-Impfquote.
+- WHO direkt: 3.682 Beobachtungen, 194 Länder, 1990–2024; 72 Länder mit Wert 2024.
+- WDI: 5.355 Beobachtungen, 207 Länder, 1960–2023; deutlich längere Historie und zusätzliche Gebiete.
+- 3.397 gemeinsame Länder-Jahr-Werte; 3.122 davon numerisch identisch innerhalb `1e-6`.
+- Mediane absolute Differenz: 0; mittlere absolute Differenz etwa 0,0245 Ärzte je 1.000; maximale Differenz 5,8.
+- Auch in aktuellen Jahren existieren reale Abweichungen, z. B. 2022 bis 1,542 Ärzte je 1.000.
+
+Entscheidung: **WDI bleibt für diese Kennzahl kanonisch und sichtbar.** Die gemischte WHO/OECD/Länderreihe bietet eigenständige Harmonisierung, zusätzliche Historie und zusätzliche Länder-/Gebietsabdeckung. Eine zweite, fast gleich benannte direkte WHO-Kennzahl würde den Katalog eher duplizieren als ergänzen.
+
+#### Pflegepersonal und Hebammen
+
+Die direkte WHO-Reihe `HWF_0006` misst Pflege- und Hebammenpersonal je 10.000 Einwohner und wurde für den Vergleich auf je 1.000 skaliert. WDI `SH.MED.NUMW.P3` ist ebenfalls eine gemischte WHO/OECD/Länderreihe.
+
+- WHO direkt: 3.582 Beobachtungen, 194 Länder, 1990–2024; 75 Länder mit Wert 2024.
+- WDI: 3.410 Beobachtungen, 198 Länder, 1990–2023.
+- 3.323 gemeinsame Länder-Jahr-Werte; 2.713 davon numerisch identisch innerhalb `1e-6`.
+- Mediane absolute Differenz praktisch 0; mittlere absolute Differenz etwa 0,0704 je 1.000; maximale Differenz 5,284.
+- Reale Abweichungen bestehen auch in jüngeren Jahren; 2023 betrug die maximale Differenz 3,278 je 1.000.
+
+Entscheidung: **WDI bleibt kanonisch und sichtbar.** Die Reihe ist methodisch keine bloße Replikation des direkten WHO-Indikators; die abweichenden nationalen/OECD-Komponenten sind ein echter Mehrwert.
+
+#### Masern-Impfquote (MCV1)
+
+Direkte WHO-Quelle: Global Health Observatory, `WHS8_110`, WHO/UNICEF Estimates of National Immunization Coverage (WUENIC). Die aktuelle direkte Reihe umfasst 2000–2025. WDI `SH.IMM.MEAS` verteilt dieselbe fachliche WHO/UNICEF-Schätzung, reicht aber historisch bis 1980 und lag beim Audit nur bis 2024 vor.
+
+- WHO direkt: 5.051 Beobachtungen, 195 Länder, 2000–2025; 195 Länder mit Wert 2025.
+- WDI: 7.931 Beobachtungen, 193 Länder, 1980–2024; 192 Länder mit Wert 2024.
+- 4.805 gemeinsame Länder-Jahr-Werte; 4.649 davon exakt gleich.
+- Mediane absolute Differenz: 0. Die verbleibenden Unterschiede sind jedoch teilweise groß und konzentrieren sich auf revidierte jüngere WHO/UNICEF-Schätzungen; 2024 beträgt die maximale Differenz 31 Prozentpunkte.
+- Der direkte WHO-GHO-Stand ist aktueller und enthält bereits 2025. Deshalb haben bei gemeinsamen Länder/Jahren direkte WHO-Werte Vorrang; ältere WDI-Vintages dürfen neuere WHO-Revisionen nicht überschreiben.
+
+Entscheidung: **WHO ist kanonisch.** `WHS8_110` wird direkt aus dem WHO-GHO-OData-Endpunkt gebaut. WDI `SH.IMM.MEAS` ergänzt ausschließlich 1980–1999 sowie Länder-/Jahrlücken als explizit markierter Fallback. Die sichtbare WDI-Doppelung wird entfernt.
+
+Status des offenen WHO/WDI-Gesundheitsaudits: **abgeschlossen am 12. September 2026.**
 
 ### Weitere Themen
 
