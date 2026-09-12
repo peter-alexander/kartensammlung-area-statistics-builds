@@ -156,16 +156,56 @@ Status: **umgesetzt am 12. September 2026.**
 
 ### Gesundheit
 
-Mehrere WDI-Reihen stammen fachlich aus WHO-Datenbanken, darunter beispielsweise:
+Mehrere WDI-Reihen stammen fachlich aus WHO-Datenbanken. Der erste WHO-Bereinigungsbatch umfasst Suizidsterblichkeit und vorzeitige NCD-Sterblichkeit.
 
-- Suizidrate,
-- vorzeitige NCD-Sterblichkeit,
+Status erster Batch: **direkte WHO-Migration umgesetzt; Entfernung der vier WDI-Doppelungen erfolgt erst nach erfolgreicher produktiver WHO-Veröffentlichung.**
+
+#### Suizidsterblichkeit
+
+Direkte WHO-Quelle: World Health Data Hub, `SDGSUICIDE`, UUID `16BBF41`, Jahre 2000–2021. Die WHO-Datei enthält Gesamt-, Männer- und Frauenwerte sowie Konfidenzintervalle.
+
+Vergleich mit WDI:
+
+- Gesamt `SH.STA.SUIC.P5`: 4.018 gemeinsame Länder-Jahr-Werte; alle 4.018 liegen innerhalb der WDI-Rundung auf zwei Dezimalstellen, maximale absolute Differenz rund 0,0050 je 100.000.
+- Männer `SH.STA.SUIC.MA.P5`: 4.016 gemeinsame Werte; alle innerhalb ±0,0051 je 100.000.
+- Frauen `SH.STA.SUIC.FE.P5`: 4.024 gemeinsame Werte; alle innerhalb ±0,0051 je 100.000.
+- Direkte WHO-Abdeckung 2021: 183 Länder; WDI: 185 Länder.
+
+Die durchgehend nur bei WDI vorhandenen Gebiete sind Palästina (M49 275) und Puerto Rico (M49 630). Zusätzlich existieren wenige historische Einzellücken, insbesondere bei Antigua und Barbuda sowie St. Vincent und den Grenadinen.
+
+Entscheidung: **WHO ist kanonisch.** Der WHO-Builder übernimmt direkte WHO-Werte und Konfidenzintervalle. Nur fehlende Länder-/Jahrbeobachtungen werden aus der WHO-originären WDI-Reihe ergänzt. Jeder solche Wert wird in `observationMetadata` ausdrücklich als `world-bank`-Fallback markiert. Damit bleibt die WDI-Abdeckung von 185 Ländern erhalten, ohne eine zweite sichtbare Kennzahl zu benötigen.
+
+Testbuild des neuen WHO-Providers:
+
+- Suizid gesamt: 4.018 direkte WHO-Beobachtungen + 52 WDI-Fallbacks
+- Suizid Männer: 4.016 direkte + 54 Fallbacks
+- Suizid Frauen: 4.024 direkte + 46 Fallbacks
+- jeweils 185 Länder im Standardjahr 2021
+
+#### Vorzeitige NCD-Sterblichkeit
+
+Direkte WHO-Quelle: World Health Data Hub, `NCDMORT3070`, UUID `1F96863`, Jahre 2000–2021, Gesamtbevölkerung im Alter 30–69.
+
+- WDI `SH.DYN.NCOM.ZS` und WHO haben 4.024 gemeinsame Länder-Jahr-Werte.
+- **4.024/4.024 Werte sind exakt identisch.**
+- Direkte WHO-Abdeckung 2021: 183 Länder; WDI: 185 Länder.
+- Durchgehend zusätzliche WDI-Gebiete: Palästina und Puerto Rico; zwei zusätzliche historische WDI-Werte für Saudi-Arabien.
+
+Entscheidung: **WHO ist kanonisch**, mit derselben expliziten WDI-Fallback-Regel für fehlende Länder/Jahre.
+
+Testbuild:
+
+- 4.024 direkte WHO-Beobachtungen + 46 WDI-Fallbacks
+- 185 Länder im Standardjahr 2021
+
+#### Nächste WHO-Prüfungen
+
+Noch einzeln zu prüfen sind insbesondere:
+
 - Gesundheitsausgaben,
 - Ärzte sowie Pflege-/Hebammenpersonal,
 - DPT-Impfquote,
 - Masern-Impfquote.
-
-Diese Reihen sollen einzeln gegen direkt verfügbare WHO-Datensätze geprüft und bei mindestens gleichwertiger Abdeckung in den direkten WHO-Provider verlagert werden.
 
 ### Weitere Themen
 
