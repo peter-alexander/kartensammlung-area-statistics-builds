@@ -171,6 +171,14 @@ def main() -> None:
 			outside_all += 1
 	print(f"WDI_OUTSIDE_WHO_INTERVAL={outside_all}/{len(common)}")
 
+	max_point_key = max(who, key=who.get)
+	complete_bound_items = [(key, low, high) for key, (low, high) in bounds.items() if low is not None and high is not None]
+	max_low_key, max_low, _ = max(complete_bound_items, key=lambda item: item[1])
+	max_high_key, _, max_high = max(complete_bound_items, key=lambda item: item[2])
+	print(f"WHO_MAX_POINT {max_point_key[0]} {max_point_key[1]} value={who[max_point_key]:.12g}")
+	print(f"WHO_MAX_LOWER {max_low_key[0]} {max_low_key[1]} value={max_low:.12g}")
+	print(f"WHO_MAX_UPPER {max_high_key[0]} {max_high_key[1]} value={max_high:.12g} point={who[max_high_key]:.12g}")
+
 	for key in sorted(common, key=lambda item: abs(who[item] - wdi[item]), reverse=True)[:30]:
 		print(f"DIFF {key[0]} {key[1]} WHO={who[key]:.12g} WDI={wdi[key]:.12g} abs={abs(who[key]-wdi[key]):.12g} bounds={bounds.get(key)}")
 
