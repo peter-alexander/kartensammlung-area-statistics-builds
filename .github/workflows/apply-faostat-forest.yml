@@ -1,0 +1,502 @@
+name: Apply FAOSTAT forest migration
+
+on:
+  push:
+    branches:
+      - audit/faostat-forest
+    paths:
+      - .github/workflows/apply-faostat-forest.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/faostat-forest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Apply FAOSTAT forest migration
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          root = Path(".")
+
+          faostat_config_path = root / "config/faostat-indicators.json"
+          faostat = json.loads(faostat_config_path.read_text(encoding="utf-8"))
+          indicators = faostat["indicators"]
+          by_id = {row["id"]: row for row in indicators}
+          share = by_id["land-use.forest-land-share"]
+          share["description"] = "Anteil der Waldfläche an der gesamten Landfläche; aktuelle direkte FAOSTAT-Land-Use/FRA-Reihe. WDI ergänzt nur Länder-/Jahrlücken, die in der aktuellen direkten FAOSTAT-Reihe fehlen."
+          share["fallbackWdiIndicator"] = "AG.LND.FRST.ZS"
+
+          absolute_id = "land-use.forest-land-area-km2"
+          if absolute_id not in by_id:
+          	absolute = {
+          		"id": absolute_id,
+          		"slug": "land-use-forest-land-area-km2",
+          		"datasetId": "land-use",
+          		"sourceFilters": {"Item Code": "6646", "Element Code": "5110"},
+          		"title": "Waldfläche absolut",
+          		"description": "Gesamte Waldfläche aus der aktuellen direkten FAOSTAT-Land-Use/FRA-Reihe, in Quadratkilometern; FAOSTAT veröffentlicht die Quelle in 1.000 ha, daher Umrechnung mit Faktor 10. WDI ergänzt nur Länder-/Jahrlücken, die in der aktuellen direkten FAOSTAT-Reihe fehlen.",
+          		"sourceUnit": "1000 ha",
+          		"valueScale": 10,
+          		"fallbackWdiIndicator": "AG.LND.FRST.K2",
+          		"unit": {"id": "square-kilometres", "label": "km²", "symbol": "km²"},
+          		"frequency": "annual",
+          		"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [100, 1000, 10000, 100000, 500000, 2000000]},
+          		"minAreasWithAnyValue": 215,
+          		"minAreasInDefaultYear": 215,
+          		"minimumLatestYear": 2025,
+          		"minimumDefaultYear": 2025,
+          		"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND", "country:CHN", "country:BRA"],
+          		"valueRange": [0, 10000000],
+          	}
+          	share_index = next(index for index, row in enumerate(indicators) if row["id"] == "land-use.forest-land-share")
+          	indicators.insert(share_index + 1, absolute)
+          faostat_config_path.write_text(json.dumps(faostat, ensure_ascii=False, indent="\t") + "\n", encoding="utf-8")
+
+          wdi_path = root / "config/world-bank-indicators.json"
+          wdi = json.loads(wdi_path.read_text(encoding="utf-8"))
+          remove_ids = {"forest.area-percent", "forest.area-km2"}
+          before = len(wdi["indicators"])
+          wdi["indicators"] = [row for row in wdi["indicators"] if row["id"] not in remove_ids]
+          if before - len(wdi["indicators"]) != 2:
+          	raise SystemExit("Expected exactly two WDI forest indicators to be removed")
+          wdi_path.write_text(json.dumps(wdi, ensure_ascii=False, indent="\t") + "\n", encoding="utf-8")
+
+          builder_path = root / "scripts/build_faostat.py"
+          code = builder_path.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str) -> None:
+          	global code
+          	count = code.count(old)
+          	if count != 1:
+          		raise SystemExit(f"Expected exactly one builder match, found {count}: {old[:100]!r}")
+          	code = code.replace(old, new, 1)
+
+          replace_once(
+          	'''\t\tif "sourceUnit" not in indicator or not isinstance(indicator["sourceUnit"], str):
+          \t\t\traise ValueError(f"FAOSTAT indicator {indicator.get('id', '<unknown>')} has invalid sourceUnit.")
+          \t\tindicator_id = str(indicator["id"])
+          ''',
+          	'''\t\tif "sourceUnit" not in indicator or not isinstance(indicator["sourceUnit"], str):
+          \t\t\traise ValueError(f"FAOSTAT indicator {indicator.get('id', '<unknown>')} has invalid sourceUnit.")
+          \t\tvalue_scale = indicator.get("valueScale", 1)
+          \t\tif isinstance(value_scale, bool) or not isinstance(value_scale, (int, float)) or not math.isfinite(float(value_scale)) or float(value_scale) <= 0:
+          \t\t\traise ValueError(f"FAOSTAT indicator {indicator.get('id', '<unknown>')} has invalid valueScale.")
+          \t\tif "fallbackWdiIndicator" in indicator and not str(indicator.get("fallbackWdiIndicator", "")).strip():
+          \t\t\traise ValueError(f"FAOSTAT indicator {indicator.get('id', '<unknown>')} has invalid fallbackWdiIndicator.")
+          \t\tindicator_id = str(indicator["id"])
+          ''',
+          )
+
+          replace_once(
+          	'''\treturn area_by_m49, payload, country_count
+          
+          
+          def parse_observation_time''',
+          	'''\treturn area_by_m49, payload, country_count
+          
+          
+          def registry_by_iso3(payload: dict[str, Any]) -> dict[str, str]:
+          \tresult: dict[str, str] = {}
+          \tfor area in payload.get("areas", []):
+          \t\tif not isinstance(area, dict) or area.get("level") != "country":
+          \t\t\tcontinue
+          \t\tarea_id = str(area.get("area_id", "")).strip()
+          \t\tcodes = area.get("codes")
+          \t\tif not isinstance(codes, dict):
+          \t\t\tcontinue
+          \t\tiso3 = str(codes.get("iso3", "")).strip().upper()
+          \t\tif not iso3:
+          \t\t\tcontinue
+          \t\tif iso3 in result:
+          \t\t\traise RuntimeError(f"Duplicate ISO3 code in area registry: {iso3}")
+          \t\tresult[iso3] = area_id
+          \tif len(result) < 240:
+          \t\traise RuntimeError(f"Area registry ISO3 mapping unexpectedly small: {len(result)}")
+          \treturn result
+          
+          
+          def parse_observation_time''',
+          )
+
+          marker = '''def build_indicator_payload(
+          '''
+          helper = '''def fetch_wdi_fallback(
+          \tindicator_code: str,
+          \tarea_by_iso3: dict[str, str],
+          \ttimeout: int,
+          \tcache: dict[str, dict[tuple[str, int], int | float]],
+          ) -> dict[tuple[str, int], int | float]:
+          \tif indicator_code in cache:
+          \t\treturn cache[indicator_code]
+          \trecords = common.fetch_world_bank_records(
+          \t\t"https://api.worldbank.org/v2",
+          \t\tf"country/all/indicator/{indicator_code}",
+          \t\t2,
+          \t\ttimeout,
+          \t)
+          \tvalues: dict[tuple[str, int], int | float] = {}
+          \tfor record in records:
+          \t\tif record.get("value") is None:
+          \t\t\tcontinue
+          \t\tif str(record.get("obs_status", "")).strip().upper() == "F":
+          \t\t\tcontinue
+          \t\tiso3 = str(record.get("countryiso3code", "")).strip().upper()
+          \t\tarea_id = area_by_iso3.get(iso3)
+          \t\tif not area_id:
+          \t\t\tcontinue
+          \t\tyear_text = str(record.get("date", "")).strip()
+          \t\tif not YEAR_RE.fullmatch(year_text):
+          \t\t\tcontinue
+          \t\tyear = int(year_text)
+          \t\tkey = (area_id, year)
+          \t\tif key in values:
+          \t\t\traise RuntimeError(f"Duplicate WDI fallback value for {indicator_code} {area_id} {year}.")
+          \t\tvalues[key] = common.normalize_number(record["value"])
+          \tcache[indicator_code] = values
+          \tprint(f"WDI fallback {indicator_code}: mapped observations={len(values)}")
+          \treturn values
+          
+          
+          def build_indicator_payload(
+          '''
+          replace_once(marker, helper)
+
+          replace_once(
+          	'''\tarea_by_m49: dict[str, str],
+          \tregistry_country_count: int,
+          ) -> tuple[dict[str, Any], dict[str, Any]]:
+          ''',
+          	'''\tarea_by_m49: dict[str, str],
+          \tarea_by_iso3: dict[str, str],
+          \tregistry_country_count: int,
+          \ttimeout: int,
+          \twdi_cache: dict[str, dict[tuple[str, int], int | float]],
+          ) -> tuple[dict[str, Any], dict[str, Any]]:
+          ''',
+          )
+
+          replace_once(
+          	'''\tfrequency = str(indicator["frequency"])
+          
+          \tvalues_by_year''',
+          	'''\tfrequency = str(indicator["frequency"])
+          \tvalue_scale = float(indicator.get("valueScale", 1))
+          \tfallback_code = str(indicator.get("fallbackWdiIndicator", "")).strip()
+          
+          \tvalues_by_year''',
+          )
+
+          replace_once(
+          	'''\t\tvalue, observation = parse_value(row.get("Value"), indicator_id, m49, time_label)
+          \t\tif value is None:
+          \t\t\tmissing_count += 1
+          \t\t\tcontinue
+          \t\tnumeric = float(value)
+          ''',
+          	'''\t\tvalue, observation = parse_value(row.get("Value"), indicator_id, m49, time_label)
+          \t\tif value is None:
+          \t\t\tmissing_count += 1
+          \t\t\tcontinue
+          \t\tif value_scale != 1:
+          \t\t\tif observation.get("valueQualifier"):
+          \t\t\t\traise RuntimeError(f"Scaled censored FAOSTAT values are not supported for {indicator_id}.")
+          \t\t\tvalue = common.normalize_number(float(value) * value_scale)
+          \t\tnumeric = float(value)
+          ''',
+          )
+
+          replace_once(
+          	'''\t\tif observation:
+          \t\t\tmetadata_by_year[year][area_id] = observation
+          
+          \tif len(areas_with_any_value) < int(indicator["minAreasWithAnyValue"]):
+          ''',
+          	'''\t\tif observation:
+          \t\t\tmetadata_by_year[year][area_id] = observation
+          
+          \tdirect_observations = sum(len(values) for values in values_by_year.values())
+          \tfallback_count = 0
+          \tfallback_areas: set[str] = set()
+          \tif fallback_code:
+          \t\tfallback_values = fetch_wdi_fallback(fallback_code, area_by_iso3, timeout, wdi_cache)
+          \t\tfor (area_id, year), value in sorted(fallback_values.items()):
+          \t\t\tyear_values = values_by_year.setdefault(year, {})
+          \t\t\tif area_id in year_values:
+          \t\t\t\tcontinue
+          \t\t\tnumeric = float(value)
+          \t\t\tif numeric < min_value or numeric > max_value:
+          \t\t\t\traise RuntimeError(f"WDI fallback outside configured range for {indicator_id} {area_id} {year}: {value}")
+          \t\t\tyear_values[area_id] = value
+          \t\t\tareas_with_any_value.add(area_id)
+          \t\t\tmetadata_by_year[year][area_id] = {
+          \t\t\t\t"fallback": True,
+          \t\t\t\t"sourceProviderId": "world-bank",
+          \t\t\t\t"sourceProviderName": "World Bank WDI",
+          \t\t\t\t"sourceIndicator": fallback_code,
+          \t\t\t\t"provenance": "FAOSTAT-origin value distributed by World Bank WDI; used only where the current direct FAOSTAT dataset has no country-year value",
+          \t\t\t}
+          \t\t\tfallback_count += 1
+          \t\t\tfallback_areas.add(area_id)
+          
+          \tif len(areas_with_any_value) < int(indicator["minAreasWithAnyValue"]):
+          ''',
+          )
+
+          replace_once(
+          	'''\tcoverage: dict[str, Any] = {
+          \t\t"registryAreas": registry_country_count,
+          \t\t"areasWithAnyValue": len(areas_with_any_value),
+          \t\t"latestYear": available_years[-1],
+          \t\t"areasInLatestYear": len(values_by_year[available_years[-1]]),
+          \t\t"defaultYear": default_year,
+          \t\t"areasInDefaultYear": len(values_by_year[default_year]),
+          \t}
+          ''',
+          	'''\tcoverage: dict[str, Any] = {
+          \t\t"registryAreas": registry_country_count,
+          \t\t"areasWithAnyValue": len(areas_with_any_value),
+          \t\t"latestYear": available_years[-1],
+          \t\t"areasInLatestYear": len(values_by_year[available_years[-1]]),
+          \t\t"defaultYear": default_year,
+          \t\t"areasInDefaultYear": len(values_by_year[default_year]),
+          \t\t"directObservations": direct_observations,
+          \t\t"fallbackObservations": fallback_count,
+          \t\t"fallbackAreas": len(fallback_areas),
+          \t}
+          ''',
+          )
+
+          replace_once(
+          	'''\tif sorted_period_labels:
+          \t\tpayload["periodLabels"] = sorted_period_labels
+          \tif sorted_metadata:
+          ''',
+          	'''\tif value_scale != 1:
+          \t\tpayload["source"]["valueScale"] = value_scale
+          \tif fallback_code:
+          \t\tpayload["source"]["fallback"] = {
+          \t\t\t"providerId": "world-bank",
+          \t\t\t"providerName": "World Bank WDI",
+          \t\t\t"indicator": fallback_code,
+          \t\t\t"usage": "Only country-year observations missing from the current direct FAOSTAT dataset",
+          \t\t\t"provenance": "FAOSTAT-origin series distributed by World Bank WDI",
+          \t\t}
+          \tif sorted_period_labels:
+          \t\tpayload["periodLabels"] = sorted_period_labels
+          \tif sorted_metadata:
+          ''',
+          )
+
+          replace_once(
+          	'''\t\t"sourceUnits": sorted(source_units),
+          \t}
+          ''',
+          	'''\t\t"sourceUnits": sorted(source_units),
+          \t\t"valueScale": value_scale,
+          \t\t"directObservations": direct_observations,
+          \t\t"fallbackObservations": fallback_count,
+          \t\t"fallbackAreas": len(fallback_areas),
+          \t}
+          ''',
+          )
+
+          replace_once(
+          	'''\t\tf"default={default_year} defaultCoverage={len(values_by_year[default_year])} "
+          \t\tf"latestCoverage={len(values_by_year[available_years[-1]])} censored={censored_count}"
+          ''',
+          	'''\t\tf"default={default_year} defaultCoverage={len(values_by_year[default_year])} "
+          \t\tf"latestCoverage={len(values_by_year[available_years[-1]])} censored={censored_count} "
+          \t\tf"direct={direct_observations} fallback={fallback_count}"
+          ''',
+          )
+
+          replace_once(
+          	'''\tarea_by_m49, registry_payload, registry_country_count = load_registry_by_m49(args.registry, args.timeout)
+          \tprint(f"FAOSTAT registry: countries={registry_country_count} M49={len(area_by_m49)}")
+          ''',
+          	'''\tarea_by_m49, registry_payload, registry_country_count = load_registry_by_m49(args.registry, args.timeout)
+          \tarea_by_iso3 = registry_by_iso3(registry_payload)
+          \twdi_cache: dict[str, dict[tuple[str, int], int | float]] = {}
+          \tprint(f"FAOSTAT registry: countries={registry_country_count} M49={len(area_by_m49)} ISO3={len(area_by_iso3)}")
+          ''',
+          )
+
+          replace_once(
+          	'''\t\t\trows_by_dataset[str(indicator["datasetId"])],
+          \t\t\tarea_by_m49,
+          \t\t\tregistry_country_count,
+          \t\t)
+          ''',
+          	'''\t\t\trows_by_dataset[str(indicator["datasetId"])],
+          \t\t\tarea_by_m49,
+          \t\t\tarea_by_iso3,
+          \t\t\tregistry_country_count,
+          \t\t\targs.timeout,
+          \t\t\twdi_cache,
+          \t\t)
+          ''',
+          )
+
+          builder_path.write_text(code, encoding="utf-8")
+
+          workflow_path = root / ".github/workflows/build-faostat-statistics.yml"
+          workflow = workflow_path.read_text(encoding="utf-8")
+          old_count = '''          if len(indicators) != 25 or len(configured_indicators) != 25:
+          \t\traise SystemExit(f"Expected 25 FAOSTAT indicators, found provider={len(indicators)} config={len(configured_indicators)}")
+          '''
+          new_count = '''          if len(indicators) != 26 or len(configured_indicators) != 26:
+          \t\traise SystemExit(f"Expected 26 FAOSTAT indicators, found provider={len(indicators)} config={len(configured_indicators)}")
+          '''
+          if old_count not in workflow:
+          	raise SystemExit("Expected FAOSTAT workflow indicator-count assertion not found")
+          workflow = workflow.replace(old_count, new_count, 1)
+
+          forest_marker = '''          for indicator_id in (
+          \t"food-security.undernourishment-prevalence",
+          '''
+          forest_checks = '''          provider_by_id = {item["id"]: item for item in indicators}
+          forest_expected = {
+          \t"land-use.forest-land-share": ("AG.LND.FRST.ZS", 1),
+          \t"land-use.forest-land-area-km2": ("AG.LND.FRST.K2", 10),
+          }
+          for indicator_id, (fallback_code, value_scale) in forest_expected.items():
+          \titem = provider_by_id[indicator_id]
+          \tpayload = json.loads((Path("dist/statistics/faostat") / item["path"]).read_text(encoding="utf-8"))
+          \tsource = payload.get("source") or {}
+          \tcoverage = payload.get("coverage") or {}
+          \tif (source.get("fallback") or {}).get("indicator") != fallback_code:
+          \t\traise SystemExit(f"FAOSTAT forest fallback mismatch for {indicator_id}")
+          \tif value_scale != 1 and source.get("valueScale") != value_scale:
+          \t\traise SystemExit(f"FAOSTAT forest valueScale mismatch for {indicator_id}")
+          \tif int(coverage.get("directObservations", 0)) < 7000:
+          \t\traise SystemExit(f"Unexpectedly small direct FAOSTAT forest coverage for {indicator_id}")
+          \tif int(coverage.get("fallbackObservations", 0)) > 200:
+          \t\traise SystemExit(f"Unexpectedly large WDI fallback for {indicator_id}")
+          \tfallback_metadata = sum(
+          \t\t1
+          \t\tfor year_values in (payload.get("observationMetadata") or {}).values()
+          \t\tfor observation in year_values.values()
+          \t\tif observation.get("fallback") is True
+          \t)
+          \tif fallback_metadata != int(coverage.get("fallbackObservations", 0)):
+          \t\traise SystemExit(f"FAOSTAT forest fallback metadata count mismatch for {indicator_id}")
+          
+          for indicator_id in (
+          \t"food-security.undernourishment-prevalence",
+          '''
+          if forest_marker not in workflow:
+          	raise SystemExit("Expected FAOSTAT workflow forest insertion marker not found")
+          workflow_path.write_text(workflow.replace(forest_marker, forest_checks, 1), encoding="utf-8")
+
+          policy_path = root / "docs/statistics-source-policy.md"
+          policy = policy_path.read_text(encoding="utf-8")
+          old_policy = '''### WDI versus FAOSTAT
+
+          #### Waldanteil
+
+          `world-bank:forest.area-percent` und `faostat:land-use.forest-land-share` überlappen 1990–2023.
+
+          - 6.926 gemeinsame Werte
+          - mediane absolute Differenz etwa 0,12 Prozentpunkte
+          - 2023 median etwa 0,43 Prozentpunkte
+
+          WDI weist FAOSTAT als wesentliche Quelle aus, die veröffentlichten Werte sind jedoch nicht überall identisch.
+
+          Entscheidung: **noch nicht löschen**. Zuerst Definition, Bezugsfläche und Transformation im Detail vergleichen. Wenn die FAOSTAT-Reihe dieselbe fachliche Kennzahl direkt abbildet, wird FAOSTAT kanonisch.
+          '''
+          new_policy = '''### WDI versus FAOSTAT
+
+          #### Waldfläche: direkte FAOSTAT-/FRA-Reihe
+
+          Die beiden WDI-Waldreihen weisen in der World-Bank-Metadatenbank ausdrücklich FAOSTAT der FAO und die Land-Use-Datenbank `RL` als Quelle aus. Die direkte aktuelle FAOSTAT-Land-Use-Reihe `Forest land` (`Item Code 6646`) enthält sowohl den Anteil an der Landfläche (`Element Code 7209`, `%`) als auch die absolute Fläche (`Element Code 5110`, `1000 ha`). Für die Kartensammlung wird die absolute Fläche mit dem exakten Faktor 10 von `1000 ha` in km² umgerechnet.
+
+          Die aktuelle FAOSTAT-Waldreihe beruht auf der jüngsten FAO Global Forest Resources Assessment (FRA 2025). Die Abweichungen gegenüber WDI sind daher kein Hinweis auf eine eigenständige World-Bank-Methodik, sondern auf unterschiedliche Distributions-/Revisionsstände derselben fachlichen FAO-Datenquelle.
+
+          Numerischer Vergleich:
+
+          - Waldanteil: FAOSTAT direkt 7.674 Beobachtungen in 226 Ländern, 1990–2024; WDI `AG.LND.FRST.ZS` 7.029 Beobachtungen in 213 Ländern, 1990–2023.
+          - 6.926 gemeinsame Länder-Jahr-Werte; mediane absolute Differenz 0,12 Prozentpunkte, 2023 rund 0,425 Prozentpunkte. Nur 43 gemeinsame Werte sind auf `1e-12` exakt identisch.
+          - Direkte FAOSTAT-Reihe besitzt 748 zusätzliche Länder-Jahr-Beobachtungen gegenüber WDI.
+          - Absolute Waldfläche: FAOSTAT direkt 7.899 Beobachtungen in 226 Ländern, 1990–2025; WDI `AG.LND.FRST.K2` 7.029 Beobachtungen in 213 Ländern, 1990–2023.
+          - Wieder 6.926 gemeinsame Werte; mediane absolute Differenz 22,55 km², mediane relative Differenz rund 0,71 %. Größere Abweichungen, etwa bei Brasilien oder der Zentralafrikanischen Republik, zeigen substanzielle FRA-Revisionen älterer Werte.
+          - Direkte FAOSTAT-Reihe besitzt bei der absoluten Fläche 973 zusätzliche Länder-Jahr-Beobachtungen.
+          - WDI besitzt für beide Reihen zusammen betrachtet nur dieselben 103 Länder-Jahr-Werte, die im aktuellen direkten FAOSTAT-Datensatz fehlen. Sie betreffen ausschließlich Gibraltar, Monaco, Nicaragua und Nauru und sind selbst FAO/FAOSTAT-originäre ältere Distributionswerte.
+
+          Entscheidung: **FAOSTAT ist für Waldanteil und absolute Waldfläche kanonisch.** Die sichtbaren WDI-Doppelungen `AG.LND.FRST.ZS` und `AG.LND.FRST.K2` werden entfernt. Für die wenigen historischen Länder-/Jahrlücken bleibt WDI ausschließlich als explizit markierter Fallback innerhalb der direkten FAOSTAT-Kennzahlen erhalten. Direkte aktuelle FAOSTAT-Werte haben immer Vorrang; ein älterer WDI-Distributionsstand darf eine aktuelle FRA-Revision niemals überschreiben.
+          '''
+          if old_policy not in policy:
+          	raise SystemExit("Expected forest audit source-policy block not found")
+          policy_path.write_text(policy.replace(old_policy, new_policy, 1), encoding="utf-8")
+      - name: Validate source files
+        run: |
+          python -m py_compile scripts/build_faostat.py scripts/build_world_bank.py
+          python -m json.tool config/faostat-indicators.json >/dev/null
+          python -m json.tool config/world-bank-indicators.json >/dev/null
+      - name: Build FAOSTAT test snapshot
+        run: python scripts/build_faostat.py --output-dir /tmp/faostat-forest/statistics
+      - name: Build WDI test snapshot
+        run: python scripts/build_world_bank.py --output-dir /tmp/wdi-forest/statistics
+      - name: Verify migration
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          faostat = json.loads(Path("/tmp/faostat-forest/statistics/faostat/index.json").read_text(encoding="utf-8"))
+          wdi = json.loads(Path("/tmp/wdi-forest/statistics/world-bank/index.json").read_text(encoding="utf-8"))
+          faostat_by_id = {item["id"]: item for item in faostat["indicators"]}
+          wdi_ids = {item["id"] for item in wdi["indicators"]}
+          expected_wdi_removed = {"forest.area-percent", "forest.area-km2"}
+          assert not (wdi_ids & expected_wdi_removed), wdi_ids & expected_wdi_removed
+          assert len(wdi_ids) == 36, len(wdi_ids)
+          assert len(faostat_by_id) == 26, len(faostat_by_id)
+
+          expected = {
+          	"land-use.forest-land-share": ("AG.LND.FRST.ZS", 2024, 1),
+          	"land-use.forest-land-area-km2": ("AG.LND.FRST.K2", 2025, 10),
+          }
+          for indicator_id, (fallback_code, default_year, scale) in expected.items():
+          	item = faostat_by_id[indicator_id]
+          	assert item["defaultYear"] == default_year, (indicator_id, item["defaultYear"])
+          	assert item["coverage"]["areasInDefaultYear"] >= 215
+          	assert item["coverage"]["directObservations"] >= 7000
+          	assert item["coverage"]["fallbackObservations"] == 103, (indicator_id, item["coverage"])
+          	assert item["coverage"]["fallbackAreas"] == 4, (indicator_id, item["coverage"])
+          	payload = json.loads(Path("/tmp/faostat-forest/statistics/faostat", item["path"]).read_text(encoding="utf-8"))
+          	assert payload["source"]["fallback"]["indicator"] == fallback_code
+          	if scale != 1:
+          		assert payload["source"]["valueScale"] == scale
+          	fallback_metadata = sum(
+          		1
+          		for year_values in payload.get("observationMetadata", {}).values()
+          		for observation in year_values.values()
+          		if observation.get("fallback") is True
+          	)
+          	assert fallback_metadata == 103, (indicator_id, fallback_metadata)
+
+          print("FAOSTAT snapshot:", faostat["activeSnapshot"])
+          print("WDI snapshot:", wdi["activeSnapshot"])
+          print("FAOSTAT indicators:", len(faostat_by_id))
+          print("WDI indicators:", len(wdi_ids))
+      - name: Commit tested migration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm scripts/audit_faostat_forest.py
+          git rm .github/workflows/audit-faostat-forest.yml
+          git rm .github/workflows/apply-faostat-forest.yml
+          git add config/faostat-indicators.json config/world-bank-indicators.json scripts/build_faostat.py .github/workflows/build-faostat-statistics.yml docs/statistics-source-policy.md
+          git commit -m "Move forest statistics to direct FAOSTAT"
+          git push origin HEAD:audit/faostat-forest
