@@ -1,4 +1,5 @@
 name: Build AQUASTAT statistics
+# CORS is configured server-side; deployment verification uses exact public byte comparisons.
 
 on:
   workflow_dispatch:
