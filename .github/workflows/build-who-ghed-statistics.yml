@@ -1,0 +1,178 @@
+name: Build WHO GHED statistics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 6 18 * *"
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "config/who-ghed-indicators.json"
+      - "scripts/build_who_ghed.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-who-ghed-statistics.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "config/statistics-providers.json"
+      - "config/who-ghed-indicators.json"
+      - "scripts/build_who_ghed.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-who-ghed-statistics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-who-ghed-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: python -m pip install --disable-pip-version-check openpyxl
+
+      - name: Validate scripts
+        run: |
+          bash -n .github/scripts/deploy-world-bank-statistics.sh
+          python -m py_compile scripts/build_who_ghed.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/who-ghed-indicators.json >/dev/null
+
+      - name: Build WHO GHED statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_who_ghed.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/who-ghed.log
+
+      - name: Validate WHO GHED product
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          provider = json.loads(Path("dist/statistics/who-ghed/index.json").read_text(encoding="utf-8"))
+          assert provider["provider"]["id"] == "who-ghed"
+          assert provider["provider"]["license"] == "CC BY 4.0"
+          assert len(provider["indicators"]) == 3, len(provider["indicators"])
+
+          expected = {
+          	"health-expenditure.current-percent-gdp": "che_gdp",
+          	"health-expenditure.current-per-capita-usd": "che_pc_usd",
+          	"health-expenditure.current-per-capita-ppp": "che_ppp_pc",
+          }
+          by_id = {item["id"]: item for item in provider["indicators"]}
+          assert set(by_id) == set(expected)
+          for indicator_id, source_column in expected.items():
+          	item = by_id[indicator_id]
+          	assert item["sourceIndicator"] == source_column
+          	assert item["availableYears"] == list(range(2000, 2025)), (indicator_id, item["availableYears"])
+          	assert item["defaultYear"] == 2023, (indicator_id, item["defaultYear"])
+          	assert item["coverage"]["areasWithAnyValue"] >= 195, (indicator_id, item["coverage"])
+          	assert item["coverage"]["areasInDefaultYear"] >= 193, (indicator_id, item["coverage"])
+          	assert 1 <= item["coverage"]["areasInLatestYear"] <= 50, (indicator_id, item["coverage"])
+          	payload = json.loads(Path("dist/statistics/who-ghed", item["path"]).read_text(encoding="utf-8"))
+          	assert payload["source"]["providerId"] == "who-ghed"
+          	assert payload["source"]["indicator"] == source_column
+          	assert payload["source"]["preliminaryYears"] == [2024]
+          	assert payload["source"]["workbookVersion"][0] == "WHO Global Health Expenditure Database (GHED)"
+          	assert payload["observationMetadata"]["2024"]
+          	assert all(meta == {"preliminary": True} for meta in payload["observationMetadata"]["2024"].values())
+
+          global_index = json.loads(Path("dist/statistics/index.json").read_text(encoding="utf-8"))
+          assert any(item["id"] == "who-ghed" for item in global_index["providers"])
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"retrievedAt={provider['retrievedAt']}")
+          for item in provider["indicators"]:
+          	coverage = item["coverage"]
+          	print(
+          		f"{item['id']}: defaultYear={item['defaultYear']} "
+          		f"areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+          		f"years={item['availableYears'][0]}-{item['availableYears'][-1]} "
+          		f"observations={coverage['observations']}"
+          	)
+          PY
+          du -h dist/statistics/who-ghed/index.json
+          du -ch dist/statistics/who-ghed/releases/*/*.json | tail -n 1
+
+      - name: Upload statistics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: who-ghed-statistics-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Deploy to tiles.radlobby.at
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          PROVIDER_ID: who-ghed
+        run: |
+          chmod +x .github/scripts/deploy-world-bank-statistics.sh
+          .github/scripts/deploy-world-bank-statistics.sh dist/statistics
+
+      - name: Verify public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          	"${PUBLIC_BASE}/index.json?${CACHE_BUST}" --output /tmp/public-statistics-index.json
+          cmp dist/statistics/index.json /tmp/public-statistics-index.json
+
+          curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          	"${PUBLIC_BASE}/who-ghed/index.json?${CACHE_BUST}" --output /tmp/public-who-ghed-index.json
+          cmp dist/statistics/who-ghed/index.json /tmp/public-who-ghed-index.json
+
+          while IFS= read -r path; do
+          	mkdir -p "/tmp/public-who-ghed/$(dirname "$path")"
+          	curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          		"${PUBLIC_BASE}/who-ghed/${path}?${CACHE_BUST}" --output "/tmp/public-who-ghed/${path}"
+          	cmp "dist/statistics/who-ghed/${path}" "/tmp/public-who-ghed/${path}"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/who-ghed/index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
+          PY
+          )
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: who-ghed-statistics-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
