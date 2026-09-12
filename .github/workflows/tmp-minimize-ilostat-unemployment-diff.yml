@@ -1,0 +1,65 @@
+name: Temporary minimize ILOSTAT unemployment diff
+
+on:
+  push:
+    branches:
+      - feature/ilostat-unemployment
+    paths:
+      - ".github/workflows/tmp-minimize-ilostat-unemployment-diff.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/ilostat-unemployment
+          fetch-depth: 0
+
+      - name: Restore main formatting and insert two indicators
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git show origin/main:config/ilostat-indicators.json > /tmp/ilostat-main.json
+          python .github/scripts/tmp_patch_ilostat_unemployment.py /tmp/ilostat-main.json config/ilostat-indicators.json
+          python -m json.tool config/ilostat-indicators.json >/dev/null
+          git diff --check -- config/ilostat-indicators.json
+          git diff --stat origin/main -- config/ilostat-indicators.json
+
+      - name: Validate full ILOSTAT build
+        shell: bash
+        run: |
+          set -euo pipefail
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?patch=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_ilostat_entry.py --registry "$REGISTRY_URL"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/ilostat/index.json").read_text(encoding="utf-8"))
+          by_id = {item["id"]: item for item in payload["indicators"]}
+          assert len(by_id) == 16
+          for indicator_id in ("labour.unemployment-15plus-percent", "labour.unemployment-youth-15-24-percent"):
+              item = by_id[indicator_id]
+              assert item["defaultYear"] == 2025
+              assert item["coverage"]["areasWithAnyValue"] == 188
+              assert item["coverage"]["areasInDefaultYear"] == 183
+              assert item["availableYears"][0] == 1991
+              assert item["availableYears"][-1] == 2027
+              print(indicator_id, item["coverage"])
+          PY
+
+      - name: Commit minimal product diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/ilostat-indicators.json
+          git commit -m "Minimize ILOSTAT unemployment config diff"
+          git push origin HEAD:feature/ilostat-unemployment
