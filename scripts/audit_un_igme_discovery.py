@@ -5,10 +5,9 @@ import json
 from typing import Any
 from urllib.request import Request, urlopen
 
-URL = (
-	"https://sdmx.data.unicef.org/ws/public/sdmxapi/rest/data/"
-	"UNICEF,GLOBAL_DATAFLOW,1.0/all?format=sdmx-json&detail=structureOnly"
-)
+BASE = "https://sdmx.data.unicef.org/ws/public/sdmxapi/rest/data/UNICEF,GLOBAL_DATAFLOW,1.0"
+STRUCTURE_URL = f"{BASE}/all?format=sdmx-json&detail=structureOnly"
+SAMPLE_URL = f"{BASE}/AUT.CME_MRM0+CME_MRY0+CME_MRY0T4.?format=sdmx-json"
 
 
 def fetch_json(url: str) -> Any:
@@ -17,42 +16,54 @@ def fetch_json(url: str) -> Any:
 		return json.load(response)
 
 
-def walk(value: Any, path: tuple[str, ...] = ()):
-	if isinstance(value, dict):
-		yield path, value
-		for key, child in value.items():
-			yield from walk(child, path + (str(key),))
-	elif isinstance(value, list):
-		for index, child in enumerate(value):
-			yield from walk(child, path + (str(index),))
-
-
 def main() -> None:
-	payload = fetch_json(URL)
-	print("top-level:", sorted(payload) if isinstance(payload, dict) else type(payload).__name__)
-	matches = 0
-	for path, node in walk(payload):
-		values = node.get("values")
-		if not isinstance(values, list):
-			continue
-		node_id = str(node.get("id") or "")
-		node_name = str(node.get("name") or "")
-		selected = []
-		for item in values:
-			if not isinstance(item, dict):
-				continue
-			item_id = str(item.get("id") or "")
-			item_name = str(item.get("name") or "")
-			text = f"{item_id} {item_name}".lower()
-			if item_id.startswith("CME_") or "mortality" in text or "under-five" in text or "under five" in text or "neonatal" in text or "infant" in text:
-				selected.append((item_id, item_name))
-		if selected:
-			matches += 1
-			print(f"DIMENSION path={'/'.join(path)} id={node_id!r} name={node_name!r} selected={len(selected)} total={len(values)}")
-			for item_id, item_name in selected:
-				print(f"  {item_id}\t{item_name}")
-	if matches == 0:
-		raise RuntimeError("No child mortality indicator codes found in UNICEF GLOBAL_DATAFLOW structure.")
+	payload = fetch_json(STRUCTURE_URL)
+	structure = payload["structure"]
+	for level in ("dataSet", "series", "observation"):
+		dimensions = structure.get("dimensions", {}).get(level, [])
+		print(f"DIMENSIONS {level}: {len(dimensions)}")
+		for index, dimension in enumerate(dimensions):
+			values = dimension.get("values") or []
+			print(f"  {index}: id={dimension.get('id')!r} name={dimension.get('name')!r} values={len(values)}")
+			if dimension.get("id") in {"INDICATOR", "SEX"}:
+				for item in values:
+					item_id = str(item.get("id") or "")
+					item_name = str(item.get("name") or "")
+					if dimension.get("id") == "SEX" or item_id in {"CME_MRM0", "CME_MRY0", "CME_MRY0T4"}:
+						print(f"    {item_id}\t{item_name}")
+	print("ATTRIBUTES")
+	for level in ("dataSet", "series", "observation"):
+		attributes = structure.get("attributes", {}).get(level, [])
+		print(f"  {level}: {len(attributes)}")
+		for index, attribute in enumerate(attributes):
+			values = attribute.get("values") or []
+			print(f"    {index}: id={attribute.get('id')!r} name={attribute.get('name')!r} values={len(values)}")
+			if len(values) <= 20:
+				for item in values:
+					print(f"      {item.get('id')}\t{item.get('name')}")
+
+	print("SAMPLE URL", SAMPLE_URL)
+	sample = fetch_json(SAMPLE_URL)
+	print("SAMPLE top-level", sorted(sample))
+	print("SAMPLE metrics", sample.get("metrics"))
+	sample_structure = sample.get("structure", {})
+	for level in ("series", "observation"):
+		print(f"SAMPLE {level} dimensions")
+		for index, dimension in enumerate(sample_structure.get("dimensions", {}).get(level, [])):
+			print(
+				f"  {index}: {dimension.get('id')} "
+				f"values={[(item.get('id'), item.get('name')) for item in (dimension.get('values') or [])]}"
+			)
+	print("SAMPLE observation attributes")
+	for index, attribute in enumerate(sample_structure.get("attributes", {}).get("observation", [])):
+		print(
+			f"  {index}: {attribute.get('id')} "
+			f"values={[(item.get('id'), item.get('name')) for item in (attribute.get('values') or [])[:20]]}"
+		)
+	data_sets = sample.get("dataSets") or []
+	print("SAMPLE dataSets", len(data_sets))
+	if data_sets:
+		print(json.dumps(data_sets[0], ensure_ascii=False, sort_keys=True)[:12000])
 
 
 if __name__ == "__main__":
