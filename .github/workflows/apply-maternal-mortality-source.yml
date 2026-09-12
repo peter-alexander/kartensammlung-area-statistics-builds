@@ -1,0 +1,169 @@
+name: Apply maternal mortality source migration
+
+on:
+  push:
+    branches:
+      - audit/maternal-mortality
+    paths:
+      - .github/workflows/apply-maternal-mortality-source.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/maternal-mortality
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check pycountry
+      - name: Apply production source changes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          who_path = Path("config/who-indicators.json")
+          who = who_path.read_text(encoding="utf-8")
+          old_tail = '''\t\t}
+          \t]
+          }
+          '''
+          maternal = '''\t\t},
+          \t\t{
+          \t\t\t"id": "mortality.maternal-per-100000-live-births",
+          \t\t\t"slug": "mortality-maternal-per-100000-live-births",
+          \t\t\t"sourceFormat": "gho-odata",
+          \t\t\t"sourceIndicator": "MDG_0000000026",
+          \t\t\t"sourceIndicatorName": "Maternal mortality ratio (per 100 000 live births)",
+          \t\t\t"sourceDataset": "WHO Global Health Observatory / UN Maternal Mortality Estimation Inter-Agency Group (MMEIG)",
+          \t\t\t"sourceUrl": "https://data.who.int/indicators/i/C071DCB/AC597B1",
+          \t\t\t"downloadUrl": "https://ghoapi.azureedge.net/api/MDG_0000000026",
+          \t\t\t"valueField": "RATE_PER_100_N",
+          \t\t\t"lowerField": "RATE_PER_100_NL",
+          \t\t\t"upperField": "RATE_PER_100_NU",
+          \t\t\t"startYear": 1985,
+          \t\t\t"endYear": 2023,
+          \t\t\t"expectedReferenceYear": 2023,
+          \t\t\t"title": "Müttersterblichkeit",
+          \t\t\t"description": "Modellierte Müttersterblichkeitsrate je 100.000 Lebendgeburten nach der aktuellen international vergleichbaren Schätzung der UN Maternal Mortality Estimation Inter-Agency Group (WHO, UNICEF, UNFPA, World Bank Group und UNDESA). Direkte WHO-GHO-Werte sind kanonisch; die 80-%-Unsicherheitsintervalle werden mit veröffentlicht.",
+          \t\t\t"unit": {"id": "per-100000-live-births", "label": "je 100.000 Lebendgeburten"},
+          \t\t\t"classification": {"type": "fixed", "breaks": [5, 20, 50, 100, 300, 600]},
+          \t\t\t"valueRange": [0, 10000],
+          \t\t\t"minAreasWithAnyValue": 190,
+          \t\t\t"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+          \t\t}
+          \t]
+          }
+          '''
+          if who.count(old_tail) != 1:
+          	raise SystemExit("WHO config tail marker not found exactly once")
+          who_path.write_text(who.replace(old_tail, maternal, 1), encoding="utf-8")
+
+          wdi_path = Path("config/world-bank-indicators.json")
+          lines = wdi_path.read_text(encoding="utf-8").splitlines()
+          kept = [line for line in lines if '"id":"mortality.maternal-per-100000-live-births"' not in line]
+          if len(lines) - len(kept) != 1:
+          	raise SystemExit("Expected exactly one WDI maternal mortality row")
+          wdi_path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+          builder_path = Path("scripts/build_who.py")
+          builder = builder_path.read_text(encoding="utf-8")
+          old_select = '"$select": "SpatialDim,SpatialDimType,TimeDim,NumericValue,Value",'
+          new_select = '"$select": "SpatialDim,SpatialDimType,TimeDim,NumericValue,Value,Low,High",'
+          if builder.count(old_select) != 1:
+          	raise SystemExit("WHO GHO select marker not found exactly once")
+          builder = builder.replace(old_select, new_select, 1)
+          old_value = '''\t\t\t\t"RATE_PER_100_N": row.get("NumericValue") if row.get("NumericValue") is not None else row.get("Value"),
+          \t\t\t})'''
+          new_value = '''\t\t\t\t"RATE_PER_100_N": row.get("NumericValue") if row.get("NumericValue") is not None else row.get("Value"),
+          \t\t\t\t"RATE_PER_100_NL": row.get("Low"),
+          \t\t\t\t"RATE_PER_100_NU": row.get("High"),
+          \t\t\t})'''
+          if builder.count(old_value) != 1:
+          	raise SystemExit("WHO GHO normalized-row marker not found exactly once")
+          builder_path.write_text(builder.replace(old_value, new_value, 1), encoding="utf-8")
+
+          policy_path = Path("docs/statistics-source-policy.md")
+          policy = policy_path.read_text(encoding="utf-8")
+          marker = 'Status des offenen WHO/WDI-Gesundheitsaudits: **abgeschlossen am 12. September 2026.**'
+          section = '''#### Müttersterblichkeit
+
+          WDI `SH.STA.MMRT` ist die modellierte Müttersterblichkeitsrate der UN Maternal Mortality Estimation Inter-Agency Group (MMEIG). Die fachlich zuständige gemeinsame Schätzgruppe besteht aus WHO, UNICEF, UNFPA, World Bank Group und UNDESA/Population Division. Die direkte WHO-GHO-Reihe verwendet den Indikator `MDG_0000000026` (SDG 3.1.1). WHO veröffentlichte am 7. April 2025 die neue MMEIG-Runde „Trends in maternal mortality 2000 to 2023“ und bezeichnet sie ausdrücklich als die aktuellsten international vergleichbaren MMEIG-Schätzungen; die neue Runde ersetzt frühere Schätzstände.
+
+          Numerischer Vergleich des aktuellen WHO-GHO-Stands mit WDI:
+
+          - WHO direkt: 7.605 Beobachtungen, 195 Länder, 1985–2023; in jedem Jahr 195 Länder.
+          - WDI: 7.566 Beobachtungen, 194 Länder, 1985–2023; in jedem Jahr 194 Länder.
+          - 7.566 gemeinsame Länder-Jahr-Werte; **7.481/7.566 WDI-Werte entsprechen exakt der auf ganze Zahlen gerundeten aktuellen WHO-Schätzung.**
+          - WHO besitzt zusätzlich alle 39 Jahreswerte der Cookinseln; WDI besitzt keinen einzigen zusätzlichen Länder-Jahr-Wert.
+          - Für alle 7.605 direkten WHO-Beobachtungen stehen Unter- und Obergrenzen des von MMEIG verwendeten 80-%-Unsicherheitsintervalls zur Verfügung.
+          - 85 gemeinsame Werte weichen über reine Rundung hinaus ab. Sie betreffen Kenia (39 Jahre), Mosambik (39), Luxemburg (4) sowie Haiti, Pakistan und Sudan (je 1). Bei Kenia liegen 35 der 39 WDI-Werte sogar außerhalb des aktuellen WHO-Unsicherheitsintervalls. Das ist ein deutlicher Revisionsstand-Unterschied und kein fachlicher Mehrwert von WDI.
+
+          Entscheidung: **WHO/MMEIG ist kanonisch.** Die direkte aktuelle GHO-Reihe hat größere Abdeckung, höhere numerische Präzision und vollständige 80-%-Unsicherheitsintervalle. WDI `SH.STA.MMRT` wird als sichtbare Doppelung entfernt. Ein WDI-Fallback ist nicht erforderlich, weil WDI keine einzige zusätzliche Länder-Jahr-Beobachtung besitzt; ältere WDI-Schätzstände dürfen aktuelle MMEIG-Revisionen nicht überschreiben.
+
+          ''' + marker
+          if policy.count(marker) != 1:
+          	raise SystemExit("WHO audit status marker not found exactly once")
+          policy_path.write_text(policy.replace(marker, section, 1), encoding="utf-8")
+      - name: Validate production source files
+        run: |
+          python -m py_compile scripts/build_who.py scripts/build_world_bank.py
+          python -m json.tool config/who-indicators.json >/dev/null
+          python -m json.tool config/world-bank-indicators.json >/dev/null
+      - name: Build WHO and WDI test snapshots
+        run: |
+          rm -rf /tmp/maternal-statistics
+          python scripts/build_who.py --output-dir /tmp/maternal-statistics
+          python scripts/build_world_bank.py --output-dir /tmp/maternal-statistics
+      - name: Verify maternal mortality migration
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          root = Path('/tmp/maternal-statistics')
+          who = json.loads((root / 'who/index.json').read_text(encoding='utf-8'))
+          wdi = json.loads((root / 'world-bank/index.json').read_text(encoding='utf-8'))
+          assert len(who['indicators']) == 9, len(who['indicators'])
+          assert len(wdi['indicators']) == 35, len(wdi['indicators'])
+          wdi_ids = {item['id'] for item in wdi['indicators']}
+          assert 'mortality.maternal-per-100000-live-births' not in wdi_ids
+          by_id = {item['id']: item for item in who['indicators']}
+          item = by_id['mortality.maternal-per-100000-live-births']
+          assert item['frequency'] == 'annual'
+          assert item['availableYears'] == list(range(1985, 2024))
+          assert item['defaultYear'] == 2023
+          coverage = item['coverage']
+          assert coverage['areasWithAnyValue'] == 195, coverage
+          assert coverage['areasInDefaultYear'] == 195, coverage
+          assert coverage['directObservations'] == 7605, coverage
+          assert coverage['fallbackObservations'] == 0, coverage
+          payload = json.loads((root / 'who' / item['path']).read_text(encoding='utf-8'))
+          source = payload['source']
+          assert source['indicator'] == 'MDG_0000000026'
+          assert source['sourceFormat'] == 'gho-odata'
+          assert source['timeCoverage'] == {'startYear': 1985, 'endYear': 2023}
+          assert 'fallback' not in source
+          assert payload['indicator']['confidenceIntervals']['available'] is True
+          intervals = sum(len(values) for values in payload['confidenceIntervals']['values'].values())
+          assert intervals == 7605, intervals
+          assert 'country:COK' in payload['values']['2023']
+          assert not payload.get('observationMetadata')
+          print('WHO snapshot', who['activeSnapshot'])
+          print('WDI snapshot', wdi['activeSnapshot'])
+          print('maternal coverage', coverage)
+          print('maternal intervals', intervals)
+      - name: Commit tested production source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/who-indicators.json config/world-bank-indicators.json scripts/build_who.py docs/statistics-source-policy.md
+          git commit -m "Use direct WHO MMEIG maternal mortality estimates"
+          git push origin HEAD:audit/maternal-mortality
