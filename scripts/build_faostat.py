@@ -112,6 +112,11 @@ def validate_config(payload: Any) -> dict[str, Any]:
 				raise ValueError(f"FAOSTAT indicator entry is missing {key}.")
 		if "sourceUnit" not in indicator or not isinstance(indicator["sourceUnit"], str):
 			raise ValueError(f"FAOSTAT indicator {indicator.get('id', '<unknown>')} has invalid sourceUnit.")
+		value_scale = indicator.get("valueScale", 1)
+		if isinstance(value_scale, bool) or not isinstance(value_scale, (int, float)) or not math.isfinite(float(value_scale)) or float(value_scale) <= 0:
+			raise ValueError(f"FAOSTAT indicator {indicator.get('id', '<unknown>')} has invalid valueScale.")
+		if "fallbackWdiIndicator" in indicator and not str(indicator.get("fallbackWdiIndicator", "")).strip():
+			raise ValueError(f"FAOSTAT indicator {indicator.get('id', '<unknown>')} has invalid fallbackWdiIndicator.")
 		indicator_id = str(indicator["id"])
 		slug = str(indicator["slug"])
 		dataset_id = str(indicator["datasetId"])
@@ -247,6 +252,26 @@ def load_registry_by_m49(source: str, timeout: int) -> tuple[dict[str, str], dic
 	return area_by_m49, payload, country_count
 
 
+def registry_by_iso3(payload: dict[str, Any]) -> dict[str, str]:
+	result: dict[str, str] = {}
+	for area in payload.get("areas", []):
+		if not isinstance(area, dict) or area.get("level") != "country":
+			continue
+		area_id = str(area.get("area_id", "")).strip()
+		codes = area.get("codes")
+		if not isinstance(codes, dict):
+			continue
+		iso3 = str(codes.get("iso3", "")).strip().upper()
+		if not iso3:
+			continue
+		if iso3 in result:
+			raise RuntimeError(f"Duplicate ISO3 code in area registry: {iso3}")
+		result[iso3] = area_id
+	if len(result) < 240:
+		raise RuntimeError(f"Area registry ISO3 mapping unexpectedly small: {len(result)}")
+	return result
+
+
 def parse_observation_time(raw: Any, frequency: str) -> tuple[int, str | None]:
 	text = str(raw if raw is not None else "").strip()
 	if frequency == "annual":
@@ -328,13 +353,53 @@ def choose_default_year(indicator: dict[str, Any], years: list[int], values_by_y
 	return default_year
 
 
+def fetch_wdi_fallback(
+	indicator_code: str,
+	area_by_iso3: dict[str, str],
+	timeout: int,
+	cache: dict[str, dict[tuple[str, int], int | float]],
+) -> dict[tuple[str, int], int | float]:
+	if indicator_code in cache:
+		return cache[indicator_code]
+	records = common.fetch_world_bank_records(
+		"https://api.worldbank.org/v2",
+		f"country/all/indicator/{indicator_code}",
+		2,
+		timeout,
+	)
+	values: dict[tuple[str, int], int | float] = {}
+	for record in records:
+		if record.get("value") is None:
+			continue
+		if str(record.get("obs_status", "")).strip().upper() == "F":
+			continue
+		iso3 = str(record.get("countryiso3code", "")).strip().upper()
+		area_id = area_by_iso3.get(iso3)
+		if not area_id:
+			continue
+		year_text = str(record.get("date", "")).strip()
+		if not YEAR_RE.fullmatch(year_text):
+			continue
+		year = int(year_text)
+		key = (area_id, year)
+		if key in values:
+			raise RuntimeError(f"Duplicate WDI fallback value for {indicator_code} {area_id} {year}.")
+		values[key] = common.normalize_number(record["value"])
+	cache[indicator_code] = values
+	print(f"WDI fallback {indicator_code}: mapped observations={len(values)}")
+	return values
+
+
 def build_indicator_payload(
 	config: dict[str, Any],
 	dataset: dict[str, Any],
 	indicator: dict[str, Any],
 	rows: list[dict[str, str]],
 	area_by_m49: dict[str, str],
+	area_by_iso3: dict[str, str],
 	registry_country_count: int,
+	timeout: int,
+	wdi_cache: dict[str, dict[tuple[str, int], int | float]],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
 	indicator_id = str(indicator["id"])
 	filters = {str(key): str(value) for key, value in indicator["sourceFilters"].items()}
@@ -343,6 +408,8 @@ def build_indicator_payload(
 		raise RuntimeError(f"FAOSTAT source series is missing for {indicator_id}: {filters}")
 	series_name = source_indicator_name(source_rows, dataset)
 	frequency = str(indicator["frequency"])
+	value_scale = float(indicator.get("valueScale", 1))
+	fallback_code = str(indicator.get("fallbackWdiIndicator", "")).strip()
 
 	values_by_year: dict[int, dict[str, int | float]] = defaultdict(dict)
 	metadata_by_year: dict[int, dict[str, dict[str, Any]]] = defaultdict(dict)
@@ -380,6 +447,10 @@ def build_indicator_payload(
 		if value is None:
 			missing_count += 1
 			continue
+		if value_scale != 1:
+			if observation.get("valueQualifier"):
+				raise RuntimeError(f"Scaled censored FAOSTAT values are not supported for {indicator_id}.")
+			value = common.normalize_number(float(value) * value_scale)
 		numeric = float(value)
 		if numeric < min_value or numeric > max_value:
 			raise RuntimeError(f"FAOSTAT value outside configured range for {indicator_id} M49={m49} {time_label}: {value} not in {indicator['valueRange']}")
@@ -401,6 +472,30 @@ def build_indicator_payload(
 			observation["sourceRelease"] = release
 		if observation:
 			metadata_by_year[year][area_id] = observation
+
+	direct_observations = sum(len(values) for values in values_by_year.values())
+	fallback_count = 0
+	fallback_areas: set[str] = set()
+	if fallback_code:
+		fallback_values = fetch_wdi_fallback(fallback_code, area_by_iso3, timeout, wdi_cache)
+		for (area_id, year), value in sorted(fallback_values.items()):
+			year_values = values_by_year.setdefault(year, {})
+			if area_id in year_values:
+				continue
+			numeric = float(value)
+			if numeric < min_value or numeric > max_value:
+				raise RuntimeError(f"WDI fallback outside configured range for {indicator_id} {area_id} {year}: {value}")
+			year_values[area_id] = value
+			areas_with_any_value.add(area_id)
+			metadata_by_year[year][area_id] = {
+				"fallback": True,
+				"sourceProviderId": "world-bank",
+				"sourceProviderName": "World Bank WDI",
+				"sourceIndicator": fallback_code,
+				"provenance": "FAOSTAT-origin value distributed by World Bank WDI; used only where the current direct FAOSTAT dataset has no country-year value",
+			}
+			fallback_count += 1
+			fallback_areas.add(area_id)
 
 	if len(areas_with_any_value) < int(indicator["minAreasWithAnyValue"]):
 		raise RuntimeError(f"FAOSTAT indicator {indicator_id} maps only {len(areas_with_any_value)} areas; expected at least {indicator['minAreasWithAnyValue']}.")
@@ -444,6 +539,9 @@ def build_indicator_payload(
 		"areasInLatestYear": len(values_by_year[available_years[-1]]),
 		"defaultYear": default_year,
 		"areasInDefaultYear": len(values_by_year[default_year]),
+		"directObservations": direct_observations,
+		"fallbackObservations": fallback_count,
+		"fallbackAreas": len(fallback_areas),
 	}
 	if sorted_period_labels:
 		coverage["latestPeriod"] = period_labels[available_years[-1]]
@@ -471,6 +569,16 @@ def build_indicator_payload(
 		"coverage": coverage,
 		"values": sorted_values,
 	}
+	if value_scale != 1:
+		payload["source"]["valueScale"] = value_scale
+	if fallback_code:
+		payload["source"]["fallback"] = {
+			"providerId": "world-bank",
+			"providerName": "World Bank WDI",
+			"indicator": fallback_code,
+			"usage": "Only country-year observations missing from the current direct FAOSTAT dataset",
+			"provenance": "FAOSTAT-origin series distributed by World Bank WDI",
+		}
 	if sorted_period_labels:
 		payload["periodLabels"] = sorted_period_labels
 	if sorted_metadata:
@@ -489,6 +597,10 @@ def build_indicator_payload(
 		"missingMappedRows": missing_count,
 		"ignoredSourceAreas": dict(sorted(ignored_source_areas.items())),
 		"sourceUnits": sorted(source_units),
+		"valueScale": value_scale,
+		"directObservations": direct_observations,
+		"fallbackObservations": fallback_count,
+		"fallbackAreas": len(fallback_areas),
 	}
 	if sorted_period_labels:
 		diagnostics["firstPeriod"] = period_labels[available_years[0]]
@@ -502,7 +614,8 @@ def build_indicator_payload(
 	print(
 		f"{indicator_id}: dataset={dataset['code']} mapped={len(areas_with_any_value)} {period_summary}"
 		f"default={default_year} defaultCoverage={len(values_by_year[default_year])} "
-		f"latestCoverage={len(values_by_year[available_years[-1]])} censored={censored_count}"
+		f"latestCoverage={len(values_by_year[available_years[-1]])} censored={censored_count} "
+		f"direct={direct_observations} fallback={fallback_count}"
 	)
 	return payload, diagnostics
 
@@ -558,7 +671,9 @@ def main() -> None:
 		raise RuntimeError(f"Provider {provider['id']} is missing from statistics-providers.json.")
 
 	area_by_m49, registry_payload, registry_country_count = load_registry_by_m49(args.registry, args.timeout)
-	print(f"FAOSTAT registry: countries={registry_country_count} M49={len(area_by_m49)}")
+	area_by_iso3 = registry_by_iso3(registry_payload)
+	wdi_cache: dict[str, dict[tuple[str, int], int | float]] = {}
+	print(f"FAOSTAT registry: countries={registry_country_count} M49={len(area_by_m49)} ISO3={len(area_by_iso3)}")
 
 	dataset_by_id = {str(dataset["id"]): dataset for dataset in config["datasets"]}
 	indicators_by_dataset: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -582,7 +697,10 @@ def main() -> None:
 			indicator,
 			rows_by_dataset[str(indicator["datasetId"])],
 			area_by_m49,
+			area_by_iso3,
 			registry_country_count,
+			args.timeout,
+			wdi_cache,
 		)
 		indicator_payloads.append((indicator, payload, diagnostics))
 

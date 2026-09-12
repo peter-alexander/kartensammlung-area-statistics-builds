@@ -12,43 +12,1128 @@
 	},
 	"broadCoverageFraction": 0.75,
 	"indicators": [
-		{"id":"population.total","slug":"population-total","sourceIndicator":"SP.POP.TOTL","title":"Bevölkerung","description":"Gesamtbevölkerung","unit":{"id":"persons","label":"Personen"},"classification":{"type":"fixed","scale":"logarithmic","breaks":[100000,1000000,10000000,50000000,100000000,500000000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND","country:XKX"]},
-		{"id":"gdp.current-usd","slug":"gdp-current-usd","sourceIndicator":"NY.GDP.MKTP.CD","title":"Bruttoinlandsprodukt","description":"Bruttoinlandsprodukt zu laufenden Preisen in US-Dollar","unit":{"id":"usd-current","label":"US-Dollar (laufende Preise)","symbol":"$"},"classification":{"type":"fixed","scale":"logarithmic","breaks":[1000000000,10000000000,100000000000,1000000000000,5000000000000,20000000000000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"gdp-per-capita.current-usd","slug":"gdp-per-capita-current-usd","sourceIndicator":"NY.GDP.PCAP.CD","title":"BIP pro Kopf","description":"Bruttoinlandsprodukt pro Einwohner zu laufenden Preisen in US-Dollar","unit":{"id":"usd-current-per-person","label":"US-Dollar pro Einwohner (laufende Preise)","symbol":"$"},"classification":{"type":"fixed","scale":"logarithmic","breaks":[1000,5000,10000,25000,50000,100000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"inflation.cpi-annual-percent","slug":"inflation-cpi-annual-percent","sourceIndicator":"FP.CPI.TOTL.ZG","title":"Inflation","description":"Jährliche Veränderung des Verbraucherpreisindex","unit":{"id":"percent","label":"Prozent","symbol":"%"},"classification":{"type":"fixed","breaks":[-2,0,2,5,10,25]},"minAreasWithAnyValue":160,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"life-expectancy.at-birth-years","slug":"life-expectancy-at-birth-years","sourceIndicator":"SP.DYN.LE00.IN","title":"Lebenserwartung bei Geburt","description":"Lebenserwartung bei Geburt, beide Geschlechter, in Jahren.","unit":{"id":"years","label":"Jahre","symbol":"Jahre"},"classification":{"type":"fixed","breaks":[55,65,70,75,80,85]},"minAreasWithAnyValue":190,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"fertility.total-births-per-woman","slug":"fertility-total-births-per-woman","sourceIndicator":"SP.DYN.TFRT.IN","title":"Gesamtfertilitätsrate","description":"Durchschnittliche Zahl der Kinder je Frau bei den altersspezifischen Fertilitätsraten des jeweiligen Jahres.","unit":{"id":"children-per-woman","label":"Kinder je Frau"},"classification":{"type":"fixed","breaks":[1.5,2.1,3,4,5,6]},"minAreasWithAnyValue":190,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"urban-population.percent","slug":"urban-population-percent","sourceIndicator":"SP.URB.TOTL.IN.ZS","title":"Urbanisierungsgrad","description":"Anteil der in städtischen Gebieten lebenden Bevölkerung an der Gesamtbevölkerung.","unit":{"id":"percent","label":"Prozent","symbol":"%"},"classification":{"type":"fixed","breaks":[20,40,60,75,90,98]},"minAreasWithAnyValue":190,"maxDefaultYearAge":2,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"co2-emissions-excluding-lulucf.per-capita","slug":"co2-emissions-excluding-lulucf-per-capita","sourceIndicator":"EN.GHG.CO2.PC.CE.AR5","title":"CO₂-Emissionen pro Kopf","description":"Kohlendioxid-Emissionen ohne Landnutzung, Landnutzungsänderungen und Forstwirtschaft (LULUCF) pro Einwohner, in Tonnen CO₂-Äquivalent.","unit":{"id":"t-co2e-per-capita","label":"t CO₂e pro Einwohner","symbol":"t CO₂e"},"classification":{"type":"fixed","breaks":[0.5,1,2,5,10,20]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"internet-users.percent","slug":"internet-users-percent","sourceIndicator":"IT.NET.USER.ZS","title":"Internetnutzung","description":"Anteil der Personen, die das Internet nutzen, an der Gesamtbevölkerung.","unit":{"id":"percent","label":"Prozent","symbol":"%"},"classification":{"type":"fixed","breaks":[20,40,60,80,90,98]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"energy.electricity-access-percent","slug":"energy-electricity-access-percent","sourceIndicator":"EG.ELC.ACCS.ZS","title":"Zugang zu Elektrizität","description":"Anteil der Bevölkerung mit Zugang zu Elektrizität.","unit":{"id":"percent","label":"Prozent","symbol":"%"},"classification":{"type":"fixed","breaks":[20,40,60,80,95,99]},"minAreasWithAnyValue":180,"maxDefaultYearAge":2,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"energy.renewable-final-consumption-percent","slug":"energy-renewable-final-consumption-percent","sourceIndicator":"EG.FEC.RNEW.ZS","title":"Erneuerbare Energie am Endenergieverbrauch","description":"Anteil erneuerbarer Energien am gesamten Endenergieverbrauch; umfasst damit nicht nur Elektrizität.","unit":{"id":"percent","label":"Prozent","symbol":"%"},"classification":{"type":"fixed","breaks":[5,10,20,40,60,80]},"minAreasWithAnyValue":180,"maxDefaultYearAge":5,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"climate.ghg-total-excluding-lulucf-mtco2e","slug":"climate-ghg-total-excluding-lulucf-mtco2e","sourceIndicator":"EN.GHG.ALL.MT.CE.AR5","title":"Treibhausgasemissionen gesamt","description":"Gesamte Treibhausgasemissionen ohne Landnutzung, Landnutzungsänderungen und Forstwirtschaft (LULUCF), nach IPCC AR5 in CO₂-Äquivalente umgerechnet.","unit":{"id":"mt-co2e","label":"Mt CO₂e","symbol":"Mt CO₂e"},"classification":{"type":"fixed","scale":"logarithmic","breaks":[1,10,50,200,1000,5000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"climate.ghg-total-excluding-lulucf-per-capita","slug":"climate-ghg-total-excluding-lulucf-per-capita","sourceIndicator":"EN.GHG.ALL.PC.CE.AR5","title":"Treibhausgasemissionen pro Kopf","description":"Gesamte Treibhausgasemissionen ohne LULUCF pro Einwohner, nach IPCC AR5 in CO₂-Äquivalente umgerechnet.","unit":{"id":"t-co2e-per-capita","label":"t CO₂e pro Einwohner","symbol":"t CO₂e"},"classification":{"type":"fixed","breaks":[1,2,5,10,20,40]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"climate.co2-total-excluding-lulucf-mtco2e","slug":"climate-co2-total-excluding-lulucf-mtco2e","sourceIndicator":"EN.GHG.CO2.MT.CE.AR5","title":"CO₂-Emissionen gesamt","description":"Gesamte Kohlendioxid-Emissionen ohne LULUCF, nach IPCC AR5 in Millionen Tonnen CO₂-Äquivalent.","unit":{"id":"mt-co2e","label":"Mt CO₂e","symbol":"Mt CO₂e"},"classification":{"type":"fixed","scale":"logarithmic","breaks":[1,10,50,200,1000,5000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"climate.methane-total-excluding-lulucf-mtco2e","slug":"climate-methane-total-excluding-lulucf-mtco2e","sourceIndicator":"EN.GHG.CH4.MT.CE.AR5","title":"Methanemissionen gesamt","description":"Gesamte Methanemissionen ohne LULUCF, nach IPCC AR5 in Millionen Tonnen CO₂-Äquivalent.","unit":{"id":"mt-co2e","label":"Mt CO₂e","symbol":"Mt CO₂e"},"classification":{"type":"fixed","scale":"logarithmic","breaks":[0.5,2,10,50,200,1000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"climate.n2o-total-excluding-lulucf-mtco2e","slug":"climate-n2o-total-excluding-lulucf-mtco2e","sourceIndicator":"EN.GHG.N2O.MT.CE.AR5","title":"Lachgasemissionen gesamt","description":"Gesamte Lachgasemissionen (N₂O) ohne LULUCF, nach IPCC AR5 in Millionen Tonnen CO₂-Äquivalent.","unit":{"id":"mt-co2e","label":"Mt CO₂e","symbol":"Mt CO₂e"},"classification":{"type":"fixed","scale":"logarithmic","breaks":[0.2,1,5,20,100,500]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"climate.co2-intensity-gdp-ppp","slug":"climate-co2-intensity-gdp-ppp","sourceIndicator":"EN.GHG.CO2.RT.GDP.PP.KD","title":"CO₂-Intensität des BIP","description":"Kohlendioxid-Emissionen ohne LULUCF je Einheit Wirtschaftsleistung, in kg CO₂e pro 2021-PPP-Dollar des BIP.","unit":{"id":"kg-co2e-per-2021-ppp-usd","label":"kg CO₂e je 2021-PPP-$","symbol":"kg CO₂e/PPP-$"},"classification":{"type":"fixed","breaks":[0.05,0.1,0.2,0.4,0.8,1.6]},"minAreasWithAnyValue":170,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"climate.ghg-total-including-lulucf-mtco2e","slug":"climate-ghg-total-including-lulucf-mtco2e","sourceIndicator":"EN.GHG.ALL.LU.MT.CE.AR5","title":"Treibhausgasemissionen inklusive LULUCF","description":"Gesamte Treibhausgasemissionen einschließlich Landnutzung, Landnutzungsänderungen und Forstwirtschaft (LULUCF). Negative Gesamtwerte bedeuten eine Netto-Senke.","unit":{"id":"mt-co2e","label":"Mt CO₂e","symbol":"Mt CO₂e"},"classification":{"type":"fixed","breaks":[-100,-10,0,10,100,1000]},"minAreasWithAnyValue":160,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"climate.co2-lulucf-net-flux-mtco2e","slug":"climate-co2-lulucf-net-flux-mtco2e","sourceIndicator":"EN.GHG.CO2.LU.MT.CE.AR5","title":"CO₂-Nettofluss aus LULUCF","description":"CO₂-Nettofluss aus Landnutzung, Landnutzungsänderungen und Forstwirtschaft, ohne nicht-tropische Brände. Negative Werte bedeuten Nettoentnahme/Senke, positive Werte Nettoemissionen.","unit":{"id":"mt-co2e","label":"Mt CO₂e","symbol":"Mt CO₂e"},"classification":{"type":"fixed","breaks":[-100,-20,-5,0,20,100]},"minAreasWithAnyValue":150,"maxDefaultYearAge":4,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"climate.co2-lulucf-deforestation-mtco2e","slug":"climate-co2-lulucf-deforestation-mtco2e","sourceIndicator":"EN.GHG.CO2.LU.DF.MT.CE.AR5","title":"CO₂-Nettofluss aus Entwaldung","description":"CO₂-Nettofluss, der der Entwaldung innerhalb des LULUCF-Sektors zugeordnet wird. Dies ist eine Emissions-/Flussgröße und keine Angabe der jährlich entwaldeten Fläche.","unit":{"id":"mt-co2e","label":"Mt CO₂e","symbol":"Mt CO₂e"},"classification":{"type":"fixed","breaks":[0.1,1,5,20,100,500]},"minAreasWithAnyValue":140,"maxDefaultYearAge":4,"requiredAreas":["country:USA","country:IND","country:BRA","country:IDN"]},
-		{"id":"climate.co2-lulucf-forest-land-mtco2e","slug":"climate-co2-lulucf-forest-land-mtco2e","sourceIndicator":"EN.GHG.CO2.LU.FL.MT.CE.AR5","title":"CO₂-Nettofluss aus Waldland","description":"CO₂-Nettofluss aus Waldland innerhalb des LULUCF-Sektors. Negative Werte bedeuten eine Netto-Kohlenstoffsenke, positive Werte Nettoemissionen.","unit":{"id":"mt-co2e","label":"Mt CO₂e","symbol":"Mt CO₂e"},"classification":{"type":"fixed","breaks":[-100,-20,-5,0,5,20]},"minAreasWithAnyValue":140,"maxDefaultYearAge":4,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"forest.area-percent","slug":"forest-area-percent","sourceIndicator":"AG.LND.FRST.ZS","title":"Waldfläche","description":"Waldfläche als Anteil der gesamten Landfläche nach FAOSTAT/FAO-Definition.","unit":{"id":"percent","label":"Prozent","symbol":"%"},"classification":{"type":"fixed","breaks":[5,15,30,45,60,75]},"minAreasWithAnyValue":180,"maxDefaultYearAge":4,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND","country:BRA"]},
-		{"id":"forest.area-km2","slug":"forest-area-km2","sourceIndicator":"AG.LND.FRST.K2","title":"Waldfläche absolut","description":"Gesamte Waldfläche in Quadratkilometern nach FAOSTAT/FAO-Definition.","unit":{"id":"square-kilometres","label":"km²","symbol":"km²"},"classification":{"type":"fixed","scale":"logarithmic","breaks":[100,1000,10000,100000,500000,2000000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":4,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND","country:BRA"]},
-		{"id":"mortality.maternal-per-100000-live-births","slug":"mortality-maternal-per-100000-live-births","sourceIndicator":"SH.STA.MMRT","title":"Müttersterblichkeit","description":"Modellierte Zahl mütterlicher Todesfälle je 100.000 Lebendgeburten nach den gemeinsamen Schätzungen von WHO, UNICEF, UNFPA und World Bank Group.","unit":{"id":"per-100000-live-births","label":"je 100.000 Lebendgeburten"},"classification":{"type":"fixed","breaks":[5,20,50,100,300,600]},"minAreasWithAnyValue":170,"maxDefaultYearAge":6,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"health-workforce.physicians-per-1000","slug":"health-workforce-physicians-per-1000","sourceIndicator":"SH.MED.PHYS.ZS","title":"Ärztinnen und Ärzte","description":"Ärztinnen und Ärzte je 1.000 Einwohner nach WHO Global Health Workforce Statistics, OECD und nationalen Daten.","unit":{"id":"per-1000-population","label":"je 1.000 Einwohner"},"classification":{"type":"fixed","breaks":[0.2,0.5,1,2,4,6]},"minAreasWithAnyValue":160,"maxDefaultYearAge":8,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"health-workforce.nurses-midwives-per-1000","slug":"health-workforce-nurses-midwives-per-1000","sourceIndicator":"SH.MED.NUMW.P3","title":"Pflegepersonal und Hebammen","description":"Pflegepersonal und Hebammen je 1.000 Einwohner nach WHO Global Health Workforce Statistics, OECD und nationalen Daten.","unit":{"id":"per-1000-population","label":"je 1.000 Einwohner"},"classification":{"type":"fixed","breaks":[0.5,1,2,5,10,15]},"minAreasWithAnyValue":160,"maxDefaultYearAge":8,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"gni.current-usd","slug":"gni-current-usd","sourceIndicator":"NY.GNP.MKTP.CD","title":"Bruttonationaleinkommen (BNE)","description":"Bruttonationaleinkommen (GNI/BNE) zu laufenden Preisen in US-Dollar.","unit":{"id":"usd-current","label":"US-Dollar (laufende Preise)","symbol":"$"},"classification":{"type":"fixed","scale":"logarithmic","breaks":[1000000000,10000000000,100000000000,500000000000,2000000000000,10000000000000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"gni-per-capita.atlas-current-usd","slug":"gni-per-capita-atlas-current-usd","sourceIndicator":"NY.GNP.PCAP.CD","title":"BNE pro Kopf (Atlas-Methode)","description":"Bruttonationaleinkommen pro Einwohner nach der World-Bank-Atlas-Methode in aktuellen US-Dollar; geglättete Wechselkursumrechnung zur besseren internationalen Vergleichbarkeit.","unit":{"id":"usd-current-per-person","label":"US-Dollar pro Einwohner","symbol":"$"},"classification":{"type":"fixed","scale":"logarithmic","breaks":[1000,5000,10000,25000,50000,100000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"trade.exports-current-usd","slug":"trade-exports-current-usd","sourceIndicator":"NE.EXP.GNFS.CD","title":"Exporte von Gütern und Dienstleistungen","description":"Exporte von Gütern und Dienstleistungen zu laufenden Preisen in US-Dollar.","unit":{"id":"usd-current","label":"US-Dollar (laufende Preise)","symbol":"$"},"classification":{"type":"fixed","scale":"logarithmic","breaks":[100000000,1000000000,10000000000,100000000000,500000000000,2000000000000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"trade.imports-current-usd","slug":"trade-imports-current-usd","sourceIndicator":"NE.IMP.GNFS.CD","title":"Importe von Gütern und Dienstleistungen","description":"Importe von Gütern und Dienstleistungen zu laufenden Preisen in US-Dollar.","unit":{"id":"usd-current","label":"US-Dollar (laufende Preise)","symbol":"$"},"classification":{"type":"fixed","scale":"logarithmic","breaks":[100000000,1000000000,10000000000,100000000000,500000000000,2000000000000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"trade.external-balance-current-usd","slug":"trade-external-balance-current-usd","sourceIndicator":"NE.RSB.GNFS.CD","title":"Außenbeitrag von Gütern und Dienstleistungen","description":"Exporte minus Importe von Gütern und Dienstleistungen zu laufenden Preisen in US-Dollar; positive Werte bedeuten Überschuss, negative Werte Defizit.","unit":{"id":"usd-current","label":"US-Dollar (laufende Preise)","symbol":"$"},"classification":{"type":"fixed","breaks":[-100000000000,-25000000000,-5000000000,0,25000000000,100000000000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"trade.external-balance-percent-gdp","slug":"trade-external-balance-percent-gdp","sourceIndicator":"NE.RSB.GNFS.ZS","title":"Außenbeitrag in % des BIP","description":"Exporte minus Importe von Gütern und Dienstleistungen in Prozent des Bruttoinlandsprodukts; positive Werte bedeuten Überschuss, negative Werte Defizit.","unit":{"id":"percent-of-gdp","label":"Prozent des BIP","symbol":"%"},"classification":{"type":"fixed","breaks":[-20,-10,-5,0,5,10]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"trade.current-account-balance-percent-gdp","slug":"trade-current-account-balance-percent-gdp","sourceIndicator":"BN.CAB.XOKA.GD.ZS","title":"Leistungsbilanzsaldo","description":"Saldo der Leistungsbilanz in Prozent des BIP; umfasst neben Gütern und Dienstleistungen auch Primär- und Sekundäreinkommen.","unit":{"id":"percent-of-gdp","label":"Prozent des BIP","symbol":"%"},"classification":{"type":"fixed","breaks":[-15,-8,-3,0,3,8]},"minAreasWithAnyValue":150,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"trade.openness-percent-gdp","slug":"trade-openness-percent-gdp","sourceIndicator":"NE.TRD.GNFS.ZS","title":"Handelsintensität","description":"Summe aus Exporten und Importen von Gütern und Dienstleistungen in Prozent des BIP.","unit":{"id":"percent-of-gdp","label":"Prozent des BIP","symbol":"%"},"classification":{"type":"fixed","breaks":[30,50,75,100,150,250]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"trade.exports-percent-gdp","slug":"trade-exports-percent-gdp","sourceIndicator":"NE.EXP.GNFS.ZS","title":"Exporte in % des BIP","description":"Exporte von Gütern und Dienstleistungen in Prozent des Bruttoinlandsprodukts.","unit":{"id":"percent-of-gdp","label":"Prozent des BIP","symbol":"%"},"classification":{"type":"fixed","breaks":[15,25,40,60,80,120]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"trade.imports-percent-gdp","slug":"trade-imports-percent-gdp","sourceIndicator":"NE.IMP.GNFS.ZS","title":"Importe in % des BIP","description":"Importe von Gütern und Dienstleistungen in Prozent des Bruttoinlandsprodukts.","unit":{"id":"percent-of-gdp","label":"Prozent des BIP","symbol":"%"},"classification":{"type":"fixed","breaks":[15,25,40,60,80,120]},"minAreasWithAnyValue":180,"maxDefaultYearAge":3,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"investment.fdi-net-inflows-percent-gdp","slug":"investment-fdi-net-inflows-percent-gdp","sourceIndicator":"BX.KLT.DINV.WD.GD.ZS","title":"Ausländische Direktinvestitionen – Nettozuflüsse","description":"Nettozuflüsse ausländischer Direktinvestitionen in die berichtende Volkswirtschaft in Prozent des BIP; negative Werte bedeuten Netto-Desinvestition.","unit":{"id":"percent-of-gdp","label":"Prozent des BIP","symbol":"%"},"classification":{"type":"fixed","breaks":[-2,0,2,5,10,25]},"minAreasWithAnyValue":170,"maxDefaultYearAge":4,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},
-		{"id":"investment.fdi-net-outflows-percent-gdp","slug":"investment-fdi-net-outflows-percent-gdp","sourceIndicator":"BM.KLT.DINV.WD.GD.ZS","title":"Direktinvestitionen ins Ausland – Nettoabflüsse","description":"Nettoabflüsse von Direktinvestitionen aus der berichtenden Volkswirtschaft in den Rest der Welt in Prozent des BIP; negative Werte bedeuten Netto-Rückflüsse beziehungsweise Desinvestition.","unit":{"id":"percent-of-gdp","label":"Prozent des BIP","symbol":"%"},"classification":{"type":"fixed","breaks":[-2,0,1,3,7,15]},"minAreasWithAnyValue":150,"maxDefaultYearAge":4,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]}
+		{
+			"id": "population.total",
+			"slug": "population-total",
+			"sourceIndicator": "SP.POP.TOTL",
+			"title": "Bevölkerung",
+			"description": "Gesamtbevölkerung",
+			"unit": {
+				"id": "persons",
+				"label": "Personen"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [
+					100000,
+					1000000,
+					10000000,
+					50000000,
+					100000000,
+					500000000
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND",
+				"country:XKX"
+			]
+		},
+		{
+			"id": "gdp.current-usd",
+			"slug": "gdp-current-usd",
+			"sourceIndicator": "NY.GDP.MKTP.CD",
+			"title": "Bruttoinlandsprodukt",
+			"description": "Bruttoinlandsprodukt zu laufenden Preisen in US-Dollar",
+			"unit": {
+				"id": "usd-current",
+				"label": "US-Dollar (laufende Preise)",
+				"symbol": "$"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [
+					1000000000,
+					10000000000,
+					100000000000,
+					1000000000000,
+					5000000000000,
+					20000000000000
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "gdp-per-capita.current-usd",
+			"slug": "gdp-per-capita-current-usd",
+			"sourceIndicator": "NY.GDP.PCAP.CD",
+			"title": "BIP pro Kopf",
+			"description": "Bruttoinlandsprodukt pro Einwohner zu laufenden Preisen in US-Dollar",
+			"unit": {
+				"id": "usd-current-per-person",
+				"label": "US-Dollar pro Einwohner (laufende Preise)",
+				"symbol": "$"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [
+					1000,
+					5000,
+					10000,
+					25000,
+					50000,
+					100000
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "inflation.cpi-annual-percent",
+			"slug": "inflation-cpi-annual-percent",
+			"sourceIndicator": "FP.CPI.TOTL.ZG",
+			"title": "Inflation",
+			"description": "Jährliche Veränderung des Verbraucherpreisindex",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					-2,
+					0,
+					2,
+					5,
+					10,
+					25
+				]
+			},
+			"minAreasWithAnyValue": 160,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "life-expectancy.at-birth-years",
+			"slug": "life-expectancy-at-birth-years",
+			"sourceIndicator": "SP.DYN.LE00.IN",
+			"title": "Lebenserwartung bei Geburt",
+			"description": "Lebenserwartung bei Geburt, beide Geschlechter, in Jahren.",
+			"unit": {
+				"id": "years",
+				"label": "Jahre",
+				"symbol": "Jahre"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					55,
+					65,
+					70,
+					75,
+					80,
+					85
+				]
+			},
+			"minAreasWithAnyValue": 190,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "fertility.total-births-per-woman",
+			"slug": "fertility-total-births-per-woman",
+			"sourceIndicator": "SP.DYN.TFRT.IN",
+			"title": "Gesamtfertilitätsrate",
+			"description": "Durchschnittliche Zahl der Kinder je Frau bei den altersspezifischen Fertilitätsraten des jeweiligen Jahres.",
+			"unit": {
+				"id": "children-per-woman",
+				"label": "Kinder je Frau"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					1.5,
+					2.1,
+					3,
+					4,
+					5,
+					6
+				]
+			},
+			"minAreasWithAnyValue": 190,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "urban-population.percent",
+			"slug": "urban-population-percent",
+			"sourceIndicator": "SP.URB.TOTL.IN.ZS",
+			"title": "Urbanisierungsgrad",
+			"description": "Anteil der in städtischen Gebieten lebenden Bevölkerung an der Gesamtbevölkerung.",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					20,
+					40,
+					60,
+					75,
+					90,
+					98
+				]
+			},
+			"minAreasWithAnyValue": 190,
+			"maxDefaultYearAge": 2,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "co2-emissions-excluding-lulucf.per-capita",
+			"slug": "co2-emissions-excluding-lulucf-per-capita",
+			"sourceIndicator": "EN.GHG.CO2.PC.CE.AR5",
+			"title": "CO₂-Emissionen pro Kopf",
+			"description": "Kohlendioxid-Emissionen ohne Landnutzung, Landnutzungsänderungen und Forstwirtschaft (LULUCF) pro Einwohner, in Tonnen CO₂-Äquivalent.",
+			"unit": {
+				"id": "t-co2e-per-capita",
+				"label": "t CO₂e pro Einwohner",
+				"symbol": "t CO₂e"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					0.5,
+					1,
+					2,
+					5,
+					10,
+					20
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "internet-users.percent",
+			"slug": "internet-users-percent",
+			"sourceIndicator": "IT.NET.USER.ZS",
+			"title": "Internetnutzung",
+			"description": "Anteil der Personen, die das Internet nutzen, an der Gesamtbevölkerung.",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					20,
+					40,
+					60,
+					80,
+					90,
+					98
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "energy.electricity-access-percent",
+			"slug": "energy-electricity-access-percent",
+			"sourceIndicator": "EG.ELC.ACCS.ZS",
+			"title": "Zugang zu Elektrizität",
+			"description": "Anteil der Bevölkerung mit Zugang zu Elektrizität.",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					20,
+					40,
+					60,
+					80,
+					95,
+					99
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 2,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "energy.renewable-final-consumption-percent",
+			"slug": "energy-renewable-final-consumption-percent",
+			"sourceIndicator": "EG.FEC.RNEW.ZS",
+			"title": "Erneuerbare Energie am Endenergieverbrauch",
+			"description": "Anteil erneuerbarer Energien am gesamten Endenergieverbrauch; umfasst damit nicht nur Elektrizität.",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					5,
+					10,
+					20,
+					40,
+					60,
+					80
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 5,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "climate.ghg-total-excluding-lulucf-mtco2e",
+			"slug": "climate-ghg-total-excluding-lulucf-mtco2e",
+			"sourceIndicator": "EN.GHG.ALL.MT.CE.AR5",
+			"title": "Treibhausgasemissionen gesamt",
+			"description": "Gesamte Treibhausgasemissionen ohne Landnutzung, Landnutzungsänderungen und Forstwirtschaft (LULUCF), nach IPCC AR5 in CO₂-Äquivalente umgerechnet.",
+			"unit": {
+				"id": "mt-co2e",
+				"label": "Mt CO₂e",
+				"symbol": "Mt CO₂e"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [
+					1,
+					10,
+					50,
+					200,
+					1000,
+					5000
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "climate.ghg-total-excluding-lulucf-per-capita",
+			"slug": "climate-ghg-total-excluding-lulucf-per-capita",
+			"sourceIndicator": "EN.GHG.ALL.PC.CE.AR5",
+			"title": "Treibhausgasemissionen pro Kopf",
+			"description": "Gesamte Treibhausgasemissionen ohne LULUCF pro Einwohner, nach IPCC AR5 in CO₂-Äquivalente umgerechnet.",
+			"unit": {
+				"id": "t-co2e-per-capita",
+				"label": "t CO₂e pro Einwohner",
+				"symbol": "t CO₂e"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					1,
+					2,
+					5,
+					10,
+					20,
+					40
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "climate.co2-total-excluding-lulucf-mtco2e",
+			"slug": "climate-co2-total-excluding-lulucf-mtco2e",
+			"sourceIndicator": "EN.GHG.CO2.MT.CE.AR5",
+			"title": "CO₂-Emissionen gesamt",
+			"description": "Gesamte Kohlendioxid-Emissionen ohne LULUCF, nach IPCC AR5 in Millionen Tonnen CO₂-Äquivalent.",
+			"unit": {
+				"id": "mt-co2e",
+				"label": "Mt CO₂e",
+				"symbol": "Mt CO₂e"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [
+					1,
+					10,
+					50,
+					200,
+					1000,
+					5000
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "climate.methane-total-excluding-lulucf-mtco2e",
+			"slug": "climate-methane-total-excluding-lulucf-mtco2e",
+			"sourceIndicator": "EN.GHG.CH4.MT.CE.AR5",
+			"title": "Methanemissionen gesamt",
+			"description": "Gesamte Methanemissionen ohne LULUCF, nach IPCC AR5 in Millionen Tonnen CO₂-Äquivalent.",
+			"unit": {
+				"id": "mt-co2e",
+				"label": "Mt CO₂e",
+				"symbol": "Mt CO₂e"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [
+					0.5,
+					2,
+					10,
+					50,
+					200,
+					1000
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "climate.n2o-total-excluding-lulucf-mtco2e",
+			"slug": "climate-n2o-total-excluding-lulucf-mtco2e",
+			"sourceIndicator": "EN.GHG.N2O.MT.CE.AR5",
+			"title": "Lachgasemissionen gesamt",
+			"description": "Gesamte Lachgasemissionen (N₂O) ohne LULUCF, nach IPCC AR5 in Millionen Tonnen CO₂-Äquivalent.",
+			"unit": {
+				"id": "mt-co2e",
+				"label": "Mt CO₂e",
+				"symbol": "Mt CO₂e"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [
+					0.2,
+					1,
+					5,
+					20,
+					100,
+					500
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "climate.co2-intensity-gdp-ppp",
+			"slug": "climate-co2-intensity-gdp-ppp",
+			"sourceIndicator": "EN.GHG.CO2.RT.GDP.PP.KD",
+			"title": "CO₂-Intensität des BIP",
+			"description": "Kohlendioxid-Emissionen ohne LULUCF je Einheit Wirtschaftsleistung, in kg CO₂e pro 2021-PPP-Dollar des BIP.",
+			"unit": {
+				"id": "kg-co2e-per-2021-ppp-usd",
+				"label": "kg CO₂e je 2021-PPP-$",
+				"symbol": "kg CO₂e/PPP-$"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					0.05,
+					0.1,
+					0.2,
+					0.4,
+					0.8,
+					1.6
+				]
+			},
+			"minAreasWithAnyValue": 170,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "climate.ghg-total-including-lulucf-mtco2e",
+			"slug": "climate-ghg-total-including-lulucf-mtco2e",
+			"sourceIndicator": "EN.GHG.ALL.LU.MT.CE.AR5",
+			"title": "Treibhausgasemissionen inklusive LULUCF",
+			"description": "Gesamte Treibhausgasemissionen einschließlich Landnutzung, Landnutzungsänderungen und Forstwirtschaft (LULUCF). Negative Gesamtwerte bedeuten eine Netto-Senke.",
+			"unit": {
+				"id": "mt-co2e",
+				"label": "Mt CO₂e",
+				"symbol": "Mt CO₂e"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					-100,
+					-10,
+					0,
+					10,
+					100,
+					1000
+				]
+			},
+			"minAreasWithAnyValue": 160,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "climate.co2-lulucf-net-flux-mtco2e",
+			"slug": "climate-co2-lulucf-net-flux-mtco2e",
+			"sourceIndicator": "EN.GHG.CO2.LU.MT.CE.AR5",
+			"title": "CO₂-Nettofluss aus LULUCF",
+			"description": "CO₂-Nettofluss aus Landnutzung, Landnutzungsänderungen und Forstwirtschaft, ohne nicht-tropische Brände. Negative Werte bedeuten Nettoentnahme/Senke, positive Werte Nettoemissionen.",
+			"unit": {
+				"id": "mt-co2e",
+				"label": "Mt CO₂e",
+				"symbol": "Mt CO₂e"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					-100,
+					-20,
+					-5,
+					0,
+					20,
+					100
+				]
+			},
+			"minAreasWithAnyValue": 150,
+			"maxDefaultYearAge": 4,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "climate.co2-lulucf-deforestation-mtco2e",
+			"slug": "climate-co2-lulucf-deforestation-mtco2e",
+			"sourceIndicator": "EN.GHG.CO2.LU.DF.MT.CE.AR5",
+			"title": "CO₂-Nettofluss aus Entwaldung",
+			"description": "CO₂-Nettofluss, der der Entwaldung innerhalb des LULUCF-Sektors zugeordnet wird. Dies ist eine Emissions-/Flussgröße und keine Angabe der jährlich entwaldeten Fläche.",
+			"unit": {
+				"id": "mt-co2e",
+				"label": "Mt CO₂e",
+				"symbol": "Mt CO₂e"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					0.1,
+					1,
+					5,
+					20,
+					100,
+					500
+				]
+			},
+			"minAreasWithAnyValue": 140,
+			"maxDefaultYearAge": 4,
+			"requiredAreas": [
+				"country:USA",
+				"country:IND",
+				"country:BRA",
+				"country:IDN"
+			]
+		},
+		{
+			"id": "climate.co2-lulucf-forest-land-mtco2e",
+			"slug": "climate-co2-lulucf-forest-land-mtco2e",
+			"sourceIndicator": "EN.GHG.CO2.LU.FL.MT.CE.AR5",
+			"title": "CO₂-Nettofluss aus Waldland",
+			"description": "CO₂-Nettofluss aus Waldland innerhalb des LULUCF-Sektors. Negative Werte bedeuten eine Netto-Kohlenstoffsenke, positive Werte Nettoemissionen.",
+			"unit": {
+				"id": "mt-co2e",
+				"label": "Mt CO₂e",
+				"symbol": "Mt CO₂e"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					-100,
+					-20,
+					-5,
+					0,
+					5,
+					20
+				]
+			},
+			"minAreasWithAnyValue": 140,
+			"maxDefaultYearAge": 4,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "mortality.maternal-per-100000-live-births",
+			"slug": "mortality-maternal-per-100000-live-births",
+			"sourceIndicator": "SH.STA.MMRT",
+			"title": "Müttersterblichkeit",
+			"description": "Modellierte Zahl mütterlicher Todesfälle je 100.000 Lebendgeburten nach den gemeinsamen Schätzungen von WHO, UNICEF, UNFPA und World Bank Group.",
+			"unit": {
+				"id": "per-100000-live-births",
+				"label": "je 100.000 Lebendgeburten"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					5,
+					20,
+					50,
+					100,
+					300,
+					600
+				]
+			},
+			"minAreasWithAnyValue": 170,
+			"maxDefaultYearAge": 6,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "health-workforce.physicians-per-1000",
+			"slug": "health-workforce-physicians-per-1000",
+			"sourceIndicator": "SH.MED.PHYS.ZS",
+			"title": "Ärztinnen und Ärzte",
+			"description": "Ärztinnen und Ärzte je 1.000 Einwohner nach WHO Global Health Workforce Statistics, OECD und nationalen Daten.",
+			"unit": {
+				"id": "per-1000-population",
+				"label": "je 1.000 Einwohner"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					0.2,
+					0.5,
+					1,
+					2,
+					4,
+					6
+				]
+			},
+			"minAreasWithAnyValue": 160,
+			"maxDefaultYearAge": 8,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "health-workforce.nurses-midwives-per-1000",
+			"slug": "health-workforce-nurses-midwives-per-1000",
+			"sourceIndicator": "SH.MED.NUMW.P3",
+			"title": "Pflegepersonal und Hebammen",
+			"description": "Pflegepersonal und Hebammen je 1.000 Einwohner nach WHO Global Health Workforce Statistics, OECD und nationalen Daten.",
+			"unit": {
+				"id": "per-1000-population",
+				"label": "je 1.000 Einwohner"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					0.5,
+					1,
+					2,
+					5,
+					10,
+					15
+				]
+			},
+			"minAreasWithAnyValue": 160,
+			"maxDefaultYearAge": 8,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "gni.current-usd",
+			"slug": "gni-current-usd",
+			"sourceIndicator": "NY.GNP.MKTP.CD",
+			"title": "Bruttonationaleinkommen (BNE)",
+			"description": "Bruttonationaleinkommen (GNI/BNE) zu laufenden Preisen in US-Dollar.",
+			"unit": {
+				"id": "usd-current",
+				"label": "US-Dollar (laufende Preise)",
+				"symbol": "$"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [
+					1000000000,
+					10000000000,
+					100000000000,
+					500000000000,
+					2000000000000,
+					10000000000000
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "gni-per-capita.atlas-current-usd",
+			"slug": "gni-per-capita-atlas-current-usd",
+			"sourceIndicator": "NY.GNP.PCAP.CD",
+			"title": "BNE pro Kopf (Atlas-Methode)",
+			"description": "Bruttonationaleinkommen pro Einwohner nach der World-Bank-Atlas-Methode in aktuellen US-Dollar; geglättete Wechselkursumrechnung zur besseren internationalen Vergleichbarkeit.",
+			"unit": {
+				"id": "usd-current-per-person",
+				"label": "US-Dollar pro Einwohner",
+				"symbol": "$"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [
+					1000,
+					5000,
+					10000,
+					25000,
+					50000,
+					100000
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "trade.exports-current-usd",
+			"slug": "trade-exports-current-usd",
+			"sourceIndicator": "NE.EXP.GNFS.CD",
+			"title": "Exporte von Gütern und Dienstleistungen",
+			"description": "Exporte von Gütern und Dienstleistungen zu laufenden Preisen in US-Dollar.",
+			"unit": {
+				"id": "usd-current",
+				"label": "US-Dollar (laufende Preise)",
+				"symbol": "$"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [
+					100000000,
+					1000000000,
+					10000000000,
+					100000000000,
+					500000000000,
+					2000000000000
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "trade.imports-current-usd",
+			"slug": "trade-imports-current-usd",
+			"sourceIndicator": "NE.IMP.GNFS.CD",
+			"title": "Importe von Gütern und Dienstleistungen",
+			"description": "Importe von Gütern und Dienstleistungen zu laufenden Preisen in US-Dollar.",
+			"unit": {
+				"id": "usd-current",
+				"label": "US-Dollar (laufende Preise)",
+				"symbol": "$"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [
+					100000000,
+					1000000000,
+					10000000000,
+					100000000000,
+					500000000000,
+					2000000000000
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "trade.external-balance-current-usd",
+			"slug": "trade-external-balance-current-usd",
+			"sourceIndicator": "NE.RSB.GNFS.CD",
+			"title": "Außenbeitrag von Gütern und Dienstleistungen",
+			"description": "Exporte minus Importe von Gütern und Dienstleistungen zu laufenden Preisen in US-Dollar; positive Werte bedeuten Überschuss, negative Werte Defizit.",
+			"unit": {
+				"id": "usd-current",
+				"label": "US-Dollar (laufende Preise)",
+				"symbol": "$"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					-100000000000,
+					-25000000000,
+					-5000000000,
+					0,
+					25000000000,
+					100000000000
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "trade.external-balance-percent-gdp",
+			"slug": "trade-external-balance-percent-gdp",
+			"sourceIndicator": "NE.RSB.GNFS.ZS",
+			"title": "Außenbeitrag in % des BIP",
+			"description": "Exporte minus Importe von Gütern und Dienstleistungen in Prozent des Bruttoinlandsprodukts; positive Werte bedeuten Überschuss, negative Werte Defizit.",
+			"unit": {
+				"id": "percent-of-gdp",
+				"label": "Prozent des BIP",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					-20,
+					-10,
+					-5,
+					0,
+					5,
+					10
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "trade.current-account-balance-percent-gdp",
+			"slug": "trade-current-account-balance-percent-gdp",
+			"sourceIndicator": "BN.CAB.XOKA.GD.ZS",
+			"title": "Leistungsbilanzsaldo",
+			"description": "Saldo der Leistungsbilanz in Prozent des BIP; umfasst neben Gütern und Dienstleistungen auch Primär- und Sekundäreinkommen.",
+			"unit": {
+				"id": "percent-of-gdp",
+				"label": "Prozent des BIP",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					-15,
+					-8,
+					-3,
+					0,
+					3,
+					8
+				]
+			},
+			"minAreasWithAnyValue": 150,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "trade.openness-percent-gdp",
+			"slug": "trade-openness-percent-gdp",
+			"sourceIndicator": "NE.TRD.GNFS.ZS",
+			"title": "Handelsintensität",
+			"description": "Summe aus Exporten und Importen von Gütern und Dienstleistungen in Prozent des BIP.",
+			"unit": {
+				"id": "percent-of-gdp",
+				"label": "Prozent des BIP",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					30,
+					50,
+					75,
+					100,
+					150,
+					250
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "trade.exports-percent-gdp",
+			"slug": "trade-exports-percent-gdp",
+			"sourceIndicator": "NE.EXP.GNFS.ZS",
+			"title": "Exporte in % des BIP",
+			"description": "Exporte von Gütern und Dienstleistungen in Prozent des Bruttoinlandsprodukts.",
+			"unit": {
+				"id": "percent-of-gdp",
+				"label": "Prozent des BIP",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					15,
+					25,
+					40,
+					60,
+					80,
+					120
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "trade.imports-percent-gdp",
+			"slug": "trade-imports-percent-gdp",
+			"sourceIndicator": "NE.IMP.GNFS.ZS",
+			"title": "Importe in % des BIP",
+			"description": "Importe von Gütern und Dienstleistungen in Prozent des Bruttoinlandsprodukts.",
+			"unit": {
+				"id": "percent-of-gdp",
+				"label": "Prozent des BIP",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					15,
+					25,
+					40,
+					60,
+					80,
+					120
+				]
+			},
+			"minAreasWithAnyValue": 180,
+			"maxDefaultYearAge": 3,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "investment.fdi-net-inflows-percent-gdp",
+			"slug": "investment-fdi-net-inflows-percent-gdp",
+			"sourceIndicator": "BX.KLT.DINV.WD.GD.ZS",
+			"title": "Ausländische Direktinvestitionen – Nettozuflüsse",
+			"description": "Nettozuflüsse ausländischer Direktinvestitionen in die berichtende Volkswirtschaft in Prozent des BIP; negative Werte bedeuten Netto-Desinvestition.",
+			"unit": {
+				"id": "percent-of-gdp",
+				"label": "Prozent des BIP",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					-2,
+					0,
+					2,
+					5,
+					10,
+					25
+				]
+			},
+			"minAreasWithAnyValue": 170,
+			"maxDefaultYearAge": 4,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "investment.fdi-net-outflows-percent-gdp",
+			"slug": "investment-fdi-net-outflows-percent-gdp",
+			"sourceIndicator": "BM.KLT.DINV.WD.GD.ZS",
+			"title": "Direktinvestitionen ins Ausland – Nettoabflüsse",
+			"description": "Nettoabflüsse von Direktinvestitionen aus der berichtenden Volkswirtschaft in den Rest der Welt in Prozent des BIP; negative Werte bedeuten Netto-Rückflüsse beziehungsweise Desinvestition.",
+			"unit": {
+				"id": "percent-of-gdp",
+				"label": "Prozent des BIP",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					-2,
+					0,
+					1,
+					3,
+					7,
+					15
+				]
+			},
+			"minAreasWithAnyValue": 150,
+			"maxDefaultYearAge": 4,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		}
 	]
 }

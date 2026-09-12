@@ -142,17 +142,23 @@ Testbuild des direkten Providers:
 
 ### WDI versus FAOSTAT
 
-#### Waldanteil
+#### Waldfläche: direkte FAOSTAT-/FRA-Reihe
 
-`world-bank:forest.area-percent` und `faostat:land-use.forest-land-share` überlappen 1990–2023.
+Die beiden WDI-Waldreihen weisen in der World-Bank-Metadatenbank ausdrücklich FAOSTAT der FAO und die Land-Use-Datenbank `RL` als Quelle aus. Die direkte aktuelle FAOSTAT-Land-Use-Reihe `Forest land` (`Item Code 6646`) enthält sowohl den Anteil an der Landfläche (`Element Code 7209`, `%`) als auch die absolute Fläche (`Element Code 5110`, `1000 ha`). Für die Kartensammlung wird die absolute Fläche mit dem exakten Faktor 10 von `1000 ha` in km² umgerechnet.
 
-- 6.926 gemeinsame Werte
-- mediane absolute Differenz etwa 0,12 Prozentpunkte
-- 2023 median etwa 0,43 Prozentpunkte
+Die aktuelle FAOSTAT-Waldreihe beruht auf der jüngsten FAO Global Forest Resources Assessment (FRA 2025). Die Abweichungen gegenüber WDI sind daher kein Hinweis auf eine eigenständige World-Bank-Methodik, sondern auf unterschiedliche Distributions-/Revisionsstände derselben fachlichen FAO-Datenquelle.
 
-WDI weist FAOSTAT als wesentliche Quelle aus, die veröffentlichten Werte sind jedoch nicht überall identisch.
+Numerischer Vergleich:
 
-Entscheidung: **noch nicht löschen**. Zuerst Definition, Bezugsfläche und Transformation im Detail vergleichen. Wenn die FAOSTAT-Reihe dieselbe fachliche Kennzahl direkt abbildet, wird FAOSTAT kanonisch.
+- Waldanteil: FAOSTAT direkt 7.674 Beobachtungen in 226 Ländern, 1990–2024; WDI `AG.LND.FRST.ZS` 7.029 Beobachtungen in 213 Ländern, 1990–2023.
+- 6.926 gemeinsame Länder-Jahr-Werte; mediane absolute Differenz 0,12 Prozentpunkte, 2023 rund 0,425 Prozentpunkte. Nur 43 gemeinsame Werte sind auf `1e-12` exakt identisch.
+- Direkte FAOSTAT-Reihe besitzt 748 zusätzliche Länder-Jahr-Beobachtungen gegenüber WDI.
+- Absolute Waldfläche: FAOSTAT direkt 7.899 Beobachtungen in 226 Ländern, 1990–2025; WDI `AG.LND.FRST.K2` 7.029 Beobachtungen in 213 Ländern, 1990–2023.
+- Wieder 6.926 gemeinsame Werte; mediane absolute Differenz 22,55 km², mediane relative Differenz rund 0,71 %. Größere Abweichungen, etwa bei Brasilien oder der Zentralafrikanischen Republik, zeigen substanzielle FRA-Revisionen älterer Werte.
+- Direkte FAOSTAT-Reihe besitzt bei der absoluten Fläche 973 zusätzliche Länder-Jahr-Beobachtungen.
+- WDI besitzt für beide Reihen zusammen betrachtet nur dieselben 103 Länder-Jahr-Werte, die im aktuellen direkten FAOSTAT-Datensatz fehlen. Sie betreffen ausschließlich Gibraltar, Monaco, Nicaragua und Nauru und sind selbst FAO/FAOSTAT-originäre ältere Distributionswerte.
+
+Entscheidung: **FAOSTAT ist für Waldanteil und absolute Waldfläche kanonisch.** Die sichtbaren WDI-Doppelungen `AG.LND.FRST.ZS` und `AG.LND.FRST.K2` werden entfernt. Für die wenigen historischen Länder-/Jahrlücken bleibt WDI ausschließlich als explizit markierter Fallback innerhalb der direkten FAOSTAT-Kennzahlen erhalten. Direkte aktuelle FAOSTAT-Werte haben immer Vorrang; ein älterer WDI-Distributionsstand darf eine aktuelle FRA-Revision niemals überschreiben.
 
 ## 6. Nächste Bereinigungsblöcke
 
