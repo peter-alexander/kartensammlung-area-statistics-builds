@@ -1,0 +1,78 @@
+name: Temporary FAOSTAT batch 2 diagnosis
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/faostat-country-indicators
+    paths:
+      - ".github/workflows/temp-faostat-batch2-diagnose.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Inspect FAOSTAT sources
+        shell: bash
+        run: |
+          python - <<'PY'
+          from collections import Counter
+          import csv
+          import io
+          import urllib.request
+          import zipfile
+
+          SOURCES = {
+          	"CAHD": "https://bulks-faostat.fao.org/production/Cost_Affordability_Healthy_Diet_(CoAHD)_E_All_Data_(Normalized).zip",
+          	"RL": "https://bulks-faostat.fao.org/production/Inputs_LandUse_E_All_Data_(Normalized).zip",
+          	"RFN": "https://bulks-faostat.fao.org/production/Inputs_FertilizersNutrient_E_All_Data_(Normalized).zip",
+          	"ET": "https://bulks-faostat.fao.org/production/Environment_Temperature_change_E_All_Data_(Normalized).zip",
+          }
+
+          for code, url in SOURCES.items():
+          	print(f"\n===== {code} =====")
+          	req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-faostat-diagnose/1"})
+          	with urllib.request.urlopen(req, timeout=120) as response:
+          		data = response.read()
+          		print("url=", url)
+          		print("bytes=", len(data))
+          		print("last-modified=", response.headers.get("Last-Modified"))
+          	with zipfile.ZipFile(io.BytesIO(data)) as archive:
+          		names = archive.namelist()
+          		print("files=", names)
+          		data_name = next(name for name in names if "All_Data_(Normalized).csv" in name)
+          		raw = archive.read(data_name)
+          		for encoding in ("utf-8-sig", "cp1252", "latin-1"):
+          			try:
+          				text = raw.decode(encoding)
+          				break
+          			except UnicodeDecodeError:
+          				continue
+          		reader = csv.DictReader(io.StringIO(text))
+          		rows = list(reader)
+          		print("data_file=", data_name)
+          		print("fields=", reader.fieldnames)
+          		print("rows=", len(rows))
+          		items = sorted({(str(r.get("Item Code", "")).strip(), str(r.get("Item", "")).strip()) for r in rows})
+          		elements = sorted({(str(r.get("Element Code", "")).strip(), str(r.get("Element", "")).strip()) for r in rows})
+          		units = sorted({str(r.get("Unit", "")).strip() for r in rows})
+          		years = sorted({str(r.get("Year", "")).strip() for r in rows if str(r.get("Year", "")).strip()})
+          		areas = {(str(r.get("Area Code (M49)", "")).strip(), str(r.get("Area", "")).strip()) for r in rows}
+          		print("items:")
+          		for pair in items:
+          			print("  ", pair)
+          		print("elements:")
+          		for pair in elements:
+          			print("  ", pair)
+          		print("units=", units)
+          		print("years=", years[:3], "...", years[-5:])
+          		print("sourceAreas=", len(areas))
+          		print("top flags=", Counter(str(r.get("Flag", "")).strip() for r in rows).most_common(10))
+          PY
