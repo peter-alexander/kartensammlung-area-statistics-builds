@@ -18,141 +18,33 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Compare IEA SDG72 with WDI
+      - name: Inspect Tracking SDG7 renewable CSV
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json
-          import math
-          import urllib.parse
+          import csv
+          import io
           import urllib.request
-          from collections import Counter, defaultdict
 
-          HEADERS = {
+          url = 'https://trackingsdg7.esmap.org/sites/default/files/data-import/csv/7.2.1-renewable-energy-share.csv'
+          request = urllib.request.Request(url, headers={
           	'User-Agent': 'kartensammlung-area-statistics-builds/1',
-          	'Accept': 'application/json',
-          }
-
-          def fetch(url):
-          	request = urllib.request.Request(url, headers=HEADERS)
-          	with urllib.request.urlopen(request, timeout=90) as response:
-          		body = response.read()
-          		print('FETCH', url, 'status', response.status, 'bytes', len(body))
-          		return json.loads(body)
-
-          registry = fetch('https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json')
-          registry_iso3 = {
-          	str(area.get('codes', {}).get('iso3', '')).strip().upper()
-          	for area in registry.get('areas', [])
-          	if area.get('level') == 'country' and len(str(area.get('codes', {}).get('iso3', '')).strip()) == 3
-          }
-          print('REGISTRY ISO3', len(registry_iso3))
-
-          iea_countries = fetch('https://api.iea.org/stats/countries')
-          stats_to_iso3 = {}
-          for item in iea_countries:
-          	stats = str(item.get('stats', '')).strip().upper()
-          	iso3 = str(item.get('iso3', '')).strip().upper()
-          	if stats and len(iso3) == 3:
-          		stats_to_iso3[stats] = iso3
-          print('IEA country mappings', len(stats_to_iso3))
-
-          iea_rows = fetch('https://api.iea.org/stats/indicator/SDG72')
-          wdi_url = 'https://api.worldbank.org/v2/country/all/indicator/EG.FEC.RNEW.ZS?' + urllib.parse.urlencode({
-          	'format': 'json',
-          	'per_page': 20000,
-          	'source': 2,
+          	'Accept': 'text/csv,*/*;q=0.8',
           })
-          wdi_payload = fetch(wdi_url)
-          if not isinstance(wdi_payload, list) or len(wdi_payload) < 2:
-          	raise RuntimeError('Unexpected WDI response.')
-          wdi_rows = wdi_payload[1]
+          with urllib.request.urlopen(request, timeout=90) as response:
+          	body = response.read()
+          	print('status', response.status, 'bytes', len(body), 'content-type', response.headers.get('Content-Type'), 'last-modified', response.headers.get('Last-Modified'))
 
-          direct = {}
-          direct_unmapped = Counter()
-          direct_source_codes = defaultdict(set)
-          direct_year_counts = Counter()
-          for row in iea_rows:
-          	code = str(row.get('country', '')).strip().upper()
-          	short = str(row.get('short', '')).strip()
-          	iso3 = code if code in registry_iso3 else stats_to_iso3.get(code)
-          	if not iso3 or iso3 not in registry_iso3:
-          		direct_unmapped[(code, short)] += 1
-          		continue
-          	try:
-          		year = int(row['year'])
-          		value = float(row['value'])
-          	except (KeyError, TypeError, ValueError):
-          		continue
-          	if not math.isfinite(value):
-          		continue
-          	key = (iso3, year)
-          	if key in direct and abs(direct[key] - value) > 1e-12:
-          		raise RuntimeError(f'Conflicting IEA values for {key}: {direct[key]} vs {value}')
-          	direct[key] = value
-          	direct_source_codes[iso3].add(code)
-          	direct_year_counts[year] += 1
+          text = body.decode('utf-8-sig')
+          print('FIRST_LINES')
+          for line in text.splitlines()[:15]:
+          	print(repr(line))
 
-          wdi = {}
-          wdi_unmapped = Counter()
-          wdi_year_counts = Counter()
-          for row in wdi_rows:
-          	iso3 = str(row.get('countryiso3code', '')).strip().upper()
-          	if iso3 not in registry_iso3:
-          		if row.get('value') is not None:
-          			wdi_unmapped[iso3 or '<empty>'] += 1
-          		continue
-          	value = row.get('value')
-          	if value is None:
-          		continue
-          	try:
-          		year = int(row['date'])
-          		value = float(value)
-          	except (KeyError, TypeError, ValueError):
-          		continue
-          	if not math.isfinite(value):
-          		continue
-          	wdi[(iso3, year)] = value
-          	wdi_year_counts[year] += 1
-
-          overlap = sorted(set(direct) & set(wdi))
-          direct_only = sorted(set(direct) - set(wdi))
-          wdi_only = sorted(set(wdi) - set(direct))
-          diffs = [(key, direct[key], wdi[key], abs(direct[key] - wdi[key])) for key in overlap]
-          diffs.sort(key=lambda item: item[3], reverse=True)
-
-          print('IEA raw rows', len(iea_rows))
-          print('IEA mapped observations', len(direct), 'areas', len({key[0] for key in direct}), 'years', min(y for _, y in direct), max(y for _, y in direct))
-          print('WDI raw rows', len(wdi_rows))
-          print('WDI mapped observations', len(wdi), 'areas', len({key[0] for key in wdi}), 'years', min(y for _, y in wdi), max(y for _, y in wdi))
-          print('OVERLAP', len(overlap))
-          print('DIRECT_ONLY', len(direct_only))
-          print('WDI_ONLY', len(wdi_only))
-          print('WDI_ONLY_FROM_1990', sum(1 for _, year in wdi_only if year >= 1990))
-          print('WDI_ONLY_FROM_2000', sum(1 for _, year in wdi_only if year >= 2000))
-          print('DIFF_GT_1E-9', sum(1 for item in diffs if item[3] > 1e-9))
-          print('DIFF_GT_0.005', sum(1 for item in diffs if item[3] > 0.005))
-          print('DIFF_GT_0.01', sum(1 for item in diffs if item[3] > 0.01))
-          print('DIFF_GT_0.05', sum(1 for item in diffs if item[3] > 0.05))
-          print('MAX_DIFF', diffs[0] if diffs else None)
-          print('TOP_DIFFS')
-          for item in diffs[:20]:
-          	print(item)
-
-          print('DIRECT_ONLY_SAMPLE', direct_only[:100])
-          print('WDI_ONLY_SAMPLE', wdi_only[:100])
-          print('DIRECT_UNMAPPED_IDENTIFIERS', len(direct_unmapped))
-          for (code, short), count in direct_unmapped.most_common():
-          	print('UNMAPPED_IEA', code, '|', short, '|', count)
-
-          print('WDI_UNMAPPED_CODES', len(wdi_unmapped))
-          print(wdi_unmapped.most_common(100))
-
-          print('YEAR_COUNTS 2018-2022')
-          for year in range(2018, 2023):
-          	print(year, 'IEA', direct_year_counts[year], 'WDI', wdi_year_counts[year])
-
-          for iso3 in ('AUT', 'DEU', 'USA', 'IND', 'XKX'):
-          	print('AREA', iso3, 'IEA years', min([y for c,y in direct if c == iso3], default=None), max([y for c,y in direct if c == iso3], default=None), 'WDI years', min([y for c,y in wdi if c == iso3], default=None), max([y for c,y in wdi if c == iso3], default=None))
+          reader = csv.DictReader(io.StringIO(text))
+          rows = list(reader)
+          print('FIELDS', reader.fieldnames)
+          print('ROWS', len(rows))
+          for row in rows[:10]:
+          	print('ROW', row)
           PY
