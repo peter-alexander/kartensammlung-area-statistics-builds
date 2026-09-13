@@ -12,6 +12,11 @@
 			"index": "world-bank-electrification/index.json"
 		},
 		{
+			"id": "edgar",
+			"name": "EDGAR Community GHG Database",
+			"index": "edgar/index.json"
+		},
+		{
 			"id": "itu-datahub",
 			"name": "ITU DataHub",
 			"index": "itu-datahub/index.json"
