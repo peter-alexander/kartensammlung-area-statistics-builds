@@ -25,42 +25,132 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --quiet "openpyxl>=3.1,<4"
 
-      - name: Inspect Zenodo workbooks
+      - name: Compare direct NGHGI data with WDI
         shell: bash
         run: |
           python - <<'PY'
+          import json
+          import math
+          import statistics
           from pathlib import Path
           from urllib.parse import quote
           from urllib.request import Request, urlopen
+
           from openpyxl import load_workbook
 
-          files = {
-          	"aug2022": (
-          		"https://zenodo.org/records/7190601/files/" + quote("LULUCF NGHGI database August 2022.xlsx") + "?download=1",
-          		Path("/tmp/nghgi-aug2022.xlsx"),
-          	),
-          	"dec2022": (
-          		"https://zenodo.org/records/7650360/files/" + quote("National inventories LULUCF data 2000-2020 (Dec 2022).xlsx") + "?download=1",
-          		Path("/tmp/nghgi-dec2022.xlsx"),
-          	),
+          USER_AGENT = "kartensammlung-area-statistics-builds/1"
+          SOURCE_URL = (
+          	"https://zenodo.org/records/7650360/files/"
+          	+ quote("National inventories LULUCF data 2000-2020 (Dec 2022).xlsx")
+          	+ "?download=1"
+          )
+          SOURCE_PATH = Path("/tmp/nghgi-dec2022.xlsx")
+          WDI_URL = "https://api.worldbank.org/v2/country/all/indicator/{indicator}?format=json&per_page=20000&date=1990:2025"
+          SPECS = {
+          	"lulucf-net": ("EN.GHG.CO2.LU.MT.CE.AR5", "LULUCF net"),
+          	"deforestation": ("EN.GHG.CO2.LU.DF.MT.CE.AR5", "DEFORESTATION"),
+          	"forest-land": ("EN.GHG.CO2.LU.FL.MT.CE.AR5", "FOREST LAND"),
           }
 
-          for label, (url, path) in files.items():
-          	request = Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1"})
+          def fetch(url, accept="application/json, */*"):
+          	request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
           	with urlopen(request, timeout=120) as response:
-          		path.write_bytes(response.read())
-          	print(f"=== {label} bytes={path.stat().st_size} url={url}")
-          	workbook = load_workbook(path, read_only=True, data_only=True)
-          	print("sheets=" + repr(workbook.sheetnames))
-          	for worksheet in workbook.worksheets:
-          		print(f"--- sheet={worksheet.title!r} rows={worksheet.max_row} cols={worksheet.max_column}")
-          		shown = 0
-          		for row_number, row in enumerate(worksheet.iter_rows(values_only=True), start=1):
-          			values = [value for value in row if value not in (None, "")]
-          			if not values:
-          				continue
-          			print(f"row {row_number}: {repr(values[:20])}")
-          			shown += 1
-          			if shown >= 12:
-          				break
+          		return response.read()
+
+          SOURCE_PATH.write_bytes(fetch(SOURCE_URL, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*"))
+          print(f"source bytes={SOURCE_PATH.stat().st_size} url={SOURCE_URL}")
+          workbook = load_workbook(SOURCE_PATH, read_only=True, data_only=True)
+          worksheet = workbook["Table 5"]
+          rows = worksheet.iter_rows(values_only=True)
+          header = None
+          for row_number, row in enumerate(rows, start=1):
+          	if row_number == 4:
+          		header = list(row)
+          		break
+          if header is None:
+          	raise RuntimeError("Missing Table 5 header row")
+
+          year_columns = {
+          	index: int(value)
+          	for index, value in enumerate(header)
+          	if isinstance(value, int) and 1900 <= value <= 2100
+          }
+          print(f"direct year columns={min(year_columns.values())}-{max(year_columns.values())} count={len(year_columns)}")
+          category_names = set()
+          direct_by_category = {}
+          for row in rows:
+          	category = str(row[0] or "").strip()
+          	iso3 = str(row[3] or "").strip().upper()
+          	if not category or not iso3 or len(iso3) != 3:
+          		continue
+          	category_names.add(category)
+          	category_values = direct_by_category.setdefault(category, {})
+          	for column, year in year_columns.items():
+          		value = row[column]
+          		if value is None or isinstance(value, bool):
+          			continue
+          		try:
+          			numeric = float(value)
+          		except (TypeError, ValueError):
+          			continue
+          		if math.isfinite(numeric):
+          			category_values[(iso3, year)] = numeric
+
+          print("direct categories=" + repr(sorted(category_names)))
+          for _, (_, wanted_category) in SPECS.items():
+          	if wanted_category not in direct_by_category:
+          		raise RuntimeError(f"Missing direct category {wanted_category!r}")
+
+          def fetch_wdi(indicator):
+          	payload = json.loads(fetch(WDI_URL.format(indicator=quote(indicator))).decode("utf-8"))
+          	if not isinstance(payload, list) or len(payload) < 2 or not isinstance(payload[1], list):
+          		raise RuntimeError(f"Unexpected WDI response for {indicator}")
+          	out = {}
+          	for row in payload[1]:
+          		iso3 = str(row.get("countryiso3code") or "").strip().upper()
+          		if len(iso3) != 3 or row.get("value") is None:
+          			continue
+          		try:
+          			year = int(row["date"])
+          			value = float(row["value"])
+          		except (TypeError, ValueError):
+          			continue
+          		if math.isfinite(value):
+          			out[(iso3, year)] = value
+          	return out
+
+          for label, (indicator, direct_category) in SPECS.items():
+          	direct = direct_by_category[direct_category]
+          	wdi = fetch_wdi(indicator)
+          	overlap = sorted(set(direct) & set(wdi))
+          	diffs = [abs(direct[key] - wdi[key]) for key in overlap]
+          	direct_years = sorted({year for _, year in direct})
+          	wdi_years = sorted({year for _, year in wdi})
+          	direct_iso3 = {iso3 for iso3, _ in direct}
+          	wdi_iso3 = {iso3 for iso3, _ in wdi}
+          	print("=== " + label)
+          	print(f"indicator={indicator} directCategory={direct_category!r}")
+          	print(f"direct observations={len(direct)} countries={len(direct_iso3)} years={direct_years[0]}-{direct_years[-1]}")
+          	print(f"WDI observations={len(wdi)} countries={len(wdi_iso3)} years={wdi_years[0]}-{wdi_years[-1]}")
+          	print(f"overlap={len(overlap)} directOnly={len(set(direct)-set(wdi))} wdiOnly={len(set(wdi)-set(direct))}")
+          	if diffs:
+          		print(
+          			f"exact={sum(diff == 0 for diff in diffs)} "
+          			f"<=1e-9={sum(diff <= 1e-9 for diff in diffs)} "
+          			f"<=1e-6={sum(diff <= 1e-6 for diff in diffs)} "
+          			f"<=0.001={sum(diff <= 0.001 for diff in diffs)} "
+          			f"<=0.1={sum(diff <= 0.1 for diff in diffs)} "
+          			f"meanAbsDiff={statistics.fmean(diffs):.12g} maxAbsDiff={max(diffs):.12g}"
+          		)
+          		largest = sorted(
+          			((abs(direct[key] - wdi[key]), key, direct[key], wdi[key]) for key in overlap),
+          			reverse=True,
+          		)[:15]
+          		for diff, (iso3, year), direct_value, wdi_value in largest:
+          			print(f"diff {iso3} {year}: direct={direct_value:.12g} WDI={wdi_value:.12g} abs={diff:.12g}")
+          	for year in range(2019, 2025):
+          		direct_count = sum(1 for _, y in direct if y == year)
+          		wdi_count = sum(1 for _, y in wdi if y == year)
+          		if direct_count or wdi_count:
+          			print(f"coverage {year}: direct={direct_count} WDI={wdi_count}")
           PY
