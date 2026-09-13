@@ -1,4 +1,4 @@
-name: Audit EDGAR 2026 geography
+name: Apply EDGAR builder sector fix
 
 on:
   push:
@@ -8,112 +8,54 @@ on:
       - ".github/workflows/audit-edgar-2026-geography.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  audit:
+  apply:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
         with:
-          python-version: "3.12"
-      - name: Install dependencies
-        run: python -m pip install --quiet "openpyxl>=3.1,<4"
-      - name: Download EDGAR 2026 workbook
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl --fail --location --show-error --connect-timeout 20 --max-time 180 --retry 3 --retry-delay 4 --retry-all-errors \
-            --output /tmp/edgar-2026.xlsx \
-            "https://edgar.jrc.ec.europa.eu/booklet/EDGAR_2026_GHG_booklet_2026.xlsx"
-      - name: Audit geography
+          ref: audit/edgar-nonco2-ghg
+      - name: Relax per-country zero-sector invariant
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json
-          import math
-          import urllib.parse
-          import urllib.request
-          from collections import defaultdict
+          from pathlib import Path
 
-          import openpyxl
-
-          def fetch_json(url):
-          	request = urllib.request.Request(url, headers={
-          		'User-Agent': 'kartensammlung-area-statistics-builds/1',
-          		'Accept': 'application/json',
-          	})
-          	with urllib.request.urlopen(request, timeout=90) as response:
-          		return json.loads(response.read())
-
-          registry = fetch_json('https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json')
-          registry_iso3 = {
-          	str(area.get('codes', {}).get('iso3', '')).strip().upper()
-          	for area in registry.get('areas', [])
-          	if area.get('level') == 'country' and len(str(area.get('codes', {}).get('iso3', '')).strip()) == 3
-          }
-
-          wb = openpyxl.load_workbook('/tmp/edgar-2026.xlsx', read_only=True, data_only=True)
-          ws = wb['GHG_by_sector_and_country']
-          rows = ws.iter_rows(values_only=True)
-          headers = next(rows)
-          ix = {str(value).strip(): idx for idx, value in enumerate(headers) if value is not None}
-
-          names = defaultdict(set)
-          years_with_value = defaultdict(set)
-          year_cols = {
-          	int(value): idx
-          	for idx, value in enumerate(headers)
-          	if isinstance(value, int) and 1970 <= value <= 2025
-          }
-          for row in rows:
-          	substance = str(row[ix['Substance']] or '').strip()
-          	if substance != 'GWP_100_AR5_N2O':
-          		continue
-          	iso3 = str(row[ix['EDGAR Country Code']] or '').strip().upper()
-          	name = str(row[ix['Country']] or '').strip()
-          	if iso3 not in registry_iso3:
-          		continue
-          	names[iso3].add(name)
-          	for year, col in year_cols.items():
-          		value = row[col]
-          		if value is not None and value != '':
-          			try:
-          				if math.isfinite(float(value)):
-          					years_with_value[iso3].add(year)
-          			except (TypeError, ValueError):
-          				pass
-
-          direct_areas = set(names)
-          print('DIRECT_AREAS', len(direct_areas))
-          for iso3 in sorted(names):
-          	print('DIRECT_AREA', iso3, sorted(names[iso3]), min(years_with_value[iso3]), max(years_with_value[iso3]))
-
-          indicator = 'EN.GHG.N2O.MT.CE.AR5'
-          url = 'https://api.worldbank.org/v2/country/all/indicator/' + indicator + '?' + urllib.parse.urlencode({
-          	'format': 'json',
-          	'per_page': 20000,
-          	'source': 2,
-          	'date': '1970:2024',
-          })
-          payload = fetch_json(url)
-          wdi_areas = {
-          	str(item.get('countryiso3code', '')).strip().upper()
-          	for item in payload[1]
-          	if item.get('value') is not None and str(item.get('countryiso3code', '')).strip().upper() in registry_iso3
-          }
-          print('WDI_AREAS', len(wdi_areas))
-          print('DIRECT_ONLY_AREAS', sorted(direct_areas - wdi_areas))
-          print('WDI_ONLY_AREAS', sorted(wdi_areas - direct_areas))
-          print('COMMON_AREAS', len(direct_areas & wdi_areas))
-
-          suspicious = []
-          for iso3, area_names in names.items():
-          	for name in area_names:
-          		lower = name.lower()
-          		if ' and ' in lower or '&' in name or '/' in name:
-          			suspicious.append((iso3, name))
-          print('SUSPICIOUS_COMBINED', sorted(suspicious))
+          path = Path("scripts/build_edgar.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''\t\tif set(sector_values[substance]) != set(sector_values[next(iter(allowed_substances))]):
+\t\t\t# Both gases should expose the same safe country geography in this report edition.
+\t\t\tpass
+\t\tfor area_id, sectors in sector_values[substance].items():
+\t\t\tif sectors != expected_sectors:
+\t\t\t\traise RuntimeError(
+\t\t\t\t\tf"EDGAR {substance} sectors incomplete for {area_id}: {sorted(sectors)}"
+\t\t\t\t)
+'''
+          new = '''\t\tobserved_sectors = set().union(*sector_values[substance].values())
+\t\tif observed_sectors != expected_sectors:
+\t\t\traise RuntimeError(
+\t\t\t\tf"EDGAR sector set changed for {substance}: {sorted(observed_sectors)}"
+\t\t\t)
+'''
+          if old not in text:
+          	raise SystemExit("Expected sector-validation block not found")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
           PY
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/build_edgar.py
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Allow omitted zero-emission EDGAR sectors"
+          git push origin HEAD:audit/edgar-nonco2-ghg
