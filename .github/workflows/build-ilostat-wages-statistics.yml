@@ -9,6 +9,7 @@ on:
       - "config/statistics-providers.json"
       - "config/ilostat-wages-indicators.json"
       - "scripts/build_ilostat_wages.py"
+      - "scripts/build_ilostat_gender_pay_gap.py"
       - "scripts/build_ilostat.py"
       - "scripts/build_world_bank.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
@@ -20,6 +21,7 @@ on:
       - "config/statistics-providers.json"
       - "config/ilostat-wages-indicators.json"
       - "scripts/build_ilostat_wages.py"
+      - "scripts/build_ilostat_gender_pay_gap.py"
       - "scripts/build_ilostat.py"
       - "scripts/build_world_bank.py"
       - ".github/scripts/deploy-world-bank-statistics.sh"
@@ -49,7 +51,7 @@ jobs:
       - name: Validate scripts
         run: |
           bash -n .github/scripts/deploy-world-bank-statistics.sh
-          python -m py_compile scripts/build_ilostat_wages.py scripts/build_ilostat.py scripts/build_world_bank.py
+          python -m py_compile scripts/build_ilostat_wages.py scripts/build_ilostat_gender_pay_gap.py scripts/build_ilostat.py scripts/build_world_bank.py
           python -m json.tool config/statistics-providers.json >/dev/null
           python -m json.tool config/ilostat-wages-indicators.json >/dev/null
           git diff --check

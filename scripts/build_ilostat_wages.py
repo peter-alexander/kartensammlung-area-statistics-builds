@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import build_ilostat as ilo_common
+import build_ilostat_gender_pay_gap as gender_pay_gap
 import build_world_bank as common
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -299,6 +300,7 @@ def normalize_indicator(
 def main() -> None:
 	args = parse_args()
 	config = validate_config(common.read_json_path(args.config))
+	gender_pay_gap.validate_config(config)
 	provider_catalog = common.validate_provider_catalog(common.read_json_path(args.providers))
 	provider = config["provider"]
 	if not any(item["id"] == provider["id"] for item in provider_catalog["providers"]):
@@ -326,6 +328,14 @@ def main() -> None:
 		)
 		indicator_payloads.append((indicator, payload))
 
+	gender_indicator, gender_payload, gender_source_metadata = gender_pay_gap.build_payload(
+		config,
+		area_by_iso3,
+		now.year,
+		args.timeout,
+	)
+	indicator_payloads.append((gender_indicator, gender_payload))
+
 	hasher = hashlib.sha256()
 	for indicator, payload in sorted(indicator_payloads, key=lambda item: item[0]["id"]):
 		hasher.update(str(indicator["id"]).encode("utf-8"))
@@ -342,18 +352,21 @@ def main() -> None:
 	for indicator, payload in indicator_payloads:
 		filename = f"{indicator['slug']}.json"
 		common.write_json(release_dir / filename, payload)
-		latest_source_year = max(latest_source_year, int(payload["coverage"]["latestYear"]))
+		frequency = str(payload.get("frequency") or payload["indicator"].get("frequency") or "annual")
+		payload_source = payload["source"]
+		if str(payload_source.get("sourceDataset", "")) == str(config["sourceDataset"]):
+			latest_source_year = max(latest_source_year, int(payload["coverage"]["latestYear"]))
 		index_indicators.append({
 			"id": indicator["id"],
 			"title": indicator["title"],
 			"description": indicator["description"],
 			"areaLevel": "country",
-			"frequency": "annual",
+			"frequency": frequency,
 			"unit": indicator["unit"],
 			"classification": indicator["classification"],
-			"sourceIndicator": config["sourceIndicator"],
-			"sourceDataset": config["sourceDataset"],
-			"filters": {"classif1": indicator["filterClassif1"]},
+			"sourceIndicator": payload_source["indicator"],
+			"sourceDataset": payload_source["sourceDataset"],
+			"filters": payload_source.get("filters", {}),
 			"path": f"releases/{snapshot}/{filename}",
 			"availableYears": payload["availableYears"],
 			"defaultYear": payload["defaultYear"],
@@ -382,6 +395,15 @@ def main() -> None:
 			"latestSourceYear": latest_source_year,
 			"defaultYearPolicy": "latest-year-meeting-indicator-coverage-and-required-area-checks",
 		},
+		"additionalDatasets": [
+			{
+				"sourceDataset": gender_indicator["sourceDataset"],
+				"sourceIndicator": gender_indicator["sourceIndicator"],
+				"tableLabel": str(gender_source_metadata.get("indicator.label", "")).strip(),
+				"latestSourceYear": gender_payload["coverage"]["latestSourceYear"],
+				"defaultYearPolicy": "latest-observation-through-year; source year retained per observation",
+			}
+		],
 		"indicators": index_indicators,
 	}
 	common.write_json(provider_dir / "index.json", provider_index)

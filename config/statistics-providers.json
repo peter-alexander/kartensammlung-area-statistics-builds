@@ -118,7 +118,7 @@
 		},
 		{
 			"id": "ilostat-wages",
-			"name": "ILOSTAT (ILO) – Löhne & Mindestlöhne",
+			"name": "ILOSTAT (ILO) – Löhne, Mindestlöhne & Gender Pay Gap",
 			"index": "ilostat-wages/index.json"
 		},
 		{
