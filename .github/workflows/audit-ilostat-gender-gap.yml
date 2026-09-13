@@ -1,0 +1,136 @@
+name: Audit ILOSTAT gender gap
+
+on:
+  push:
+    branches:
+      - audit/ilostat-gender-gap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Audit current ILOSTAT gender-gap datasets
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import sys
+          import urllib.parse
+          import urllib.request
+          from collections import Counter, defaultdict
+
+          sys.path.insert(0, 'scripts')
+          import build_world_bank as common
+
+          UA = {'User-Agent': 'kartensammlung-area-statistics-builds/1'}
+
+          def fetch(url):
+          	req = urllib.request.Request(url, headers=UA)
+          	with urllib.request.urlopen(req, timeout=120) as response:
+          		data = response.read()
+          	print('FETCH', len(data), url)
+          	return data
+
+          def read_csv(url):
+          	return list(csv.DictReader(io.StringIO(fetch(url).decode('utf-8-sig'))))
+
+          area_by_iso3, _ = common.load_registry(
+          	'https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?audit=ilostat-gender-gap',
+          	120,
+          )
+          print('registry ISO3', len(area_by_iso3))
+
+          toc_url = 'https://rplumber.ilo.org/metadata/toc/indicator/?lang=en'
+          toc = read_csv(toc_url)
+          matches = []
+          for row in toc:
+          	label = str(row.get('indicator.label', '')).strip()
+          	low = label.lower()
+          	if 'gender wage gap' in low or 'gender income gap' in low:
+          		matches.append(row)
+
+          print('\n=== ToC matches ===')
+          for row in matches:
+          	print({
+          		'id': row.get('id'),
+          		'indicator.label': row.get('indicator.label'),
+          		'freq': row.get('freq'),
+          		'subject': row.get('subject'),
+          	})
+
+          for meta in matches:
+          	dataset_id = str(meta.get('id', '')).strip()
+          	if not dataset_id:
+          		continue
+          	params = urllib.parse.urlencode({
+          		'id': dataset_id,
+          		'type': 'code',
+          		'format': '.csv',
+          		'channel': 'ilostat',
+          	})
+          	url = f'https://rplumber.ilo.org/data/indicator/?{params}'
+          	print('\n===', dataset_id, meta.get('indicator.label'), '===')
+          	try:
+          		rows = read_csv(url)
+          	except Exception as exc:
+          		print('ERROR', repr(exc))
+          		continue
+          	print('rows', len(rows))
+          	if not rows:
+          		continue
+          	print('fields', list(rows[0]))
+          	print('indicator codes', Counter(str(r.get('indicator', '')).strip() for r in rows).most_common(10))
+          	for field in rows[0]:
+          		if field in {'sex', 'classif1', 'classif2', 'classif3', 'classif4', 'classif5'} or field.startswith('classif'):
+          			values = Counter(str(r.get(field, '')).strip() for r in rows)
+          			print(field, 'unique', len(values), 'top', values.most_common(30))
+
+          	by_year = defaultdict(set)
+          	areas_any = set()
+          	unmapped = set()
+          	duplicates = Counter()
+          	for row in rows:
+          		ref = str(row.get('ref_area', '')).strip().upper()
+          		year_text = str(row.get('time', '')).strip()
+          		value = str(row.get('obs_value', '')).strip()
+          		if not value or not year_text.isdigit():
+          			continue
+          		if ref not in area_by_iso3:
+          			if ref:
+          				unmapped.add(ref)
+          			continue
+          		year = int(year_text)
+          		area_id = area_by_iso3[ref]
+          		by_year[year].add(area_id)
+          		areas_any.add(area_id)
+          		dim_key = tuple(str(row.get(field, '')).strip() for field in rows[0] if field.startswith('classif') or field == 'sex')
+          		duplicates[(area_id, year, dim_key)] += 1
+
+          	years = sorted(by_year)
+          	print('mapped areas any', len(areas_any), 'years', (years[0], years[-1]) if years else None)
+          	print('unmapped', sorted(unmapped))
+          	dup_groups = {key: n for key, n in duplicates.items() if n > 1}
+          	print('duplicate dimensioned country-years', len(dup_groups), 'max', max(dup_groups.values()) if dup_groups else 1)
+          	for year in years:
+          		if year >= 2018:
+          			print('coverage', year, len(by_year[year]), {
+          				code: area_by_iso3.get(code) in by_year[year]
+          				for code in ('AUT', 'DEU', 'USA', 'IND', 'FRA', 'POL')
+          			})
+          	print('top coverage years', sorted(((len(v), y) for y, v in by_year.items()), reverse=True)[:12])
+          	print('sample rows')
+          	for row in rows[:12]:
+          		print(row)
+          PY
