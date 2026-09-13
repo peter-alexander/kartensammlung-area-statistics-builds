@@ -14,6 +14,22 @@
 	"sourceDataset": "EAR_INEE_CUR_NB_A",
 	"sourceIndicator": "EAR_INEE_CUR_NB",
 	"maxDefaultYearAge": 3,
+	"genderPayGap": {
+		"id": "gender-pay-gap.unadjusted-percent",
+		"slug": "gender-pay-gap-unadjusted-percent",
+		"sourceDataset": "EAR_GGAP_OCU_RT_A",
+		"sourceIndicator": "EAR_GGAP_OCU_RT",
+		"sourceTableLabel": "Gender wage gap by occupation (%)",
+		"filterClassif1": "OCU_SKILL_TOTAL",
+		"frequency": "latest-observation-through-year",
+		"title": "Gender Pay Gap (unbereinigt)",
+		"description": "Unbereinigter Gender Pay Gap nach der offiziellen ILOSTAT-Reihe: Differenz der durchschnittlichen Stundenverdienste von Männern und Frauen in Prozent des Männerverdienstes. Positive Werte bedeuten im Durchschnitt niedrigere Frauenverdienste, negative Werte höhere Frauenverdienste. Angezeigt wird für jeden Datenstand die letzte bis dahin verfügbare ILOSTAT-Beobachtung; das tatsächliche Datenjahr bleibt sichtbar und Werte werden nicht interpoliert.",
+		"unit": {"id": "percent", "label": "%", "symbol": "%"},
+		"classification": {"type": "fixed", "breaks": [-10, 0, 5, 10, 15, 25]},
+		"minAreasWithAnyValue": 120,
+		"minAreasInDefaultYear": 120,
+		"requiredAreas": ["country:AUT", "country:USA", "country:IND", "country:FRA", "country:BRA", "country:MEX"]
+	},
 	"indicators": [
 		{
 			"id": "economy.minimum-wage-ppp-month",
