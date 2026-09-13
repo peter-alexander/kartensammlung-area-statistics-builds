@@ -1,0 +1,94 @@
+name: Patch WHO workforce source policy doc
+
+on:
+  push:
+    branches:
+      - docs/fix-who-workforce-policy
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: docs/fix-who-workforce-policy
+
+      - name: Patch central source policy
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('docs/statistics-source-policy.md')
+          text = path.read_text(encoding='utf-8')
+          start_marker = '#### Ärzte\n'
+          end_marker = '#### Masern-Impfquote (MCV1)\n'
+          start = text.find(start_marker)
+          end = text.find(end_marker)
+          if start < 0 or end < 0 or end <= start:
+          	raise SystemExit('Could not locate WHO workforce policy block.')
+
+          replacement = '''#### Ärzte
+
+Direkte WHO-Quelle: World Health Data Hub, `HWF_0001` (Medical doctors). Die WHO veröffentlicht die Ärztedichte je 10.000 Einwohner; der Kartensammlungs-Builder normiert sie mit dem Faktor 0,1 auf Ärzte je 1.000 Einwohner.
+
+Die frühere Audit-Entscheidung, WDI als sichtbare kanonische Reihe zu belassen, wurde nach der direkten WHO-Migration revidiert. Entscheidend ist die Quellenhierarchie: `HWF_0001` ist die fachlich zuständige WHO-Originalreihe. WDI `SH.MED.PHYS.ZS` bleibt wegen seiner längeren Historie und zusätzlicher Länder-/Jahreswerte nützlich, wird aber nicht mehr als zweite sichtbare Kennzahl geführt.
+
+Aktuelle Produktionslogik:
+
+- direkte WHO-Werte haben für jedes gemeinsame Land/Jahr immer Vorrang;
+- WDI `SH.MED.PHYS.ZS` ergänzt ausschließlich historische oder geografische Lücken;
+- jeder WDI-Wert wird in `observationMetadata` ausdrücklich als `world-bank`-Fallback markiert;
+- die WHO-Normalisierung von je 10.000 auf je 1.000 Einwohner wird in den Quellenmetadaten dokumentiert;
+- es gibt keine Interpolation oder Extrapolation.
+
+Produktiver WHO-Build vom 13. September 2026:
+
+- 3.396 direkte WHO-Beobachtungen,
+- 1.972 explizite WDI-Fallbacks,
+- 209 Gebiete mit mindestens einem Wert,
+- gemeinsame veröffentlichte Historie 1960–2023,
+- Standardjahr 2018 mit 157 Gebieten.
+
+Entscheidung: **WHO ist kanonisch; WDI ist ausschließlich expliziter Fallback.** Die sichtbare Kennzahl bleibt `health-workforce.physicians-per-1000` im WHO-Provider.
+
+#### Pflegepersonal und Hebammen
+
+Direkte WHO-Quelle: World Health Data Hub, `HWF_0006` (Nursing and midwifery personnel). Auch diese Quelle wird von je 10.000 Einwohner auf je 1.000 Einwohner normiert.
+
+Wie bei den Ärzten wurde die frühere Entscheidung zugunsten einer sichtbaren WDI-Reihe revidiert. Die direkte WHO-Originalreihe ist kanonisch; WDI `SH.MED.NUMW.P3` wird nur dort verwendet, wo der direkte WHO-Datensatz eine historische oder geografische Lücke hat.
+
+Aktuelle Produktionslogik:
+
+- direkte WHO-Werte haben Vorrang;
+- WDI `SH.MED.NUMW.P3` ergänzt nur fehlende Länder-/Jahrwerte;
+- Fallback-Beobachtungen sind in `observationMetadata` als `world-bank` gekennzeichnet;
+- keine Interpolation oder Extrapolation.
+
+Produktiver WHO-Build vom 13. September 2026:
+
+- 3.374 direkte WHO-Beobachtungen,
+- 54 explizite WDI-Fallbacks,
+- 200 Gebiete mit mindestens einem Wert,
+- veröffentlichte Historie 1990–2023,
+- Standardjahr 2018 mit 181 Gebieten.
+
+Entscheidung: **WHO ist kanonisch; WDI ist ausschließlich expliziter Fallback.** Die sichtbare Kennzahl bleibt `health-workforce.nurses-midwives-per-1000` im WHO-Provider.
+
+'''
+          path.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+          PY
+          git diff --check -- docs/statistics-source-policy.md
+
+      - name: Commit documentation patch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/statistics-source-policy.md
+          git commit -m "Align WHO workforce source policy with production"
+          git push origin HEAD:docs/fix-who-workforce-policy
