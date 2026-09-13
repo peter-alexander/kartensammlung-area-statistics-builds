@@ -59,14 +59,13 @@ jobs:
           		print('FETCH', url, response.status, len(body))
           		return json.loads(body)
 
+          def normalize_substance(value):
+          	return str(value or '').strip().replace('₄', '4').replace('₂', '2')
+
           wb = openpyxl.load_workbook('/tmp/edgar-2026.xlsx', read_only=True, data_only=True)
           print('INFO')
           for row in wb['info'].iter_rows(values_only=True):
           	print(row)
-          print('CITATIONS')
-          for row in wb['Citations and references'].iter_rows(values_only=True):
-          	if row and row[0]:
-          		print(row[0])
 
           registry = fetch_json('https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json')
           registry_iso3 = {
@@ -90,8 +89,11 @@ jobs:
           row_counts = Counter()
           unmapped = Counter()
           sectors = {'CH4': set(), 'N2O': set()}
+          raw_substances = Counter()
           for row in rows:
-          	substance = str(row[ix['Substance']] or '').strip()
+          	raw_substance = str(row[ix['Substance']] or '').strip()
+          	raw_substances[raw_substance] += 1
+          	substance = normalize_substance(raw_substance)
           	if substance not in direct:
           		continue
           	iso3 = str(row[ix['EDGAR Country Code']] or '').strip().upper()
@@ -113,6 +115,7 @@ jobs:
           		if math.isfinite(value):
           			direct[substance][(iso3, year)] += value
 
+          print('RAW_SUBSTANCES', raw_substances)
           print('SECTORS', {gas: sorted(values) for gas, values in sectors.items()})
           print('UNMAPPED', unmapped.most_common(100))
           print('ROW_COUNTS_SAMPLE', row_counts.most_common(20))
