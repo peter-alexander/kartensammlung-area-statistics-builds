@@ -1,0 +1,57 @@
+name: Audit ILOSTAT minimum wage distribution
+
+on:
+  push:
+    branches:
+      - audit/ilostat-minimum-wage
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Audit 2024 values
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import math
+          import urllib.parse
+          import urllib.request
+
+          params = urllib.parse.urlencode({
+              'id': 'EAR_INEE_CUR_NB_A',
+              'type': 'code',
+              'format': '.csv',
+              'channel': 'ilostat',
+          })
+          url = f'https://rplumber.ilo.org/data/indicator/?{params}'
+          req = urllib.request.Request(url, headers={'User-Agent': 'kartensammlung-area-statistics-builds/1'})
+          with urllib.request.urlopen(req, timeout=120) as response:
+              rows = list(csv.DictReader(io.StringIO(response.read().decode('utf-8-sig'))))
+
+          def percentile(values, p):
+              values = sorted(values)
+              pos = (len(values) - 1) * p
+              lo = math.floor(pos)
+              hi = math.ceil(pos)
+              if lo == hi:
+                  return values[lo]
+              return values[lo] * (hi - pos) + values[hi] * (pos - lo)
+
+          for currency in ('CUR_TYPE_PPP', 'CUR_TYPE_USD'):
+              selected = {
+                  str(r['ref_area']).strip().upper(): float(r['obs_value'])
+                  for r in rows
+                  if r.get('classif1') == currency and r.get('time') == '2024' and str(r.get('obs_value', '')).strip()
+              }
+              values = list(selected.values())
+              print('\n', currency, 'n', len(values), 'min', min(values), 'max', max(values))
+              for p in (0.05, 0.10, 0.20, 0.25, 0.33, 0.50, 0.67, 0.75, 0.80, 0.90, 0.95):
+                  print(f'p{int(p*100):02d}', round(percentile(values, p), 3))
+              for code in ('AFG','IND','CHN','BRA','MEX','USA','DEU','FRA','POL','GBR','LUX'):
+                  print(code, selected.get(code))
+          PY
