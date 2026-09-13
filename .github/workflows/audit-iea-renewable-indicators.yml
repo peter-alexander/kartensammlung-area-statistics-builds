@@ -18,33 +18,39 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Inspect Tracking SDG7 renewable CSV
+      - name: Install dependencies
+        run: python -m pip install --quiet "openpyxl>=3.1,<4"
+      - name: Inspect official SDG7 renewable workbook
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
-          import csv
           import io
           import urllib.request
+          import openpyxl
 
-          url = 'https://trackingsdg7.esmap.org/sites/default/files/data-import/csv/7.2.1-renewable-energy-share.csv'
+          url = 'https://trackingsdg7.esmap.org/sites/default/files/download-documents/sdg7.2.1_-_renewable_energy.xlsx'
           request = urllib.request.Request(url, headers={
           	'User-Agent': 'kartensammlung-area-statistics-builds/1',
-          	'Accept': 'text/csv,*/*;q=0.8',
+          	'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*;q=0.8',
           })
           with urllib.request.urlopen(request, timeout=90) as response:
           	body = response.read()
           	print('status', response.status, 'bytes', len(body), 'content-type', response.headers.get('Content-Type'), 'last-modified', response.headers.get('Last-Modified'))
 
-          text = body.decode('utf-8-sig')
-          print('FIRST_LINES')
-          for line in text.splitlines()[:15]:
-          	print(repr(line))
+          wb = openpyxl.load_workbook(io.BytesIO(body), read_only=True, data_only=True)
+          print('SHEETS', wb.sheetnames)
+          print('PROPERTIES', {
+          	'title': wb.properties.title,
+          	'subject': wb.properties.subject,
+          	'creator': wb.properties.creator,
+          	'description': wb.properties.description,
+          	'keywords': wb.properties.keywords,
+          })
 
-          reader = csv.DictReader(io.StringIO(text))
-          rows = list(reader)
-          print('FIELDS', reader.fieldnames)
-          print('ROWS', len(rows))
-          for row in rows[:10]:
-          	print('ROW', row)
+          for name in wb.sheetnames:
+          	ws = wb[name]
+          	print('SHEET', name, 'rows', ws.max_row, 'cols', ws.max_column)
+          	for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 12), values_only=True):
+          		print('ROW', name, row[:min(ws.max_column, 25)])
           PY
