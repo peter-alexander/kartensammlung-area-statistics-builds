@@ -3,102 +3,107 @@
 	"providers": [
 		{
 			"id": "world-bank",
-			"name": "World Bank WDI",
+			"name": "Weltbank (WDI) – Entwicklung, Wirtschaft & Gesellschaft",
 			"index": "world-bank/index.json"
 		},
 		{
 			"id": "world-bank-electrification",
-			"name": "World Bank Global Electrification Database",
+			"name": "Weltbank – Stromzugang & Elektrifizierung",
 			"index": "world-bank-electrification/index.json"
 		},
 		{
+			"id": "edgar",
+			"name": "EDGAR (EU/JRC) – Treibhausgasemissionen",
+			"index": "edgar/index.json"
+		},
+		{
 			"id": "itu-datahub",
-			"name": "ITU DataHub",
+			"name": "ITU – Internet & Telekommunikation",
 			"index": "itu-datahub/index.json"
 		},
 		{
 			"id": "world-bank-pip",
-			"name": "World Bank PIP",
+			"name": "Weltbank PIP – Armut & Einkommen",
 			"index": "world-bank-pip/index.json"
 		},
 		{
 			"id": "imf-weo",
-			"name": "IMF World Economic Outlook",
+			"name": "IWF – Wirtschaft & Prognosen",
 			"index": "imf-weo/index.json"
 		},
 		{
 			"id": "eurostat",
-			"name": "Eurostat",
+			"name": "Eurostat – EU-Statistiken",
 			"index": "eurostat/index.json"
 		},
 		{
 			"id": "un-wpp",
-			"name": "UN World Population Prospects",
+			"name": "UN – Bevölkerung & Demografie (WPP)",
 			"index": "un-wpp/index.json"
 		},
 		{
 			"id": "un-wup",
-			"name": "UN World Urbanization Prospects",
+			"name": "UN – Urbanisierung & Stadtbevölkerung (WUP)",
 			"index": "un-wup/index.json"
 		},
 		{
 			"id": "un-igme",
-			"name": "UN IGME",
+			"name": "UN IGME – Kindersterblichkeit",
 			"index": "un-igme/index.json"
 		},
 		{
 			"id": "undp-hdr",
-			"name": "UNDP Human Development Reports",
+			"name": "UNDP – Menschliche Entwicklung",
 			"index": "undp-hdr/index.json"
 		},
 		{
 			"id": "unodc",
-			"name": "UNODC",
+			"name": "UNODC – Kriminalität & Drogen",
 			"index": "unodc/index.json"
 		},
 		{
 			"id": "who",
-			"name": "WHO",
+			"name": "WHO – Gesundheit",
 			"index": "who/index.json"
 		},
 		{
 			"id": "who-ghe",
-			"name": "WHO Global Health Estimates",
+			"name": "WHO GHE – Todesursachen & Krankheitslast",
 			"index": "who-ghe/index.json"
 		},
 		{
 			"id": "who-ghed",
-			"name": "WHO Global Health Expenditure Database",
+			"name": "WHO GHED – Gesundheitsausgaben",
 			"index": "who-ghed/index.json"
 		},
 		{
 			"id": "jmp",
-			"name": "WHO/UNICEF JMP",
+			"name": "WHO/UNICEF JMP – Trinkwasser & Sanitärversorgung",
 			"index": "jmp/index.json"
 		},
 		{
 			"id": "ember",
-			"name": "Ember",
+			"name": "Ember – Stromerzeugung & Strommix",
 			"index": "ember/index.json"
 		},
 		{
 			"id": "unesco-uis",
-			"name": "UNESCO UIS",
+			"name": "UNESCO UIS – Bildung",
 			"index": "unesco-uis/index.json"
 		},
 		{
 			"id": "ilostat",
-			"name": "ILOSTAT",
+			"name": "ILOSTAT (ILO) – Arbeitsmarkt",
 			"index": "ilostat/index.json"
 		},
 		{
 			"id": "faostat",
-			"name": "FAOSTAT",
+			"name": "FAOSTAT (FAO) – Landwirtschaft, Ernährung & Landnutzung",
 			"index": "faostat/index.json"
 		},
 		{
 			"id": "aquastat",
-			"name": "FAO AQUASTAT",
+			"name": "AQUASTAT (FAO) – Wasserressourcen & Wassernutzung",
 			"index": "aquastat/index.json"
 		}
 	]
