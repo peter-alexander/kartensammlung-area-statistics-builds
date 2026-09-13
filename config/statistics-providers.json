@@ -37,6 +37,11 @@
 			"index": "imf-weo/index.json"
 		},
 		{
+			"id": "imf-fiscal-monitor",
+			"name": "IWF Fiscal Monitor – Staatshaushalt & Fiskalpolitik",
+			"index": "imf-fiscal-monitor/index.json"
+		},
+		{
 			"id": "imf-cpi",
 			"name": "IWF – Verbraucherpreise & Inflation",
 			"index": "imf-cpi/index.json"
