@@ -591,6 +591,7 @@
 			"downloadUrl": "https://ghoapi.azureedge.net/api/SDGHPVRECEIVED",
 			"valueField": "RATE_PER_100_N",
 			"confidenceIntervals": false,
+			"skipMissingValues": true,
 			"startYear": 2010,
 			"endYear": 2025,
 			"expectedReferenceYear": 2025,
