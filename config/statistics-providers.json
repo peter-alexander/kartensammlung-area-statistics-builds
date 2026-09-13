@@ -37,6 +37,11 @@
 			"index": "imf-weo/index.json"
 		},
 		{
+			"id": "imf-cpi",
+			"name": "IWF – Verbraucherpreise & Inflation",
+			"index": "imf-cpi/index.json"
+		},
+		{
 			"id": "eurostat",
 			"name": "Eurostat – EU-Statistiken",
 			"index": "eurostat/index.json"
