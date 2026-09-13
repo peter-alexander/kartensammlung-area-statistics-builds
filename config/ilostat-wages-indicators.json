@@ -1,0 +1,43 @@
+{
+	"schema": "kartensammlung.ilostat-wages-statistics/v1",
+	"apiBase": "https://rplumber.ilo.org",
+	"tocUrl": "https://rplumber.ilo.org/metadata/toc/indicator/?lang=en",
+	"sourcePage": "https://ilostat.ilo.org/data/",
+	"provider": {
+		"id": "ilostat-wages",
+		"name": "ILOSTAT",
+		"dataset": "Wages and Working Time Statistics (COND)",
+		"license": "CC BY 4.0",
+		"licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+		"attribution": "International Labour Organization (ILO), ILOSTAT"
+	},
+	"sourceDataset": "EAR_INEE_CUR_NB_A",
+	"sourceIndicator": "EAR_INEE_CUR_NB",
+	"maxDefaultYearAge": 3,
+	"indicators": [
+		{
+			"id": "economy.minimum-wage-ppp-month",
+			"slug": "minimum-wage-ppp-month",
+			"filterClassif1": "CUR_TYPE_PPP",
+			"title": "Gesetzlicher Mindestlohn, kaufkraftbereinigt",
+			"description": "Von ILOSTAT harmonisierter gesetzlicher bzw. repräsentativer monatlicher Mindestlohn in 2021-PPP-Dollar. Wo kein einheitlicher nationaler Mindestlohn besteht, verwendet ILOSTAT nach seiner Methodik einen repräsentativen regionalen oder sektoralen Mindestlohn.",
+			"unit": {"id": "usd-2021-ppp-per-month", "label": "2021-PPP-Dollar pro Monat", "symbol": "PPP-$/Monat"},
+			"classification": {"type": "fixed", "breaks": [150, 300, 600, 1000, 1500, 2500]},
+			"minAreasWithAnyValue": 160,
+			"minAreasInDefaultYear": 150,
+			"requiredAreas": ["country:DEU", "country:USA", "country:IND", "country:FRA", "country:POL"]
+		},
+		{
+			"id": "economy.minimum-wage-usd-month",
+			"slug": "minimum-wage-usd-month",
+			"filterClassif1": "CUR_TYPE_USD",
+			"title": "Gesetzlicher Mindestlohn, US-Dollar",
+			"description": "Von ILOSTAT harmonisierter gesetzlicher bzw. repräsentativer monatlicher Mindestlohn, von ILOSTAT in nominale US-Dollar umgerechnet. Wo kein einheitlicher nationaler Mindestlohn besteht, verwendet ILOSTAT nach seiner Methodik einen repräsentativen regionalen oder sektoralen Mindestlohn.",
+			"unit": {"id": "usd-per-month", "label": "US-Dollar pro Monat", "symbol": "US$/Monat"},
+			"classification": {"type": "fixed", "breaks": [50, 100, 200, 400, 800, 1600]},
+			"minAreasWithAnyValue": 160,
+			"minAreasInDefaultYear": 150,
+			"requiredAreas": ["country:DEU", "country:USA", "country:IND", "country:FRA", "country:POL"]
+		}
+	]
+}
