@@ -1,0 +1,39 @@
+{
+	"schema": "kartensammlung.oecd-revenue-statistics/v1",
+	"sourceUrl": "https://www.oecd.org/en/data/indicators/tax-revenue.html",
+	"apiUrl": "https://sdmx.oecd.org/public/rest/data/OECD.CTP.TPS,DSD_REV_COMP_GLOBAL@DF_RSGLOBAL,2.1/..S13._T..PT_B1GQ.A?startPeriod=1990&dimensionAtObservation=AllDimensions",
+	"dataflow": "OECD.CTP.TPS:DSD_REV_COMP_GLOBAL@DF_RSGLOBAL(2.1)",
+	"minYear": 1990,
+	"provider": {
+		"id": "oecd-revenue-statistics",
+		"name": "OECD",
+		"dataset": "Global Revenue Statistics",
+		"license": "OECD Terms and Conditions",
+		"licenseUrl": "https://www.oecd.org/en/about/terms-conditions.html",
+		"attribution": "OECD"
+	},
+	"dimensions": {
+		"MEASURE": "TAX_REV",
+		"SECTOR": "S13",
+		"STANDARD_REVENUE": "_T",
+		"CTRY_SPECIFIC_REVENUE": "_T",
+		"UNIT_MEASURE": "PT_B1GQ",
+		"FREQ": "A",
+		"REVENUE_CODE": "TOTALTAX"
+	},
+	"indicators": [
+		{
+			"id": "fiscal.tax-and-social-contributions-percent-gdp",
+			"slug": "fiscal-tax-and-social-contributions-percent-gdp",
+			"sourceIndicator": "TAX_REV.S13.TOTALTAX.PT_B1GQ.A",
+			"title": "Steuer- und Abgabenquote",
+			"description": "Steuern und verpflichtende Sozialversicherungsbeiträge an den Gesamtstaat in Prozent des BIP. Die OECD-Reihe umfasst alle staatlichen Ebenen und behandelt verpflichtende Sozialversicherungsbeiträge als Steuern.",
+			"unit": {"id": "percent-of-gdp", "label": "Prozent des BIP", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [10, 15, 20, 25, 30, 40]},
+			"valueRange": [0, 100],
+			"minAreasWithAnyValue": 140,
+			"minAreasInDefaultYear": 120,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:BRA"]
+		}
+	]
+}
