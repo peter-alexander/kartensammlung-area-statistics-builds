@@ -1,0 +1,91 @@
+name: Audit UNSD national accounts
+
+on:
+  push:
+    branches:
+      - audit/unsd-national-accounts
+    paths:
+      - ".github/workflows/audit-unsd-national-accounts.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install audit dependencies
+        run: python -m pip install --disable-pip-version-check pandas openpyxl xlrd requests
+
+      - name: Inspect UNSD AMA downloads and WDI metadata
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import io
+          import json
+          import requests
+          import pandas as pd
+
+          FILES = {
+          	"gdp_current_usd": "https://unstats.un.org/unsd/amaapi/api/file/2",
+          	"gdp_per_capita_usd": "https://unstats.un.org/unsd/amaapi/api/file/9",
+          	"gni_current_usd": "https://unstats.un.org/unsd/amaapi/api/file/24",
+          	"gni_per_capita_usd": "https://unstats.un.org/unsd/amaapi/api/file/27",
+          }
+
+          WDI = (
+          	"NY.GDP.MKTP.CD",
+          	"NY.GDP.PCAP.CD",
+          	"NY.GNP.MKTP.CD",
+          	"NY.GNP.PCAP.CD",
+          	"NE.EXP.GNFS.CD",
+          	"NE.IMP.GNFS.CD",
+          	"NE.RSB.GNFS.CD",
+          	"NE.RSB.GNFS.ZS",
+          	"NE.TRD.GNFS.ZS",
+          	"NE.EXP.GNFS.ZS",
+          	"NE.IMP.GNFS.ZS",
+          )
+
+          session = requests.Session()
+          session.headers.update({"User-Agent": "kartensammlung-area-statistics-builds/1"})
+
+          for name, url in FILES.items():
+          	response = session.get(url, timeout=120)
+          	response.raise_for_status()
+          	raw = response.content
+          	print(f"\n=== UNSD {name} ===")
+          	print("url:", url)
+          	print("status:", response.status_code)
+          	print("content-type:", response.headers.get("content-type"))
+          	print("bytes:", len(raw))
+          	print("magic:", raw[:16])
+          	book = pd.ExcelFile(io.BytesIO(raw))
+          	print("engine:", book.engine)
+          	print("sheets:", book.sheet_names)
+          	for sheet in book.sheet_names[:3]:
+          		frame = pd.read_excel(book, sheet_name=sheet, header=None, nrows=15)
+          		print(f"--- sheet {sheet!r} first rows ---")
+          		print(frame.to_string(index=False, header=False))
+
+          print("\n=== WDI METADATA ===")
+          for code in WDI:
+          	url = f"https://api.worldbank.org/v2/indicator/{code}?format=json&source=2"
+          	response = session.get(url, timeout=120)
+          	response.raise_for_status()
+          	payload = response.json()
+          	record = payload[1][0]
+          	print(f"\n{code}: {record.get('name')}")
+          	print("sourceOrganization:", record.get("sourceOrganization"))
+          	print("sourceNote:", record.get("sourceNote"))
+          PY
