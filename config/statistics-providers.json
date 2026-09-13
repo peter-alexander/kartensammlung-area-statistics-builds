@@ -17,6 +17,11 @@
 			"index": "edgar/index.json"
 		},
 		{
+			"id": "jrc-lulucf",
+			"name": "JRC – Landnutzung & LULUCF",
+			"index": "jrc-lulucf/index.json"
+		},
+		{
 			"id": "itu-datahub",
 			"name": "ITU – Internet & Telekommunikation",
 			"index": "itu-datahub/index.json"
