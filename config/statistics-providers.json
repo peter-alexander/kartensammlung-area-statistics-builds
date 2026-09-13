@@ -72,6 +72,11 @@
 			"index": "un-igme/index.json"
 		},
 		{
+			"id": "unhcr",
+			"name": "UNHCR – Flucht, Asyl & Staatenlosigkeit",
+			"index": "unhcr/index.json"
+		},
+		{
 			"id": "undp-hdr",
 			"name": "UNDP – Menschliche Entwicklung",
 			"index": "undp-hdr/index.json"
