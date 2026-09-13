@@ -1,0 +1,92 @@
+name: Audit ILOSTAT minimum wage coverage
+
+on:
+  push:
+    branches:
+      - audit/ilostat-minimum-wage
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Audit coverage
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import json
+          import urllib.parse
+          import urllib.request
+          from collections import Counter, defaultdict
+
+          def fetch(url):
+              req = urllib.request.Request(url, headers={'User-Agent': 'kartensammlung-area-statistics-builds/1'})
+              with urllib.request.urlopen(req, timeout=120) as response:
+                  return response.read()
+
+          registry = json.loads(fetch('https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?audit=minimum-wage-coverage'))
+          area_by_iso3 = {}
+
+          def walk(value):
+              if isinstance(value, dict):
+                  iso3 = str(value.get('iso3', '')).strip().upper()
+                  area_id = str(value.get('id', '')).strip()
+                  if len(iso3) == 3 and area_id.startswith('country:'):
+                      area_by_iso3[iso3] = area_id
+                  for child in value.values():
+                      walk(child)
+              elif isinstance(value, list):
+                  for child in value:
+                      walk(child)
+
+          walk(registry)
+          print('registry top keys', list(registry) if isinstance(registry, dict) else type(registry).__name__)
+          print('registry ISO3', len(area_by_iso3))
+          print('registry required', {code: area_by_iso3.get(code) for code in ('AUT','DEU','USA','IND','FRA','POL')})
+
+          params = urllib.parse.urlencode({
+              'id': 'EAR_INEE_CUR_NB_A',
+              'type': 'code',
+              'format': '.csv',
+              'channel': 'ilostat',
+          })
+          url = f'https://rplumber.ilo.org/data/indicator/?{params}'
+          rows = list(csv.DictReader(io.StringIO(fetch(url).decode('utf-8-sig'))))
+          print('rows', len(rows))
+
+          for currency in ('CUR_TYPE_PPP', 'CUR_TYPE_USD', 'CUR_TYPE_LCU'):
+              selected = [r for r in rows if r.get('classif1') == currency and str(r.get('obs_value', '')).strip()]
+              keys = Counter((r.get('ref_area'), r.get('time')) for r in selected)
+              duplicates = {k: n for k, n in keys.items() if n > 1}
+              refs = {str(r.get('ref_area', '')).strip().upper() for r in selected}
+              mapped_refs = refs & set(area_by_iso3)
+              by_year = defaultdict(set)
+              for row in selected:
+                  ref = str(row.get('ref_area', '')).strip().upper()
+                  year = str(row.get('time', '')).strip()
+                  if ref in area_by_iso3 and year.isdigit():
+                      by_year[int(year)].add(ref)
+              years = sorted(by_year)
+              print('\n', currency)
+              print('source refs', len(refs), 'mapped refs', len(mapped_refs), 'unmapped', sorted(refs - set(area_by_iso3)))
+              print('duplicate country-years', len(duplicates), 'max multiplicity', max(duplicates.values()) if duplicates else 1)
+              print('mapped year range', (years[0], years[-1]) if years else None)
+              for year in years:
+                  if year >= 2018:
+                      print('coverage', year, len(by_year[year]), 'required', {code: code in by_year[year] for code in ('DEU','USA','IND','FRA','POL')})
+              ranked = sorted(((len(refs_y), year) for year, refs_y in by_year.items()), reverse=True)
+              print('top coverage years', ranked[:10])
+
+              latest_by_country = {}
+              for year, refs_y in by_year.items():
+                  for ref in refs_y:
+                      latest_by_country[ref] = max(year, latest_by_country.get(ref, year))
+              print('latest year distribution', Counter(latest_by_country.values()).most_common())
+          PY
