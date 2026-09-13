@@ -1,0 +1,66 @@
+name: Audit LULUCF primary source
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/lulucf-primary-source
+    paths:
+      - .github/workflows/audit-lulucf-primary-source.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install --quiet "openpyxl>=3.1,<4"
+
+      - name: Inspect Zenodo workbooks
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from urllib.parse import quote
+          from urllib.request import Request, urlopen
+          from openpyxl import load_workbook
+
+          files = {
+          	"aug2022": (
+          		"https://zenodo.org/records/7190601/files/" + quote("LULUCF NGHGI database August 2022.xlsx") + "?download=1",
+          		Path("/tmp/nghgi-aug2022.xlsx"),
+          	),
+          	"dec2022": (
+          		"https://zenodo.org/records/7650360/files/" + quote("National inventories LULUCF data 2000-2020 (Dec 2022).xlsx") + "?download=1",
+          		Path("/tmp/nghgi-dec2022.xlsx"),
+          	),
+          }
+
+          for label, (url, path) in files.items():
+          	request = Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1"})
+          	with urlopen(request, timeout=120) as response:
+          		path.write_bytes(response.read())
+          	print(f"=== {label} bytes={path.stat().st_size} url={url}")
+          	workbook = load_workbook(path, read_only=True, data_only=True)
+          	print("sheets=" + repr(workbook.sheetnames))
+          	for worksheet in workbook.worksheets:
+          		print(f"--- sheet={worksheet.title!r} rows={worksheet.max_row} cols={worksheet.max_column}")
+          		shown = 0
+          		for row_number, row in enumerate(worksheet.iter_rows(values_only=True), start=1):
+          			values = [value for value in row if value not in (None, "")]
+          			if not values:
+          				continue
+          			print(f"row {row_number}: {repr(values[:20])}")
+          			shown += 1
+          			if shown >= 12:
+          				break
+          PY
