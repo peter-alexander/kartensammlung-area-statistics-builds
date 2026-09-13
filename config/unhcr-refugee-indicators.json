@@ -1,0 +1,121 @@
+{
+	"schema": "kartensammlung.unhcr-refugee-statistics/v1",
+	"apiBase": "https://api.unhcr.org/population/v1",
+	"sourceUrl": "https://www.unhcr.org/refugee-statistics/",
+	"methodologyUrl": "https://www.unhcr.org/refugee-statistics/methodology",
+	"apiDocumentationUrl": "https://api.unhcr.org/docs/refugee-statistics.html",
+	"release": "2025 annual statistics",
+	"releaseDate": "2026-06-11",
+	"latestYear": 2025,
+	"provider": {
+		"id": "unhcr",
+		"name": "UNHCR",
+		"dataset": "Refugee Population Statistics Database",
+		"license": "CC BY 4.0",
+		"licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+		"attribution": "UNHCR, Refugee Population Statistics Database"
+	},
+	"excludedNonCountryCodes": [
+		"UNK",
+		"TIB",
+		"XXA"
+	],
+	"indicators": [
+		{
+			"id": "displacement.refugees-host",
+			"slug": "refugees-host",
+			"dimension": "host",
+			"sourceField": "refugees",
+			"firstYear": 1951,
+			"title": "Flüchtlinge nach Aufnahmeland",
+			"description": "Flüchtlinge unter dem Mandat des UNHCR am Jahresende, zugeordnet nach Asyl- beziehungsweise Aufnahmeland.",
+			"unit": {"id": "people", "label": "Personen", "symbol": "Personen"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [100, 1000, 10000, 100000, 1000000, 5000000]},
+			"minPositiveAreasInLatestYear": 150
+		},
+		{
+			"id": "displacement.refugees-origin",
+			"slug": "refugees-origin",
+			"dimension": "origin",
+			"sourceField": "refugees",
+			"firstYear": 1951,
+			"title": "Flüchtlinge nach Herkunftsland",
+			"description": "Flüchtlinge unter dem Mandat des UNHCR am Jahresende, zugeordnet nach Herkunftsland.",
+			"unit": {"id": "people", "label": "Personen", "symbol": "Personen"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [100, 1000, 10000, 100000, 1000000, 5000000]},
+			"minPositiveAreasInLatestYear": 180
+		},
+		{
+			"id": "displacement.asylum-seekers-host",
+			"slug": "asylum-seekers-host",
+			"dimension": "host",
+			"sourceField": "asylum_seekers",
+			"firstYear": 2000,
+			"title": "Asylsuchende nach Aufnahmeland",
+			"description": "Personen mit einem am Jahresende noch nicht entschiedenen Antrag auf internationalen Schutz, zugeordnet nach Asyl- beziehungsweise Aufnahmeland.",
+			"unit": {"id": "people", "label": "Personen", "symbol": "Personen"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [100, 1000, 10000, 100000, 1000000, 5000000]},
+			"minPositiveAreasInLatestYear": 140
+		},
+		{
+			"id": "displacement.asylum-seekers-origin",
+			"slug": "asylum-seekers-origin",
+			"dimension": "origin",
+			"sourceField": "asylum_seekers",
+			"firstYear": 2000,
+			"title": "Asylsuchende nach Herkunftsland",
+			"description": "Personen mit einem am Jahresende noch nicht entschiedenen Antrag auf internationalen Schutz, zugeordnet nach Herkunftsland.",
+			"unit": {"id": "people", "label": "Personen", "symbol": "Personen"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [100, 1000, 10000, 100000, 1000000, 5000000]},
+			"minPositiveAreasInLatestYear": 190
+		},
+		{
+			"id": "displacement.other-international-protection-host",
+			"slug": "other-international-protection-host",
+			"dimension": "host",
+			"sourceField": "oip",
+			"firstYear": 2018,
+			"title": "Andere Menschen mit internationalem Schutzbedarf – Aufnahmeland",
+			"description": "Von UNHCR als andere Menschen mit internationalem Schutzbedarf (Other People in Need of International Protection, OIP) geführte Personen am Jahresende, zugeordnet nach Aufnahmeland.",
+			"unit": {"id": "people", "label": "Personen", "symbol": "Personen"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [100, 1000, 10000, 100000, 1000000, 5000000]},
+			"minPositiveAreasInLatestYear": 20
+		},
+		{
+			"id": "displacement.other-international-protection-origin",
+			"slug": "other-international-protection-origin",
+			"dimension": "origin",
+			"sourceField": "oip",
+			"firstYear": 2018,
+			"title": "Andere Menschen mit internationalem Schutzbedarf – Herkunftsland",
+			"description": "Von UNHCR als andere Menschen mit internationalem Schutzbedarf (Other People in Need of International Protection, OIP) geführte Personen am Jahresende, zugeordnet nach Herkunftsland.",
+			"unit": {"id": "people", "label": "Personen", "symbol": "Personen"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [100, 1000, 10000, 100000, 1000000, 5000000]},
+			"minPositiveAreasInLatestYear": 2
+		},
+		{
+			"id": "displacement.idps-unhcr-assisted",
+			"slug": "idps-unhcr-assisted",
+			"dimension": "host",
+			"sourceField": "idps",
+			"firstYear": 1993,
+			"title": "Binnenvertriebene unter UNHCR-Schutz/-Hilfe",
+			"description": "Binnenvertriebene am Jahresende, denen UNHCR Schutz und/oder Hilfe leistet. Diese Reihe ist ausdrücklich keine vollständige weltweite IDP-Gesamtzahl.",
+			"unit": {"id": "people", "label": "Personen", "symbol": "Personen"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [100, 1000, 10000, 100000, 1000000, 5000000]},
+			"minPositiveAreasInLatestYear": 30
+		},
+		{
+			"id": "displacement.stateless-host",
+			"slug": "stateless-host",
+			"dimension": "host",
+			"sourceField": "stateless",
+			"firstYear": 2004,
+			"title": "Staatenlose nach Aufenthaltsland",
+			"description": "Von UNHCR erfasste staatenlose Personen am Jahresende nach Aufenthaltsland. Die gemeldeten Bestände unterschätzen die tatsächliche weltweite Zahl staatenloser Menschen.",
+			"unit": {"id": "people", "label": "Personen", "symbol": "Personen"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [100, 1000, 10000, 100000, 1000000, 5000000]},
+			"minPositiveAreasInLatestYear": 80
+		}
+	]
+}
