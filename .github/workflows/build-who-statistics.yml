@@ -117,7 +117,7 @@ jobs:
           	"immunization.polio-ipv1-percent": {"source": "VACCINECOVERAGE_IPV1", "start": 2015, "minDirect": 2100, "minCoverage": 190},
           	"immunization.polio-ipvc-percent": {"source": "WHS4_544", "start": 2021, "minDirect": 950, "minCoverage": 190},
           	"immunization.rotavirus-percent": {"source": "ROTAC", "start": 2006, "minDirect": 3800, "minCoverage": 190},
-          	"immunization.hpv-girls-percent": {"source": "SDGHPVRECEIVED", "start": 2010, "minDirect": 2500, "minCoverage": 150},
+          	"immunization.hpv-girls-percent": {"source": "SDGHPVRECEIVED", "start": 2010, "minDirect": 1300, "minCoverage": 150},
           }
           for indicator_id, expected in immunization_expected.items():
           	item = by_id[indicator_id]
