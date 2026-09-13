@@ -1,0 +1,136 @@
+name: Audit ILOSTAT hourly earnings gender gap source
+
+on:
+  push:
+    branches:
+      - audit/ilostat-gender-gap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Audit hourly earnings tables
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import sys
+          import urllib.parse
+          import urllib.request
+          from collections import Counter, defaultdict
+
+          sys.path.insert(0, 'scripts')
+          import build_world_bank as common
+
+          UA = {'User-Agent': 'kartensammlung-area-statistics-builds/1'}
+
+          def fetch(url):
+          	req = urllib.request.Request(url, headers=UA)
+          	with urllib.request.urlopen(req, timeout=120) as response:
+          		return response.read()
+
+          def read_csv(url):
+          	return list(csv.DictReader(io.StringIO(fetch(url).decode('utf-8-sig'))))
+
+          area_by_iso3, _ = common.load_registry(
+          	'https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?audit=ilostat-hourly-earnings-gap',
+          	120,
+          )
+          toc = read_csv('https://rplumber.ilo.org/metadata/toc/indicator/?lang=en')
+          candidates = []
+          for row in toc:
+          	label = str(row.get('indicator.label', '')).strip()
+          	low = label.lower()
+          	if (
+          		'average hourly earnings of employees by sex' in low
+          		and str(row.get('freq', '')).strip() == 'A'
+          	):
+          		candidates.append(row)
+
+          print('=== CANDIDATES ===')
+          for row in candidates:
+          	print({
+          		'id': row.get('id'),
+          		'label': row.get('indicator.label'),
+          		'freq': row.get('freq'),
+          		'subject': row.get('subject'),
+          	})
+
+          for meta in candidates:
+          	dataset_id = str(meta.get('id', '')).strip()
+          	params = urllib.parse.urlencode({
+          		'id': dataset_id,
+          		'type': 'code',
+          		'format': '.csv',
+          		'channel': 'ilostat',
+          	})
+          	url = f'https://rplumber.ilo.org/data/indicator/?{params}'
+          	try:
+          		rows = read_csv(url)
+          	except Exception as exc:
+          		print('\n===', dataset_id, 'ERROR', repr(exc), '===')
+          		continue
+          	if not rows:
+          		continue
+          	print('\n===', dataset_id, meta.get('indicator.label'), '===')
+          	print('rows', len(rows), 'fields', list(rows[0]))
+          	print('indicator', Counter(str(r.get('indicator', '')).strip() for r in rows).most_common(10))
+          	for field in rows[0]:
+          		if field == 'sex' or field.startswith('classif'):
+          			print(field, Counter(str(r.get(field, '')).strip() for r in rows).most_common(30))
+
+          	# Only tables where sex is an explicit dimension can produce the gap.
+          	if 'sex' not in rows[0]:
+          		continue
+
+          	# Group by all non-sex dimensions to find male/female matched observations.
+          	dim_fields = [field for field in rows[0] if field.startswith('classif')]
+          	grouped = defaultdict(dict)
+          	for row in rows:
+          		iso3 = str(row.get('ref_area', '')).strip().upper()
+          		year_text = str(row.get('time', '')).strip()
+          		value_text = str(row.get('obs_value', '')).strip()
+          		sex = str(row.get('sex', '')).strip()
+          		if iso3 not in area_by_iso3 or not year_text.isdigit() or not value_text or sex not in {'SEX_M', 'SEX_F'}:
+          			continue
+          		dims = tuple(str(row.get(field, '')).strip() for field in dim_fields)
+          		key = (iso3, int(year_text), dims)
+          		if sex in grouped[key]:
+          			raise RuntimeError(f'duplicate {dataset_id} {key} {sex}')
+          		grouped[key][sex] = float(value_text)
+
+          	matched = {}
+          	for key, values in grouped.items():
+          		male = values.get('SEX_M')
+          		female = values.get('SEX_F')
+          		if male is None or female is None or male == 0:
+          			continue
+          		matched[key] = (male - female) / male * 100.0
+
+          	print('matched groups', len(matched))
+          	if not matched:
+          		continue
+          	# Report dimension combinations by country-year breadth.
+          	combo_keys = defaultdict(dict)
+          	for (iso3, year, dims), gap in matched.items():
+          		combo_keys[dims][(iso3, year)] = gap
+          	for dims, values in sorted(combo_keys.items(), key=lambda item: len(item[1]), reverse=True)[:20]:
+          		countries = {iso3 for iso3, _ in values}
+          		by_year = Counter(year for _, year in values)
+          		years = sorted(by_year)
+          		print('DIMS', dict(zip(dim_fields, dims)), 'obs', len(values), 'countries', len(countries), 'years', (years[0], years[-1]))
+          		print('  recent', [(year, by_year[year]) for year in years if year >= 2018])
+          		print('  top', by_year.most_common(8))
+          PY
