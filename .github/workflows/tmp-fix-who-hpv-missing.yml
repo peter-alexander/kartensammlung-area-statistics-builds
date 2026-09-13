@@ -1,0 +1,37 @@
+name: Temporary WHO HPV missing-value patch
+
+on:
+  push:
+    branches:
+      - feature/who-immunization-expansion
+    paths:
+      - .github/workflows/tmp-fix-who-hpv-missing.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/who-immunization-expansion
+          fetch-depth: 0
+
+      - name: Apply patch
+        run: python .github/scripts/tmp_fix_who_hpv_missing.py
+
+      - name: Validate
+        run: |
+          python -m py_compile scripts/build_who.py
+          python -m json.tool config/who-indicators.json >/dev/null
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/build_who.py config/who-indicators.json
+          git commit -m "Handle empty WHO HPV observations"
+          git push origin HEAD:feature/who-immunization-expansion
