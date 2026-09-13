@@ -57,33 +57,35 @@ jobs:
           if '"id": "income-inequality.gini"' in config:
           	raise RuntimeError("PIP Gini indicator already exists")
 
-          old_tail = '''\t\t\t"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
-\t\t}
-\t]
-}
-'''
+          old_tail = (
+          	'\t\t\t"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]\n'
+          	'\t\t}\n'
+          	'\t]\n'
+          	'}\n'
+          )
           if config.count(old_tail) != 1:
           	raise RuntimeError("Could not identify unique config tail")
 
-          gini = '''\t\t\t"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
-\t\t},
-\t\t{
-\t\t\t"id": "income-inequality.gini",
-\t\t\t"slug": "income-inequality-gini",
-\t\t\t"povertyLine": 3.0,
-\t\t\t"field": "gini",
-\t\t\t"scale": 100,
-\t\t\t"title": "Gini-Koeffizient",
-\t\t\t"description": "Gini-Koeffizient der in PIP verwendeten Einkommens- bzw. Konsumverteilung. 0 bedeutet vollständige Gleichheit, 100 maximale Ungleichheit. Jährliche PIP-Reihe mit Erhebungs-, Interpolations-/Extrapolations- und Nowcast-Status je Land und Jahr.",
-\t\t\t"unit": {"id": "gini-0-100", "label": "Gini (0–100)"},
-\t\t\t"classification": {"type": "fixed", "breaks": [20, 25, 30, 35, 40, 45]},
-\t\t\t"minAreasWithAnyValue": 160,
-\t\t\t"minAreasInDefaultYear": 160,
-\t\t\t"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
-\t\t}
-\t]
-}
-'''
+          gini = (
+          	'\t\t\t"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]\n'
+          	'\t\t},\n'
+          	'\t\t{\n'
+          	'\t\t\t"id": "income-inequality.gini",\n'
+          	'\t\t\t"slug": "income-inequality-gini",\n'
+          	'\t\t\t"povertyLine": 3.0,\n'
+          	'\t\t\t"field": "gini",\n'
+          	'\t\t\t"scale": 100,\n'
+          	'\t\t\t"title": "Gini-Koeffizient",\n'
+          	'\t\t\t"description": "Gini-Koeffizient der in PIP verwendeten Einkommens- bzw. Konsumverteilung. 0 bedeutet vollständige Gleichheit, 100 maximale Ungleichheit. Jährliche PIP-Reihe mit Erhebungs-, Interpolations-/Extrapolations- und Nowcast-Status je Land und Jahr.",\n'
+          	'\t\t\t"unit": {"id": "gini-0-100", "label": "Gini (0–100)"},\n'
+          	'\t\t\t"classification": {"type": "fixed", "breaks": [20, 25, 30, 35, 40, 45]},\n'
+          	'\t\t\t"minAreasWithAnyValue": 160,\n'
+          	'\t\t\t"minAreasInDefaultYear": 160,\n'
+          	'\t\t\t"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]\n'
+          	'\t\t}\n'
+          	'\t]\n'
+          	'}\n'
+          )
           config_path.write_text(config.replace(old_tail, gini), encoding="utf-8")
           PY
 
@@ -96,12 +98,11 @@ jobs:
           grep -n 'income-inequality.gini' config/world-bank-pip-indicators.json
           grep -n '"gini"' scripts/build_world_bank_pip.py
 
-      - name: Commit implementation and remove helper workflow
+      - name: Commit implementation
         shell: bash
         run: |
-          rm .github/workflows/prepare-pip-gini.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/build_world_bank_pip.py config/world-bank-pip-indicators.json .github/workflows/prepare-pip-gini.yml
+          git add scripts/build_world_bank_pip.py config/world-bank-pip-indicators.json
           git commit -m "Add World Bank PIP Gini indicator"
           git push origin HEAD:feature/pip-gini
