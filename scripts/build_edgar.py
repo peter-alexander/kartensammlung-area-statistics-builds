@@ -293,14 +293,11 @@ def parse_direct_values(
 	for substance in sorted(allowed_substances):
 		if source_rows[substance] < 1500:
 			raise RuntimeError(f"EDGAR source row count unexpectedly small for {substance}: {source_rows[substance]}")
-		if set(sector_values[substance]) != set(sector_values[next(iter(allowed_substances))]):
-			# Both gases should expose the same safe country geography in this report edition.
-			pass
-		for area_id, sectors in sector_values[substance].items():
-			if sectors != expected_sectors:
-				raise RuntimeError(
-					f"EDGAR {substance} sectors incomplete for {area_id}: {sorted(sectors)}"
-				)
+		observed_sectors = set().union(*sector_values[substance].values())
+		if observed_sectors != expected_sectors:
+			raise RuntimeError(
+				f"EDGAR sector set changed for {substance}: {sorted(observed_sectors)}"
+			)
 		if len(sector_values[substance]) != 200:
 			raise RuntimeError(
 				f"EDGAR safe direct geography changed for {substance}: {len(sector_values[substance])} areas; expected 200."
