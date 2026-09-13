@@ -1,0 +1,190 @@
+name: Audit IEA SDG72 legacy geography aliases
+
+on:
+  push:
+    branches:
+      - audit/un-sdg-renewable-energy
+    paths:
+      - ".github/workflows/audit-iea-sdg72-alias-map.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Audit mapped IEA SDG72 coverage
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import math
+          import os
+          import statistics
+          import time
+          from collections import Counter
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+
+          IEA_URL = "https://api.iea.org/stats/indicators/SDG72"
+          UN_URL = "https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=EG_FEC_RNEW&pageSize=50000"
+          WDI_API = "https://api.worldbank.org/v2"
+          WDI_CODE = "EG.FEC.RNEW.ZS"
+          REGISTRY = (
+          	"https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+          	+ f"?build={os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}-iea-alias-audit"
+          )
+
+          LEGACY = {
+          	"AFGHANIS": "AFG", "ANDORRA": "AND", "ANGUILLA": "AIA", "ARUBA": "ABW",
+          	"BARBADOS": "BRB", "BELIZE": "BLZ", "BHUTAN": "BTN", "BURKINA": "BFA",
+          	"BURUNDI": "BDI", "BVI": "VGB", "CABOVERDE": "CPV", "CAFRICREP": "CAF",
+          	"CALEDONIA": "NCL", "CHAD": "TCD", "COMOROS": "COM", "COOK": "COK",
+          	"DJIBOUTI": "DJI", "DOMINICA": "DMA", "FAROE": "FRO", "FIJI": "FJI",
+          	"FPOLYNESIA": "PYF", "GAMBIA": "GMB", "GREENLAND": "GRL", "GRENADA": "GRD",
+          	"GUAM": "GUM", "GUINEA": "GIN", "GUINEABIS": "GNB", "GUYANA": "GUY",
+          	"KIRIBATI": "KIR", "LESOTHO": "LSO", "LIBERIA": "LBR", "LIECHTENST": "LIE",
+          	"MACAO": "MAC", "MALAWI": "MWI", "MALDIVES": "MDV", "MALI": "MLI",
+          	"MALVINAS": "FLK", "MAURITANIA": "MRT", "NIUE": "NIU", "PALESTINE": "PSE",
+          	"PAPUA": "PNG", "PUERTORICO": "PRI", "SAMOA": "WSM", "SAOTOME": "STP",
+          	"SEYCHELLES": "SYC", "SHELENA": "SHN", "SIERRALEO": "SLE", "SKITTS": "KNA",
+          	"SLUCIA": "LCA", "SOLOMON": "SLB", "SOMALIA": "SOM", "SVINCENT": "VCT",
+          	"TONGA": "TON", "TURKSCAIC": "TCA", "USVI": "VIR", "VANUATU": "VUT",
+          	"WALLIS": "WLF", "MARSHALL": "MHL", "MICRONESIA": "FSM", "BERMUDA": "BMU",
+          	"SPIERRE": "SPM", "TUVALU": "TUV", "BAHAMAS": "BHS", "JERSEY": "JEY",
+          	"MANISLE": "IMN", "TIMORLESTE": "TLS", "NAURU": "NRU", "CAYMAN": "CYM",
+          	"ANTIGUA": "ATG", "AMSAMOA": "ASM", "SMAARTEN": "SXM", "PALAU": "PLW",
+          	"GUERNSEY": "GGY", "MONTSERRAT": "MSR", "NMARIANA": "MNP",
+          }
+
+          def fetch(url):
+          	last = None
+          	for attempt, delay in enumerate((0, 2, 5, 10, 20), start=1):
+          		if delay:
+          			time.sleep(delay)
+          		try:
+          			request = Request(url, headers={"User-Agent": "kartensammlung-area-statistics-audit/1"})
+          			with urlopen(request, timeout=120) as response:
+          				return json.load(response)
+          		except Exception as error:
+          			last = error
+          			print(f"request failed {attempt}/5: {url}: {error}")
+          	raise RuntimeError(f"request failed after retries: {url}") from last
+
+          registry = fetch(REGISTRY)
+          area_by_iso3 = {}
+          iso3_by_m49 = {}
+          for area in registry.get("areas", []):
+          	if area.get("level") != "country":
+          		continue
+          	codes = area.get("codes") or {}
+          	iso3 = str(codes.get("iso3") or "").strip().upper()
+          	if not iso3:
+          		continue
+          	area_by_iso3[iso3] = str(area.get("area_id") or "")
+          	m49 = str(codes.get("m49") or "").strip()
+          	if m49.isdigit():
+          		iso3_by_m49[str(int(m49))] = iso3
+          if len(area_by_iso3) != 250:
+          	raise RuntimeError(f"expected 250 production countries, found {len(area_by_iso3)}")
+
+          iea_rows = fetch(IEA_URL)
+          iea = {}
+          coverage = Counter()
+          ignored = Counter()
+          mapped_by_alias = Counter()
+          for row in iea_rows:
+          	code = str(row.get("country") or "").strip().upper()
+          	iso3 = code if code in area_by_iso3 else LEGACY.get(code)
+          	if not iso3 or iso3 not in area_by_iso3:
+          		ignored[code] += 1
+          		continue
+          	if code != iso3:
+          		mapped_by_alias[code] += 1
+          	year_raw = str(row.get("year") or "").strip()
+          	if not year_raw.isdigit():
+          		continue
+          	try:
+          		value = float(row.get("value"))
+          	except (TypeError, ValueError):
+          		continue
+          	if not math.isfinite(value):
+          		continue
+          	key = (iso3, int(year_raw))
+          	if key in iea and abs(iea[key] - value) > 1e-12:
+          		raise RuntimeError(f"conflicting mapped duplicate {key}: {iea[key]} vs {value}")
+          	iea[key] = value
+          	coverage[key[1]] += 1
+
+          print(f"IEA rawRows={len(iea_rows)} mappedObservations={len(iea)} countries={len({k[0] for k in iea})}")
+          print(f"IEA years={min(y for _, y in iea)}-{max(y for _, y in iea)}")
+          print(f"aliasCodesUsed={len(mapped_by_alias)}")
+          print(f"ignoredCodes={dict(ignored)}")
+          print("IEA latest coverage:")
+          for year in sorted(coverage)[-8:]:
+          	print(year, coverage[year])
+
+          un_payload = fetch(UN_URL)
+          un = {}
+          un_source = {}
+          for row in un_payload.get("data") or []:
+          	if str((row.get("dimensions") or {}).get("Reporting Type") or "") != "G":
+          		continue
+          	iso3 = iso3_by_m49.get(str(row.get("geoAreaCode") or "").strip())
+          	if not iso3:
+          		continue
+          	try:
+          		year = int(float(row.get("timePeriodStart")))
+          		value = float(str(row.get("value") or "").strip())
+          	except (TypeError, ValueError):
+          		continue
+          	if math.isfinite(value):
+          		un[(iso3, year)] = value
+          		un_source[(iso3, year)] = str(row.get("source") or "").strip()
+
+          query = {"format": "json", "source": "2", "per_page": "20000", "page": "1"}
+          payload = fetch(f"{WDI_API}/country/all/indicator/{WDI_CODE}?{urlencode(query)}")
+          meta, rows = payload
+          all_rows = list(rows or [])
+          for page in range(2, int(meta.get("pages", 1)) + 1):
+          	query["page"] = str(page)
+          	page_payload = fetch(f"{WDI_API}/country/all/indicator/{WDI_CODE}?{urlencode(query)}")
+          	all_rows.extend(page_payload[1] or [])
+          wdi = {}
+          for row in all_rows:
+          	iso3 = str(row.get("countryiso3code") or "").strip().upper()
+          	year_raw = str(row.get("date") or "")
+          	if iso3 not in area_by_iso3 or not year_raw.isdigit() or row.get("value") is None:
+          		continue
+          	try:
+          		value = float(row.get("value"))
+          	except (TypeError, ValueError):
+          		continue
+          	if math.isfinite(value):
+          		wdi[(iso3, int(year_raw))] = value
+
+          def compare(label, left, right):
+          	overlap = sorted(set(left) & set(right))
+          	diffs = [abs(left[k] - right[k]) for k in overlap]
+          	print(f"\n=== {label} ===")
+          	print(f"overlap={len(overlap)} countries={len({k[0] for k in overlap})}")
+          	print(f"medianAbsDiff={statistics.median(diffs)} meanAbsDiff={statistics.fmean(diffs)} maxAbsDiff={max(diffs)}")
+          	for tolerance in (0.01, 0.05, 0.1, 0.5, 1.0):
+          		count = sum(diff <= tolerance for diff in diffs)
+          		print(f"within_{tolerance}={count} ({100 * count / len(diffs):.2f}%)")
+          	for diff, key in sorted(((abs(left[k] - right[k]), k) for k in overlap), reverse=True)[:15]:
+          		print(key[0], key[1], "left=", left[key], "right=", right[key], "absDiff=", diff, "source=", un_source.get(key))
+
+          compare("IEA SDG72 vs current UN SDG", iea, un)
+          compare("IEA SDG72 vs WDI", iea, wdi)
+
+          mapped = {k[0] for k in iea}
+          print(f"\nproduction countries without mapped IEA SDG72={len(set(area_by_iso3) - mapped)}")
+          print("missingISO3=", ",".join(sorted(set(area_by_iso3) - mapped)))
+          PY
