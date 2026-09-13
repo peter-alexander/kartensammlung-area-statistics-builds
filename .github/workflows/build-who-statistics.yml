@@ -69,7 +69,7 @@ jobs:
           from pathlib import Path
 
           provider = json.loads(Path("dist/statistics/who/index.json").read_text(encoding="utf-8"))
-          assert len(provider["indicators"]) == 18, len(provider["indicators"])
+          assert len(provider["indicators"]) == 27, len(provider["indicators"])
           by_id = {item["id"]: item for item in provider["indicators"]}
           annual_ids = {
           	"mortality.suicide-per-100000",
@@ -92,18 +92,52 @@ jobs:
 
           dtp = by_id["immunization.dpt-percent"]
           assert dtp["frequency"] == "annual"
-          assert dtp["availableYears"] == list(range(1980, 2025)), dtp["availableYears"]
-          assert dtp["defaultYear"] == 2024, dtp["defaultYear"]
-          assert dtp["coverage"]["areasInDefaultYear"] >= 192, dtp["coverage"]
-          assert dtp["coverage"]["directObservations"] >= 4750, dtp["coverage"]
+          assert dtp["availableYears"] == list(range(1980, 2026)), dtp["availableYears"]
+          assert dtp["defaultYear"] == 2025, dtp["defaultYear"]
+          assert dtp["coverage"]["areasInDefaultYear"] >= 190, dtp["coverage"]
+          assert dtp["coverage"]["directObservations"] >= 5000, dtp["coverage"]
           assert dtp["coverage"]["fallbackObservations"] >= 3000, dtp["coverage"]
           assert dtp["confidenceIntervals"] is False
           dtp_payload = json.loads(Path("dist/statistics/who", dtp["path"]).read_text(encoding="utf-8"))
           assert dtp_payload["source"]["providerId"] == "who"
+          assert dtp_payload["source"]["indicator"] == "WHS4_100"
+          assert dtp_payload["source"]["sourceFormat"] == "gho-odata"
           assert dtp_payload["source"]["fallback"]["indicator"] == "SH.IMM.IDPT"
-          assert dtp_payload["source"]["timeCoverage"] == {"startYear": 2000, "endYear": 2024}
+          assert dtp_payload["source"]["timeCoverage"] == {"startYear": 2000, "endYear": 2025}
+          assert "indicatorUuid" not in dtp_payload["source"]
           assert dtp_payload["indicator"]["confidenceIntervals"] == {"available": False}
           assert dtp_payload.get("observationMetadata")
+
+          immunization_expected = {
+          	"immunization.dpt1-percent": {"source": "VACCINECOVERAGE_DTP1", "start": 2000, "minDirect": 5000, "minCoverage": 190},
+          	"immunization.hepatitis-b3-percent": {"source": "WHS4_117", "start": 2000, "minDirect": 5000, "minCoverage": 190},
+          	"immunization.hib3-percent": {"source": "WHS4_129", "start": 2000, "minDirect": 5000, "minCoverage": 190},
+          	"immunization.measles2-percent": {"source": "MCV2", "start": 2000, "minDirect": 5000, "minCoverage": 190},
+          	"immunization.pneumococcal-percent": {"source": "PCV3", "start": 2008, "minDirect": 3400, "minCoverage": 190},
+          	"immunization.polio-ipv1-percent": {"source": "VACCINECOVERAGE_IPV1", "start": 2015, "minDirect": 2100, "minCoverage": 190},
+          	"immunization.polio-ipvc-percent": {"source": "WHS4_544", "start": 2021, "minDirect": 950, "minCoverage": 190},
+          	"immunization.rotavirus-percent": {"source": "ROTAC", "start": 2006, "minDirect": 3800, "minCoverage": 190},
+          	"immunization.hpv-girls-percent": {"source": "SDGHPVRECEIVED", "start": 2010, "minDirect": 2500, "minCoverage": 150},
+          }
+          for indicator_id, expected in immunization_expected.items():
+          	item = by_id[indicator_id]
+          	assert item["frequency"] == "annual", (indicator_id, item["frequency"])
+          	assert item["availableYears"][0] == expected["start"], (indicator_id, item["availableYears"])
+          	assert item["availableYears"][-1] == 2025, (indicator_id, item["availableYears"])
+          	assert item["defaultYear"] == 2025, (indicator_id, item["defaultYear"])
+          	assert item["coverage"]["areasInDefaultYear"] >= expected["minCoverage"], (indicator_id, item["coverage"])
+          	assert item["coverage"]["directObservations"] >= expected["minDirect"], (indicator_id, item["coverage"])
+          	assert item["coverage"]["fallbackObservations"] == 0, (indicator_id, item["coverage"])
+          	assert item["confidenceIntervals"] is False
+          	payload = json.loads(Path("dist/statistics/who", item["path"]).read_text(encoding="utf-8"))
+          	assert payload["source"]["providerId"] == "who"
+          	assert payload["source"]["indicator"] == expected["source"]
+          	assert payload["source"]["sourceFormat"] == "gho-odata"
+          	assert payload["source"]["timeCoverage"] == {"startYear": expected["start"], "endYear": 2025}
+          	assert "fallback" not in payload["source"]
+          	assert "indicatorUuid" not in payload["source"]
+          	assert payload["indicator"]["confidenceIntervals"] == {"available": False}
+          	assert not payload.get("observationMetadata")
 
           measles = by_id["immunization.measles-percent"]
           assert measles["frequency"] == "annual"
