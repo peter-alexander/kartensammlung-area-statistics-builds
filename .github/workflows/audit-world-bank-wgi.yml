@@ -38,19 +38,18 @@ jobs:
           		return json.load(response)
 
           registry = fetch_json("https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?audit=wgi")
-          areas = registry.get("areas", registry)
+          if registry.get("schema") != "kartensammlung.area-registry/v1":
+          	raise RuntimeError("Unexpected registry schema")
           registry_iso3 = set()
-          if isinstance(areas, list):
-          	for area in areas:
-          		iso3 = str(area.get("iso3") or "").upper()
-          		if iso3:
-          			registry_iso3.add(iso3)
-          elif isinstance(areas, dict):
-          	for area in areas.values():
-          		if isinstance(area, dict):
-          			iso3 = str(area.get("iso3") or "").upper()
-          			if iso3:
-          				registry_iso3.add(iso3)
+          for area in registry.get("areas", []):
+          	if area.get("level") != "country":
+          		continue
+          	codes = area.get("codes") or {}
+          	iso3 = str(codes.get("iso3") or "").upper()
+          	if len(iso3) == 3:
+          		registry_iso3.add(iso3)
+          if len(registry_iso3) < 240:
+          	raise RuntimeError(f"Registry unexpectedly small: {len(registry_iso3)}")
           print("registry_iso3", len(registry_iso3))
 
           for code, label in indicators.items():
@@ -85,6 +84,8 @@ jobs:
           		by_year[year][iso3] = value
           		all_values.append(value)
           	years = sorted(by_year)
+          	if not years:
+          		raise RuntimeError(f"No mapped observations for {code}")
           	all_areas = {iso3 for values in by_year.values() for iso3 in values}
           	print("---", code, label, "---")
           	print("rows", len(all_values), "areas", len(all_areas), "years", f"{years[0]}-{years[-1]}", "ignored", sorted(ignored))
