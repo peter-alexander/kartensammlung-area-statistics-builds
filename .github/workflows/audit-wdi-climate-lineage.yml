@@ -21,19 +21,23 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Compare WDI derived climate indicators
+      - name: Compare WDI derived climate indicators for production countries
         shell: bash
         run: |
           python - <<'PY'
           import json
           import math
+          import os
           import statistics
           import time
-          from collections import defaultdict
           from urllib.parse import urlencode
           from urllib.request import Request, urlopen
 
           API = "https://api.worldbank.org/v2"
+          REGISTRY = (
+          	"https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+          	+ f"?build={os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}-climate-audit"
+          )
           CODES = {
           	"co2_total": "EN.GHG.CO2.MT.CE.AR5",
           	"co2_per_capita": "EN.GHG.CO2.PC.CE.AR5",
@@ -60,6 +64,19 @@ jobs:
           			print(f"request failed {attempt}/5: {url}: {error}")
           	raise RuntimeError(f"request failed after retries: {url}") from last
 
+          registry = fetch_json(REGISTRY)
+          if registry.get("schema") != "kartensammlung.area-registry/v1":
+          	raise RuntimeError("unexpected production registry schema")
+          allowed_iso3 = {
+          	str(area.get("codes", {}).get("iso3") or "").upper()
+          	for area in registry.get("areas", [])
+          	if area.get("level") == "country"
+          }
+          allowed_iso3.discard("")
+          if len(allowed_iso3) != 250:
+          	raise RuntimeError(f"expected 250 production country codes, found {len(allowed_iso3)}")
+          print(f"production registry countries: {len(allowed_iso3)}")
+
           def fetch_indicator(code):
           	query = {
           		"format": "json",
@@ -83,7 +100,7 @@ jobs:
           		iso3 = str(row.get("countryiso3code") or "").upper()
           		year = str(row.get("date") or "")
           		value = row.get("value")
-          		if len(iso3) != 3 or not year.isdigit() or value is None:
+          		if iso3 not in allowed_iso3 or not year.isdigit() or value is None:
           			continue
           		try:
           			number = float(value)
@@ -91,7 +108,7 @@ jobs:
           			continue
           		if math.isfinite(number):
           			values[(iso3, int(year))] = number
-          	print(f"{code}: {len(values)} observations")
+          	print(f"{code}: {len(values)} production-country observations")
           	return values
 
           def compare(label, observed, calculated, tolerances):
@@ -106,6 +123,7 @@ jobs:
           		raise RuntimeError(f"no overlap for {label}")
           	print("\n===", label, "===")
           	print("overlap", len(diffs))
+          	print("countries", len({key[0] for key in keys}))
           	print("median_abs_diff", statistics.median(diffs))
           	print("mean_abs_diff", statistics.fmean(diffs))
           	print("max_abs_diff", max(diffs))
