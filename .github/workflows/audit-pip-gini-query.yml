@@ -33,7 +33,7 @@ jobs:
           import json
           import urllib.parse
           import urllib.request
-          from collections import Counter, defaultdict
+          from collections import Counter
 
           import pyarrow.feather as feather
 
@@ -68,6 +68,7 @@ jobs:
               table = feather.read_table(io.BytesIO(data))
               return url, table.to_pylist(), table.column_names
 
+          survey_rows = None
           for name, extra in variants:
               print(f"\n=== {name} ===")
               url, rows, columns = fetch_arrow(extra)
@@ -102,4 +103,60 @@ jobs:
                   for row in nonnull[:5]
               ]
               print("sample=" + json.dumps(sample, ensure_ascii=False))
+              if name == "survey-default":
+                  survey_rows = nonnull
+
+          assert survey_rows is not None
+          by_country = {}
+          duplicate_country_years = Counter()
+          for row in survey_rows:
+              country = str(row["country_code"])
+              year = int(row["reporting_year"])
+              duplicate_country_years[(country, year)] += 1
+              by_country.setdefault(country, []).append((year, row))
+          duplicates = [key for key, count in duplicate_country_years.items() if count > 1]
+          print(f"\nduplicate country-years={len(duplicates)}")
+          for country in by_country:
+              by_country[country].sort(key=lambda item: item[0])
+
+          print("\n=== latest-survey-as-of coverage ===")
+          for asof in range(2018, 2027):
+              parts = []
+              for max_age in (3, 5, 7, 10, None):
+                  selected = {}
+                  for country, observations in by_country.items():
+                      eligible = [(year, row) for year, row in observations if year <= asof]
+                      if not eligible:
+                          continue
+                      source_year, row = eligible[-1]
+                      age = asof - source_year
+                      if max_age is not None and age > max_age:
+                          continue
+                      selected[country] = (source_year, row)
+                  label = "all" if max_age is None else str(max_age)
+                  parts.append(f"age<={label}:{len(selected)}")
+              print(f"{asof}: " + " ".join(parts))
+
+          print("\n=== 2025 source-year age distribution ===")
+          ages = Counter()
+          latest_2025 = {}
+          for country, observations in by_country.items():
+              eligible = [(year, row) for year, row in observations if year <= 2025]
+              if not eligible:
+                  continue
+              source_year, row = eligible[-1]
+              latest_2025[country] = (source_year, row)
+              ages[2025 - source_year] += 1
+          cumulative = 0
+          for age in sorted(ages):
+              cumulative += ages[age]
+              print(f"age={age}: {ages[age]} cumulative={cumulative}")
+
+          print("\n=== reference countries as of 2025 ===")
+          for country in ("AUT", "DEU", "USA", "IND"):
+              source_year, row = latest_2025[country]
+              print(
+                  f"{country}: sourceYear={source_year} age={2025-source_year} "
+                  f"gini={float(row['gini'])*100:.4f} welfare={row.get('welfare_type')}"
+              )
           PY
