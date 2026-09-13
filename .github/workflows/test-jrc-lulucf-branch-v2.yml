@@ -1,0 +1,88 @@
+name: Test hardened JRC LULUCF branch
+
+on:
+  push:
+    branches:
+      - audit/lulucf-primary-source
+    paths:
+      - ".github/workflows/test-jrc-lulucf-branch-v2.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate files
+        run: |
+          python -m py_compile scripts/build_jrc_lulucf.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/jrc-lulucf-indicators.json >/dev/null
+
+      - name: Build JRC LULUCF statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?hardened=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_jrc_lulucf.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/jrc-lulucf.log
+
+      - name: Validate output
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path("config/jrc-lulucf-indicators.json").read_text(encoding="utf-8"))
+          provider = json.loads(Path("dist/statistics/jrc-lulucf/index.json").read_text(encoding="utf-8"))
+          assert provider["provider"]["id"] == "jrc-lulucf"
+          assert len(provider["indicators"]) == len(config["indicators"]) == 3
+          dataset = provider["dataset"]
+          assert dataset["zenodoRecordId"] == "18352395"
+          assert dataset["releaseVersion"] == "3.1.1"
+          assert dataset["sourceFile"] == "timeseries_NGHGI_v3.1.csv"
+          assert dataset["licenseId"] == "cc-by-4.0"
+          assert dataset["checksum"] == "md5:702b46bfe67cca47264fdf272d312005"
+          assert dataset["bytes"] == 1180037
+          assert dataset["publicationDate"] == "2026-01-23"
+          assert dataset["sourceStartYear"] == 2000
+          assert dataset["sourceLatestYear"] == 2023
+          assert dataset["sourceVersions"] == ["V3.1 (NGHGI 2025)"]
+          assert dataset["sourceSubmissions"] == ["2023 (pre-Paris)", "CRT_2024", "CRT_2025"]
+          assert dataset["sourceCategories"] == ["DEFORESTATION", "FOREST", "HWP", "LULUCF", "ORG_SOILS", "OTHER"]
+          configured = {item["id"]: item for item in config["indicators"]}
+          for item in provider["indicators"]:
+          	cfg = configured[item["id"]]
+          	coverage = item["coverage"]
+          	assert item["availableYears"][0] == 2000
+          	assert item["availableYears"][-1] == 2023
+          	assert item["defaultYear"] == 2023
+          	assert coverage["areasWithAnyValue"] >= cfg["minAreasWithAnyValue"]
+          	assert coverage["areasInDefaultYear"] >= cfg["minAreasInDefaultYear"]
+          	print(
+          		f"{item['id']}: defaultYear={item['defaultYear']} "
+          		f"areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+          		f"years={item['availableYears'][0]}-{item['availableYears'][-1]}"
+          	)
+          print("snapshot=" + provider["activeSnapshot"])
+          PY
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-jrc-lulucf-hardened-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: warn
+          retention-days: 7
