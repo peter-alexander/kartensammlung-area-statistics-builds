@@ -1,0 +1,74 @@
+name: Test JRC LULUCF branch
+
+on:
+  push:
+    branches:
+      - audit/lulucf-primary-source
+    paths:
+      - "config/statistics-providers.json"
+      - "config/jrc-lulucf-indicators.json"
+      - "scripts/build_jrc_lulucf.py"
+      - "scripts/build_world_bank.py"
+      - ".github/workflows/test-jrc-lulucf-branch.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate files
+        run: |
+          python -m py_compile scripts/build_jrc_lulucf.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/jrc-lulucf-indicators.json >/dev/null
+
+      - name: Build JRC LULUCF statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?branchtest=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_jrc_lulucf.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/jrc-lulucf.log
+
+      - name: Validate output
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path("config/jrc-lulucf-indicators.json").read_text(encoding="utf-8"))
+          provider = json.loads(Path("dist/statistics/jrc-lulucf/index.json").read_text(encoding="utf-8"))
+          assert provider["provider"]["id"] == "jrc-lulucf"
+          assert len(provider["indicators"]) == len(config["indicators"]) == 3
+          assert provider["dataset"]["zenodoRecordId"] == "18352395"
+          assert provider["dataset"]["releaseVersion"] == "3.1.1"
+          assert provider["dataset"]["sourceLatestYear"] == 2023
+          assert provider["dataset"]["licenseId"] == "cc-by-4.0"
+          for item in provider["indicators"]:
+          	assert item["availableYears"][0] == 2000
+          	assert item["availableYears"][-1] == 2023
+          	assert item["defaultYear"] == 2023
+          	print(item["id"], item["coverage"])
+          print("snapshot=" + provider["activeSnapshot"])
+          PY
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-jrc-lulucf-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: warn
+          retention-days: 7
