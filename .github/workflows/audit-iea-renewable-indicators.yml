@@ -1,0 +1,61 @@
+name: Audit IEA renewable indicators
+
+on:
+  push:
+    branches:
+      - audit/renewable-final-energy
+    paths:
+      - ".github/workflows/audit-iea-renewable-indicators.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Inspect public IEA stats API
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import urllib.parse
+          import urllib.request
+
+          def fetch(url):
+          	request = urllib.request.Request(url, headers={'User-Agent': 'kartensammlung-area-statistics-builds/1', 'Accept': 'application/json'})
+          	with urllib.request.urlopen(request, timeout=60) as response:
+          		body = response.read()
+          		print('URL', url, 'status', response.status, 'bytes', len(body), 'content-type', response.headers.get('Content-Type'))
+          		return json.loads(body)
+
+          for url in ('https://api.iea.org/stats/indicators', 'https://api.iea.org/stats/countries'):
+          	try:
+          		payload = fetch(url)
+          	except Exception as exc:
+          		print('ERROR', url, repr(exc))
+          		continue
+          	print('type=', type(payload).__name__)
+          	if isinstance(payload, dict):
+          		print('keys=', list(payload)[:30])
+          		items = payload.get('indicators') or payload.get('data') or payload.get('rows') or payload.get('results') or []
+          	else:
+          		items = payload
+          	print('items=', len(items) if hasattr(items, '__len__') else 'unknown')
+          	if isinstance(items, list):
+          		for item in items[:5]:
+          			print('sample=', item)
+          		matches = []
+          		for item in items:
+          			text = json.dumps(item, ensure_ascii=False).lower()
+          			if 'renew' in text or 'final energy' in text or 'tfec' in text or 'sdg 7.2' in text or '7.2.1' in text:
+          				matches.append(item)
+          		print('MATCHES', len(matches))
+          		for item in matches[:100]:
+          			print(json.dumps(item, ensure_ascii=False, sort_keys=True))
+          PY
