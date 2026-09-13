@@ -1,0 +1,169 @@
+name: Audit ILOSTAT gender wage gap canonical totals
+
+on:
+  push:
+    branches:
+      - audit/ilostat-gender-gap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Audit total classifications and recency
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import sys
+          import urllib.parse
+          import urllib.request
+          from collections import Counter, defaultdict
+
+          sys.path.insert(0, 'scripts')
+          import build_world_bank as common
+
+          UA = {'User-Agent': 'kartensammlung-area-statistics-builds/1'}
+
+          def fetch(url):
+          	req = urllib.request.Request(url, headers=UA)
+          	with urllib.request.urlopen(req, timeout=120) as response:
+          		return response.read()
+
+          area_by_iso3, _ = common.load_registry(
+          	'https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?audit=ilostat-gender-wage-gap-canonical',
+          	120,
+          )
+
+          params = urllib.parse.urlencode({
+          	'id': 'EAR_GGAP_OCU_RT_A',
+          	'type': 'code',
+          	'format': '.csv',
+          	'channel': 'ilostat',
+          })
+          url = f'https://rplumber.ilo.org/data/indicator/?{params}'
+          rows = list(csv.DictReader(io.StringIO(fetch(url).decode('utf-8-sig'))))
+          totals = ('OCU_ISCO08_TOTAL', 'OCU_SKILL_TOTAL', 'OCU_ISCO88_TOTAL')
+
+          by_class = {code: {} for code in totals}
+          status_counts = {code: Counter() for code in totals}
+          source_counts = {code: Counter() for code in totals}
+
+          for row in rows:
+          	classif = str(row.get('classif1', '')).strip()
+          	if classif not in by_class:
+          		continue
+          	iso3 = str(row.get('ref_area', '')).strip().upper()
+          	year_text = str(row.get('time', '')).strip()
+          	value_text = str(row.get('obs_value', '')).strip()
+          	if iso3 not in area_by_iso3 or not year_text.isdigit() or not value_text:
+          		continue
+          	key = (iso3, int(year_text))
+          	if key in by_class[classif]:
+          		raise RuntimeError(f'duplicate {classif} {key}')
+          	by_class[classif][key] = float(value_text)
+          	status_counts[classif][str(row.get('obs_status', '')).strip()] += 1
+          	source_counts[classif][str(row.get('source', '')).strip()] += 1
+
+          print('=== TOTAL CLASSIFICATIONS ===')
+          for code in totals:
+          	keys = by_class[code]
+          	countries = {iso3 for iso3, _ in keys}
+          	years = sorted({year for _, year in keys})
+          	by_year = Counter(year for _, year in keys)
+          	print(code)
+          	print('  rows', len(keys), 'countries', len(countries), 'years', (years[0], years[-1]) if years else None)
+          	print('  statuses', status_counts[code])
+          	print('  recent coverage', [(year, by_year[year]) for year in years if year >= 2018])
+          	print('  top coverage', by_year.most_common(10))
+
+          print('\n=== OVERLAP COMPARISONS ===')
+          for i, left in enumerate(totals):
+          	for right in totals[i + 1:]:
+          		common_keys = sorted(set(by_class[left]) & set(by_class[right]))
+          		diffs = []
+          		for key in common_keys:
+          			lv = by_class[left][key]
+          			rv = by_class[right][key]
+          			if abs(lv - rv) > 1e-9:
+          				diffs.append((key, lv, rv, abs(lv-rv)))
+          		print(left, 'vs', right, 'overlap', len(common_keys), 'different', len(diffs))
+          		if diffs:
+          			print('  max diff', max(diffs, key=lambda item: item[3]))
+          			print('  samples', diffs[:10])
+
+          print('\n=== COUNTRY-YEAR TOTAL MULTIPLICITY ===')
+          all_keys = sorted(set().union(*(set(values) for values in by_class.values())))
+          conflicting = []
+          multiple = 0
+          for key in all_keys:
+          	present = [(code, by_class[code][key]) for code in totals if key in by_class[code]]
+          	if len(present) > 1:
+          		multiple += 1
+          		values = {round(value, 12) for _, value in present}
+          		if len(values) > 1:
+          			conflicting.append((key, present))
+          print('total country-years', len(all_keys), 'multiple total classes', multiple, 'conflicting', len(conflicting))
+          if conflicting:
+          	print('conflict samples', conflicting[:20])
+
+          # Canonical policy candidate: ISCO08 total > skill total > ISCO88 total.
+          canonical = {}
+          chosen = Counter()
+          for key in all_keys:
+          	for code in totals:
+          		if key in by_class[code]:
+          			canonical[key] = by_class[code][key]
+          			chosen[code] += 1
+          			break
+
+          by_year = defaultdict(set)
+          countries_any = set()
+          latest_by_country = {}
+          for (iso3, year), value in canonical.items():
+          	by_year[year].add(iso3)
+          	countries_any.add(iso3)
+          	latest_by_country[iso3] = max(year, latest_by_country.get(iso3, year))
+
+          print('\n=== CANONICAL CANDIDATE ===')
+          print('chosen', chosen)
+          print('observations', len(canonical), 'countries', len(countries_any), 'years', min(by_year), max(by_year))
+          print('recent exact coverage', [(year, len(by_year[year])) for year in sorted(by_year) if year >= 2018])
+          print('latest source year distribution', sorted(Counter(latest_by_country.values()).items(), reverse=True))
+
+          for cutoff in (2020, 2021, 2022, 2023, 2024, 2025, 2026):
+          	latest_asof = {}
+          	for (iso3, year), value in canonical.items():
+          		if year > cutoff:
+          			continue
+          		current = latest_asof.get(iso3)
+          		if current is None or year > current[0]:
+          			latest_asof[iso3] = (year, value)
+          	ages = Counter(cutoff - source_year for source_year, _ in latest_asof.values())
+          	within5 = sum(count for age, count in ages.items() if age <= 5)
+          	within10 = sum(count for age, count in ages.items() if age <= 10)
+          	print(
+          		'asof', cutoff,
+          		'countries', len(latest_asof),
+          		'within5', within5,
+          		'within10', within10,
+          		'oldestAge', max(ages) if ages else None,
+          		'ageDistribution', sorted(ages.items()),
+          	)
+
+          print('\n=== REQUIRED COUNTRY LATEST ===')
+          for iso3 in ('AUT', 'DEU', 'USA', 'IND', 'FRA', 'POL'):
+          	items = sorted((year, value) for (code, year), value in canonical.items() if code == iso3)
+          	print(iso3, items[-5:])
+          PY
