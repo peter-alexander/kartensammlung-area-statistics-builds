@@ -1,0 +1,107 @@
+name: Audit IMF CPI inflation source
+
+on:
+  push:
+    branches:
+      - audit/imf-cpi-inflation
+    paths:
+      - ".github/workflows/audit-imf-cpi-inflation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Inspect IMF CPI SDMX series
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import json
+          import time
+          from urllib.parse import quote
+          from urllib.request import Request, urlopen
+
+          IMF_BASE = "https://api.imf.org/external/sdmx/3.0/data/dataflow/IMF.STA/CPI/~/"
+          WDI_BASE = "https://api.worldbank.org/v2/country/all/indicator/FP.CPI.TOTL.ZG?format=json&per_page=20000&date=1960:2026"
+          UA = "kartensammlung-area-statistics-builds/1"
+
+          def fetch(url, accept="text/csv, application/json, */*"):
+          	last = None
+          	for attempt, delay in enumerate((0, 3, 10, 20, 40), start=1):
+          		if delay:
+          			time.sleep(delay)
+          		try:
+          			req = Request(url, headers={"User-Agent": UA, "Accept": accept})
+          			with urlopen(req, timeout=120) as response:
+          				data = response.read()
+          				print(f"GET {url} -> {response.status} content-type={response.headers.get('Content-Type')} bytes={len(data)}")
+          				return data
+          		except Exception as exc:
+          			last = exc
+          			print(f"attempt {attempt}/5 failed for {url}: {exc!r}")
+          	raise RuntimeError(f"request failed: {url}") from last
+
+          def read_csv(raw):
+          	text = raw.decode("utf-8-sig")
+          	reader = csv.DictReader(io.StringIO(text))
+          	rows = list(reader)
+          	return reader.fieldnames or [], rows
+
+          for transformation in ("IX", "PC_PA", "PC_PP_PT"):
+          	key = f"AUT+DEU+USA+IND.CPI._T.{transformation}.A"
+          	url = IMF_BASE + key + "?startPeriod=2019"
+          	try:
+          		fields, rows = read_csv(fetch(url))
+          	except Exception as exc:
+          		print(f"=== {transformation} FAILED: {exc!r}")
+          		continue
+          	print(f"=== {transformation}: fields={fields} rows={len(rows)}")
+          	for row in rows[-20:]:
+          		print(json.dumps({key: row.get(key) for key in fields}, ensure_ascii=False, sort_keys=True))
+
+          key = "*.CPI._T.PC_PA.A"
+          direct_url = IMF_BASE + key + "?startPeriod=1960"
+          fields, direct_rows = read_csv(fetch(direct_url))
+          print(f"=== DIRECT ALL PC_PA.A fields={fields} rows={len(direct_rows)}")
+          print("countries=" + str(len({row.get("COUNTRY") for row in direct_rows if row.get("COUNTRY")})))
+          years = sorted({row.get("TIME_PERIOD") for row in direct_rows if row.get("TIME_PERIOD")})
+          print(f"years={years[0] if years else None}-{years[-1] if years else None}")
+          transformations = sorted({row.get("TYPE_OF_TRANSFORMATION") for row in direct_rows})
+          frequencies = sorted({row.get("FREQUENCY") for row in direct_rows})
+          index_types = sorted({row.get("INDEX_TYPE") for row in direct_rows})
+          coicop = sorted({row.get("COICOP_1999") for row in direct_rows})
+          print(f"transformations={transformations} frequencies={frequencies} index_types={index_types} coicop={coicop}")
+
+          wdi_payload = json.loads(fetch(WDI_BASE, "application/json").decode("utf-8"))
+          if not isinstance(wdi_payload, list) or len(wdi_payload) < 2:
+          	raise RuntimeError("Unexpected WDI response")
+          wdi_rows = wdi_payload[1]
+          print(f"=== WDI rows={len(wdi_rows)}")
+          print("WDI source=" + str(wdi_rows[0].get("indicator") if wdi_rows else None))
+          for iso3 in ("AUT", "DEU", "USA", "IND"):
+          	direct = {
+          		row.get("TIME_PERIOD"): row.get("OBS_VALUE")
+          		for row in direct_rows
+          		if row.get("COUNTRY") == iso3
+          	}
+          	wdi = {
+          		row.get("date"): row.get("value")
+          		for row in wdi_rows
+          		if row.get("countryiso3code") == iso3 and row.get("value") is not None
+          	}
+          	print(f"--- {iso3}")
+          	for year in sorted(set(direct) & set(wdi))[-10:]:
+          		print(f"{year}: IMF={direct[year]} WDI={wdi[year]}")
+          PY
