@@ -1,0 +1,91 @@
+name: Finalize ILOSTAT minimum wage audit
+
+on:
+  push:
+    branches:
+      - audit/ilostat-minimum-wage
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Final coverage audit
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import sys
+          import urllib.parse
+          import urllib.request
+          from collections import Counter, defaultdict
+
+          sys.path.insert(0, 'scripts')
+          import build_world_bank as common
+
+          registry_url = 'https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?audit=minimum-wage-final'
+          area_by_iso3, _ = common.load_registry(registry_url, 120)
+          print('registry ISO3', len(area_by_iso3))
+
+          params = urllib.parse.urlencode({
+              'id': 'EAR_INEE_CUR_NB_A',
+              'type': 'code',
+              'format': '.csv',
+              'channel': 'ilostat',
+          })
+          url = f'https://rplumber.ilo.org/data/indicator/?{params}'
+          req = urllib.request.Request(url, headers={'User-Agent': 'kartensammlung-area-statistics-builds/1'})
+          with urllib.request.urlopen(req, timeout=120) as response:
+              rows = list(csv.DictReader(io.StringIO(response.read().decode('utf-8-sig'))))
+
+          print('rows', len(rows))
+          for currency in ('CUR_TYPE_PPP', 'CUR_TYPE_USD'):
+              selected = [r for r in rows if r.get('classif1') == currency and str(r.get('obs_value', '')).strip()]
+              by_year = defaultdict(dict)
+              areas_any = set()
+              unmapped = set()
+              for row in selected:
+                  source = str(row.get('ref_area', '')).strip().upper()
+                  year_text = str(row.get('time', '')).strip()
+                  if source not in area_by_iso3:
+                      unmapped.add(source)
+                      continue
+                  if not year_text.isdigit():
+                      continue
+                  year = int(year_text)
+                  area_id = area_by_iso3[source]
+                  if area_id in by_year[year]:
+                      raise RuntimeError(f'duplicate {currency} {source} {year}')
+                  by_year[year][area_id] = float(row['obs_value'])
+                  areas_any.add(area_id)
+
+              years = sorted(by_year)
+              print('\n===', currency, '===')
+              print('areas any', len(areas_any), 'years', years[0], years[-1], 'unmapped', sorted(unmapped))
+              for year in years:
+                  if year >= 2018:
+                      refs = by_year[year]
+                      print('coverage', year, len(refs), {
+                          code: area_by_iso3.get(code) in refs
+                          for code in ('DEU','USA','IND','FRA','POL')
+                      })
+              eligible = [year for year in years if len(by_year[year]) >= 100]
+              print('latest >=100', eligible[-1] if eligible else None)
+              eligible120 = [year for year in years if len(by_year[year]) >= 120]
+              print('latest >=120', eligible120[-1] if eligible120 else None)
+              eligible140 = [year for year in years if len(by_year[year]) >= 140]
+              print('latest >=140', eligible140[-1] if eligible140 else None)
+              print('top coverage', sorted(((len(v), y) for y, v in by_year.items()), reverse=True)[:12])
+
+              latest_source_year = {}
+              for year, values in by_year.items():
+                  for area_id in values:
+                      latest_source_year[area_id] = max(year, latest_source_year.get(area_id, year))
+              print('latest-source-year distribution', sorted(Counter(latest_source_year.values()).items(), reverse=True))
+          PY
