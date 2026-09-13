@@ -1,0 +1,454 @@
+name: Prepare PIP Gini as-of implementation
+
+on:
+  push:
+    branches:
+      - feature/pip-gini
+    paths:
+      - ".github/workflows/prepare-pip-gini-asof.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/pip-gini
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependency
+        run: python -m pip install --disable-pip-version-check --quiet pyarrow
+
+      - name: Patch PIP Gini implementation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          script_path = Path("scripts/build_world_bank_pip.py")
+          script = script_path.read_text(encoding="utf-8")
+
+          replacements = [
+          	(
+          		"def pip_url(config: dict[str, Any], version: str, poverty_line: float) -> str:\n",
+          		"def pip_url(config: dict[str, Any], version: str, poverty_line: float, fill_gaps: bool = True) -> str:\n",
+          	),
+          	(
+          		'\t\t"fill_gaps": "true",\n',
+          		'\t\t"fill_gaps": "true" if fill_gaps else "false",\n',
+          	),
+          	(
+          		"def read_arrow_rows(data: bytes, source: str) -> list[dict[str, Any]]:\n",
+          		"def read_arrow_rows(data: bytes, source: str, minimum_rows: int = 5000) -> list[dict[str, Any]]:\n",
+          	),
+          	(
+          		'\tif len(rows) < 5000:\n\t\traise RuntimeError(f"World Bank PIP Arrow response unexpectedly small: {len(rows)} rows")\n',
+          		'\tif len(rows) < minimum_rows:\n\t\traise RuntimeError(\n\t\t\tf"World Bank PIP Arrow response unexpectedly small: {len(rows)} rows; "\n\t\t\tf"expected at least {minimum_rows}."\n\t\t)\n',
+          	),
+          	(
+          		'\t\tfor field in ("mean", "median", "gini", "reporting_pop", "spl", "spr", "pg"):\n',
+          		'\t\tfor field in ("mean", "median", "reporting_pop", "spl", "spr", "pg"):\n',
+          	),
+          	(
+          		'\t\t\t"frequency": "annual",\n',
+          		'\t\t\t"frequency": payload["frequency"],\n',
+          	),
+          ]
+
+          for old, new in replacements:
+          	if script.count(old) != 1:
+          		raise RuntimeError(f"Expected exactly one script match for {old!r}; found {script.count(old)}")
+          	script = script.replace(old, new)
+
+          anchor = "\n\ndef release_date_iso(release_version: str) -> str:\n"
+          if script.count(anchor) != 1:
+          	raise RuntimeError("Could not identify release_date_iso insertion point")
+
+          functions = textwrap.dedent('''
+
+          def collect_gini_survey_rows(
+          \trows: list[dict[str, Any]],
+          \tcanonical_rows: dict[tuple[int, str], dict[str, Any]],
+          \tarea_by_iso3: dict[str, str],
+          \taliases: dict[str, str],
+          \tcurrent_year: int,
+          ) -> tuple[dict[tuple[int, str], dict[str, Any]], set[str]]:
+          \tgrouped: dict[tuple[int, str], list[dict[str, Any]]] = defaultdict(list)
+          \tunresolved: set[str] = set()
+          \tfor row in rows:
+          \t\tif str(row.get("reporting_level", "")).strip().lower() != "national":
+          \t\t\tcontinue
+          \t\tgini = finite_number(row.get("gini"))
+          \t\tif gini is None:
+          \t\t\tcontinue
+          \t\tif not 0 <= gini <= 1:
+          \t\t\traise RuntimeError(f"World Bank PIP Gini outside 0..1: {gini}")
+          \t\tsource_code = str(row.get("country_code", "")).strip().upper()
+          \t\tif not source_code or source_code in IGNORED_SOURCE_AREAS:
+          \t\t\tcontinue
+          \t\tiso3 = mapped_iso3(source_code, aliases)
+          \t\tarea_id = area_by_iso3.get(iso3)
+          \t\tif not area_id:
+          \t\t\tunresolved.add(source_code)
+          \t\t\tcontinue
+          \t\ttry:
+          \t\t\tyear = int(row.get("reporting_year"))
+          \t\texcept (TypeError, ValueError):
+          \t\t\tcontinue
+          \t\tif year < 1900 or year > current_year:
+          \t\t\tcontinue
+          \t\tgrouped[(year, area_id)].append(row)
+
+          \tselected: dict[tuple[int, str], dict[str, Any]] = {}
+          \tduplicate_groups = 0
+          \tfor key, candidates in grouped.items():
+          \t\tcanonical = canonical_rows.get(key)
+          \t\tif len(candidates) == 1:
+          \t\t\trow = candidates[0]
+          \t\t\tif canonical is not None and row.get("welfare_type") != canonical.get("welfare_type"):
+          \t\t\t\traise RuntimeError(
+          \t\t\t\t\tf"World Bank PIP Gini welfare type differs from canonical annual series for {key}: "
+          \t\t\t\t\tf"{row.get('welfare_type')} != {canonical.get('welfare_type')}"
+          \t\t\t\t)
+          \t\t\tselected[key] = row
+          \t\t\tcontinue
+
+          \t\tduplicate_groups += 1
+          \t\tif canonical is None:
+          \t\t\traise RuntimeError(f"World Bank PIP Gini duplicate has no canonical annual row: {key}")
+          \t\tcanonical_welfare = canonical.get("welfare_type")
+          \t\tmatches = [row for row in candidates if row.get("welfare_type") == canonical_welfare]
+          \t\tif len(matches) != 1:
+          \t\t\traise RuntimeError(
+          \t\t\t\tf"World Bank PIP Gini duplicate cannot be resolved by canonical welfare type for {key}: "
+          \t\t\t\tf"welfare={canonical_welfare!r} matches={len(matches)} candidates={len(candidates)}"
+          \t\t\t)
+          \t\tselected[key] = matches[0]
+
+          \tprint(
+          \t\tf"PIP Gini canonical surveys: observations={len(selected)} "
+          \t\tf"countries={len({area_id for _year, area_id in selected})} duplicateGroups={duplicate_groups}"
+          \t)
+          \treturn selected, unresolved
+
+
+          def gini_metadata_for_row(row: dict[str, Any], source_year: int, target_year: int) -> dict[str, Any]:
+          \tmetadata = metadata_for_row(row)
+          \tmetadata["sourceYear"] = source_year
+          \tmetadata["dataAgeYears"] = target_year - source_year
+          \tmetadata["carriedForward"] = target_year != source_year
+          \tfor source_key, target_key in (
+          \t\t("survey_acronym", "surveyAcronym"),
+          \t\t("survey_comparability", "surveyComparability"),
+          \t\t("comparable_spell", "comparableSpell"),
+          \t):
+          \t\tvalue = str(row.get(source_key, "")).strip()
+          \t\tif value:
+          \t\t\tmetadata[target_key] = value
+          \tsurvey_year = finite_number(row.get("survey_year"))
+          \tif survey_year is not None:
+          \t\tmetadata["surveyYear"] = normalize_number(survey_year, 4)
+          \tif target_year == source_year:
+          \t\tmetadata["sourceNote"] = f"PIP-Datenjahr {source_year}; Originalwert aus Haushaltserhebung, nicht interpoliert."
+          \telse:
+          \t\tmetadata["sourceNote"] = (
+          \t\t\tf"PIP-Datenjahr {source_year}; letzter bis einschließlich {target_year} verfügbarer "
+          \t\t\t"Survey-Wert, unverändert fortgeführt und nicht interpoliert."
+          \t\t)
+          \treturn metadata
+
+
+          def build_gini_payload(
+          \tconfig: dict[str, Any],
+          \tindicator: dict[str, Any],
+          \tsurvey_rows: dict[tuple[int, str], dict[str, Any]],
+          \tarea_by_iso3: dict[str, str],
+          \tversion_info: dict[str, str],
+          ) -> dict[str, Any]:
+          \tby_area: dict[str, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
+          \tfor (source_year, area_id), row in survey_rows.items():
+          \t\tby_area[area_id].append((source_year, row))
+          \tfor observations in by_area.values():
+          \t\tobservations.sort(key=lambda item: item[0])
+
+          \tif len(by_area) < int(indicator["minAreasWithAnyValue"]):
+          \t\traise RuntimeError(
+          \t\t\tf"World Bank PIP indicator {indicator['id']} maps only {len(by_area)} areas; "
+          \t\t\tf"expected at least {indicator['minAreasWithAnyValue']}."
+          \t\t)
+          \tif not survey_rows:
+          \t\traise RuntimeError("World Bank PIP Gini has no canonical survey observations.")
+
+          \tfirst_source_year = min(year for year, _area_id in survey_rows)
+          \tlast_source_year = max(year for year, _area_id in survey_rows)
+          \trelease_year = int(version_info["releaseVersion"][:4])
+          \tif release_year < last_source_year:
+          \t\traise RuntimeError(
+          \t\t\tf"World Bank PIP Gini release year {release_year} precedes latest source year {last_source_year}."
+          \t\t)
+          \tavailable_years = list(range(first_source_year, release_year + 1))
+          \tvalues_by_year: dict[int, dict[str, int | float]] = defaultdict(dict)
+          \tmetadata_by_year: dict[int, dict[str, dict[str, Any]]] = defaultdict(dict)
+
+          \tfor target_year in available_years:
+          \t\tfor area_id, observations in by_area.items():
+          \t\t\tlatest: tuple[int, dict[str, Any]] | None = None
+          \t\t\tfor source_year, row in observations:
+          \t\t\t\tif source_year > target_year:
+          \t\t\t\t\tbreak
+          \t\t\t\tlatest = (source_year, row)
+          \t\t\tif latest is None:
+          \t\t\t\tcontinue
+          \t\t\tsource_year, row = latest
+          \t\t\tgini = finite_number(row.get("gini"))
+          \t\t\tif gini is None or not 0 <= gini <= 1:
+          \t\t\t\traise RuntimeError(f"Invalid World Bank PIP Gini for {area_id} {source_year}: {gini}")
+          \t\t\tvalues_by_year[target_year][area_id] = normalize_number(gini * float(indicator.get("scale", 1)))
+          \t\t\tmetadata_by_year[target_year][area_id] = gini_metadata_for_row(row, source_year, target_year)
+
+          \trequired_areas = [str(area_id) for area_id in indicator["requiredAreas"]]
+          \tmissing_required_any = [area_id for area_id in required_areas if area_id not in by_area]
+          \tif missing_required_any:
+          \t\traise RuntimeError(f"World Bank PIP indicator {indicator['id']} is missing required areas: {missing_required_any}")
+
+          \tdefault_year = available_years[-1]
+          \tdefault_values = values_by_year[default_year]
+          \tmin_default = int(indicator["minAreasInDefaultYear"])
+          \tif len(default_values) < min_default or not all(area_id in default_values for area_id in required_areas):
+          \t\traise RuntimeError(
+          \t\t\tf"World Bank PIP Gini default cutoff {default_year} has {len(default_values)} areas; "
+          \t\t\tf"expected at least {min_default} and all required areas."
+          \t\t)
+
+          \tsorted_values = {
+          \t\tstr(year): {area_id: values_by_year[year][area_id] for area_id in sorted(values_by_year[year])}
+          \t\tfor year in available_years
+          \t\tif values_by_year[year]
+          \t}
+          \tsorted_metadata = {
+          \t\tstr(year): {area_id: metadata_by_year[year][area_id] for area_id in sorted(metadata_by_year[year])}
+          \t\tfor year in available_years
+          \t\tif metadata_by_year[year]
+          \t}
+          \tavailable_years = [year for year in available_years if values_by_year[year]]
+          \tprovider = config["provider"]
+          \tsource = {
+          \t\t"providerId": provider["id"],
+          \t\t"providerName": provider["name"],
+          \t\t"dataset": provider["dataset"],
+          \t\t"version": version_info["version"],
+          \t\t"releaseVersion": version_info["releaseVersion"],
+          \t\t"pppVersion": config["pppVersion"],
+          \t\t"surveyQueryPovertyLine": 3.0,
+          \t\t"fillGaps": False,
+          \t\t"reportingLevel": "national",
+          \t\t"selectionPolicy": (
+          \t\t\t"Canonical PIP welfare type is used when multiple income/consumption survey distributions "
+          \t\t\t"exist for the same country-year."
+          \t\t),
+          \t\t"temporalDisplayPolicy": (
+          \t\t\t"Each cutoff year shows the latest canonical survey observation with reporting year less "
+          \t\t\t"than or equal to that cutoff; values are carried forward unchanged, never interpolated."
+          \t\t),
+          \t\t"sourceYearRange": [first_source_year, last_source_year],
+          \t\t"license": provider["license"],
+          \t\t"licenseUrl": provider["licenseUrl"],
+          \t\t"attribution": provider["attribution"],
+          \t\t"url": config["sourcePage"],
+          \t}
+          \tpayload = {
+          \t\t"schema": "kartensammlung.statistics-indicator/v1",
+          \t\t"areaLevel": "country",
+          \t\t"frequency": str(indicator.get("frequency", "latest-observation-through-year")),
+          \t\t"indicator": {
+          \t\t\t"id": indicator["id"],
+          \t\t\t"title": indicator["title"],
+          \t\t\t"description": indicator["description"],
+          \t\t\t"unit": indicator["unit"],
+          \t\t\t"classification": indicator["classification"],
+          \t\t},
+          \t\t"source": source,
+          \t\t"availableYears": available_years,
+          \t\t"defaultYear": default_year,
+          \t\t"coverage": {
+          \t\t\t"registryAreas": len(area_by_iso3),
+          \t\t\t"areasWithAnyValue": len(by_area),
+          \t\t\t"latestYear": available_years[-1],
+          \t\t\t"areasInLatestYear": len(values_by_year[available_years[-1]]),
+          \t\t\t"areasInDefaultYear": len(default_values),
+          \t\t},
+          \t\t"values": sorted_values,
+          \t\t"observationMetadata": sorted_metadata,
+          \t}
+          \tprint(
+          \t\tf"{indicator['id']}: mapped={len(by_area)} sourceYears={first_source_year}-{last_source_year} "
+          \t\tf"cutoffs={available_years[0]}-{available_years[-1]} defaultYear={default_year} "
+          \t\tf"defaultCoverage={len(default_values)}"
+          \t)
+          \treturn payload
+          ''')
+
+          script = script.replace(anchor, functions + anchor)
+
+          old_main = textwrap.dedent('''
+          \tmetadata_by_key = {key: metadata_for_row(row) for key, row in base_rows.items()}
+          \tindicator_payloads: list[tuple[dict[str, Any], dict[str, Any]]] = []
+          \tfor indicator in config["indicators"]:
+          \t\tpayload = build_indicator_payload(
+          \t\t\tconfig,
+          \t\t\tindicator,
+          \t\t\trows_by_line,
+          \t\t\tmetadata_by_key,
+          \t\t\tarea_by_iso3,
+          \t\t\tversion_info,
+          \t\t)
+          \t\tindicator_payloads.append((indicator, payload))
+          ''')
+          new_main = textwrap.dedent('''
+          \tmetadata_by_key = {key: metadata_for_row(row) for key, row in base_rows.items()}
+          \tgini_survey_rows: dict[tuple[int, str], dict[str, Any]] | None = None
+          \tif any(str(indicator.get("queryMode", "")) == "survey-latest-through-year" for indicator in config["indicators"]):
+          \t\tgini_url = pip_url(config, version_info["version"], 3.0, fill_gaps=False)
+          \t\tstarted = time.monotonic()
+          \t\tdata, content_type = fetch_bytes(gini_url, args.timeout, "application/vnd.apache.arrow.file")
+          \t\telapsed = time.monotonic() - started
+          \t\tif content_type != "application/vnd.apache.arrow.file":
+          \t\t\traise RuntimeError(f"Unexpected World Bank PIP Gini Arrow content type: {content_type}")
+          \t\tsurvey_rows = read_arrow_rows(data, gini_url, minimum_rows=2000)
+          \t\tgini_survey_rows, unresolved = collect_gini_survey_rows(
+          \t\t\tsurvey_rows,
+          \t\t\tbase_rows,
+          \t\t\tarea_by_iso3,
+          \t\t\taliases,
+          \t\t\tnow.year,
+          \t\t)
+          \t\tif unresolved:
+          \t\t\traise RuntimeError(f"Unexpected unmapped World Bank PIP Gini source country codes: {sorted(unresolved)}")
+          \t\tprint(
+          \t\t\tf"PIP Gini surveys: downloaded={len(data)} bytes rows={len(survey_rows)} "
+          \t\t\tf"canonicalCountryYears={len(gini_survey_rows)} seconds={elapsed:.2f}"
+          \t\t)
+
+          \tindicator_payloads: list[tuple[dict[str, Any], dict[str, Any]]] = []
+          \tfor indicator in config["indicators"]:
+          \t\tif str(indicator.get("queryMode", "")) == "survey-latest-through-year":
+          \t\t\tif gini_survey_rows is None:
+          \t\t\t\traise RuntimeError("World Bank PIP Gini survey rows were not loaded.")
+          \t\t\tpayload = build_gini_payload(
+          \t\t\t\tconfig,
+          \t\t\t\tindicator,
+          \t\t\t\tgini_survey_rows,
+          \t\t\t\tarea_by_iso3,
+          \t\t\t\tversion_info,
+          \t\t\t)
+          \t\telse:
+          \t\t\tpayload = build_indicator_payload(
+          \t\t\t\tconfig,
+          \t\t\t\tindicator,
+          \t\t\t\trows_by_line,
+          \t\t\t\tmetadata_by_key,
+          \t\t\t\tarea_by_iso3,
+          \t\t\t\tversion_info,
+          \t\t\t)
+          \t\tindicator_payloads.append((indicator, payload))
+          ''')
+          if script.count(old_main) != 1:
+          	raise RuntimeError(f"Could not identify indicator build block; matches={script.count(old_main)}")
+          script = script.replace(old_main, new_main)
+          script_path.write_text(script, encoding="utf-8")
+
+          config_path = Path("config/world-bank-pip-indicators.json")
+          config = config_path.read_text(encoding="utf-8")
+          old_gini = textwrap.dedent('''
+          \t\t{
+          \t\t\t"id": "income-inequality.gini",
+          \t\t\t"slug": "income-inequality-gini",
+          \t\t\t"povertyLine": 3.0,
+          \t\t\t"field": "gini",
+          \t\t\t"scale": 100,
+          \t\t\t"title": "Gini-Koeffizient",
+          \t\t\t"description": "Gini-Koeffizient der in PIP verwendeten Einkommens- bzw. Konsumverteilung. 0 bedeutet vollständige Gleichheit, 100 maximale Ungleichheit. Jährliche PIP-Reihe mit Erhebungs-, Interpolations-/Extrapolations- und Nowcast-Status je Land und Jahr.",
+          \t\t\t"unit": {"id": "gini-0-100", "label": "Gini (0–100)"},
+          \t\t\t"classification": {"type": "fixed", "breaks": [20, 25, 30, 35, 40, 45]},
+          \t\t\t"minAreasWithAnyValue": 160,
+          \t\t\t"minAreasInDefaultYear": 160,
+          \t\t\t"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+          \t\t}
+          ''')
+          new_gini = textwrap.dedent('''
+          \t\t{
+          \t\t\t"id": "income-inequality.gini",
+          \t\t\t"slug": "income-inequality-gini",
+          \t\t\t"queryMode": "survey-latest-through-year",
+          \t\t\t"frequency": "latest-observation-through-year",
+          \t\t\t"povertyLine": 3.0,
+          \t\t\t"field": "gini",
+          \t\t\t"scale": 100,
+          \t\t\t"title": "Gini-Koeffizient",
+          \t\t\t"description": "Gini-Koeffizient der von PIP kanonisch verwendeten Einkommens- bzw. Konsumverteilung. 0 bedeutet vollständige Gleichheit, 100 maximale Ungleichheit. Für jeden angezeigten Datenstand wird je Land der letzte bis einschließlich dieses Jahres verfügbare PIP-Survey-Wert unverändert verwendet; PIP-Werte werden weder interpoliert noch extrapoliert. Das zugrunde liegende Datenjahr wird je Land ausgewiesen.",
+          \t\t\t"unit": {"id": "gini-0-100", "label": "Gini (0–100)"},
+          \t\t\t"classification": {"type": "fixed", "breaks": [20, 25, 30, 35, 40, 45]},
+          \t\t\t"minAreasWithAnyValue": 160,
+          \t\t\t"minAreasInDefaultYear": 160,
+          \t\t\t"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+          \t\t}
+          ''')
+          if config.count(old_gini) != 1:
+          	raise RuntimeError(f"Could not identify Gini config block; matches={config.count(old_gini)}")
+          config_path.write_text(config.replace(old_gini, new_gini), encoding="utf-8")
+          PY
+
+      - name: Validate implementation
+        shell: bash
+        run: |
+          python -m py_compile scripts/build_world_bank_pip.py scripts/build_world_bank.py
+          python -m json.tool config/world-bank-pip-indicators.json >/dev/null
+          git diff --check
+          grep -n 'survey-latest-through-year' config/world-bank-pip-indicators.json scripts/build_world_bank_pip.py
+          grep -n 'latest-observation-through-year' config/world-bank-pip-indicators.json scripts/build_world_bank_pip.py
+
+      - name: Test build against live PIP
+        shell: bash
+        run: |
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?gini-asof=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_world_bank_pip.py --registry "$REGISTRY_URL"
+
+      - name: Inspect Gini output
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          index = json.loads(Path("dist/statistics/world-bank-pip/index.json").read_text(encoding="utf-8"))
+          entry = next(item for item in index["indicators"] if item["id"] == "income-inequality.gini")
+          payload = json.loads((Path("dist/statistics/world-bank-pip") / entry["path"]).read_text(encoding="utf-8"))
+          print(json.dumps({
+          	"frequency": payload["frequency"],
+          	"availableYears": [payload["availableYears"][0], payload["availableYears"][-1]],
+          	"defaultYear": payload["defaultYear"],
+          	"coverage": payload["coverage"],
+          	"source": payload["source"],
+          }, ensure_ascii=False, indent=2))
+          year = str(payload["defaultYear"])
+          for area in ("country:AUT", "country:DEU", "country:USA", "country:IND"):
+          	print(area, payload["values"][year][area], payload["observationMetadata"][year][area])
+          PY
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/build_world_bank_pip.py config/world-bank-pip-indicators.json
+          git commit -m "Build PIP Gini from canonical survey observations"
+          git push origin HEAD:feature/pip-gini
