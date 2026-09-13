@@ -98,7 +98,16 @@ def validate_config(payload: Any) -> dict[str, Any]:
 		confidence_intervals = indicator.get("confidenceIntervals", True)
 		if not isinstance(confidence_intervals, bool):
 			raise ValueError(f"WHO indicator {indicator_id} has invalid confidenceIntervals flag.")
-		for field_name in ("valueField", "lowerField", "upperField", "fallbackWdiIndicator"):
+		value_multiplier = indicator.get("valueMultiplier", 1)
+		if isinstance(value_multiplier, bool) or not isinstance(value_multiplier, (int, float)) or not math.isfinite(float(value_multiplier)) or float(value_multiplier) <= 0:
+			raise ValueError(f"WHO indicator {indicator_id} has invalid valueMultiplier.")
+		min_default = indicator.get("minAreasInDefaultYear", indicator["minAreasWithAnyValue"])
+		if not isinstance(min_default, int) or min_default <= 0:
+			raise ValueError(f"WHO indicator {indicator_id} has invalid minAreasInDefaultYear.")
+		source_unit = indicator.get("sourceUnit")
+		if source_unit is not None and (not isinstance(source_unit, dict) or not str(source_unit.get("id", "")).strip() or not str(source_unit.get("label", "")).strip()):
+			raise ValueError(f"WHO indicator {indicator_id} has invalid sourceUnit metadata.")
+		for field_name in ("valueField", "lowerField", "upperField", "fallbackWdiIndicator", "fallbackProviderName", "fallbackProvenance", "fallbackUsage"):
 			if field_name in indicator and not str(indicator[field_name]).strip():
 				raise ValueError(f"WHO indicator {indicator_id} has invalid {field_name}.")
 		if "startYear" in indicator or "endYear" in indicator:
@@ -341,6 +350,7 @@ def normalize_indicator(
 	lower_field = str(indicator.get("lowerField", "RATE_PER_100_NL")) if has_confidence_intervals else None
 	upper_field = str(indicator.get("upperField", "RATE_PER_100_NU")) if has_confidence_intervals else None
 	dimension_filters = {str(key): str(value) for key, value in indicator.get("dimensionFilters", {}).items()}
+	value_multiplier = float(indicator.get("valueMultiplier", 1.0))
 	required_fields = {
 		"IND_CODE", "IND_UUID", "DIM_TIME", "DIM_TIME_TYPE", "DIM_GEO_CODE_M49",
 		"DIM_GEO_CODE_TYPE", "DIM_PUBLISH_STATE_CODE", "IND_NAME", "GEO_NAME_SHORT",
@@ -383,12 +393,12 @@ def normalize_indicator(
 				ignored_m49.add(m49)
 			continue
 		area_id = area_by_m49[m49]
-		value = parse_number(row.get(value_field))
+		value = parse_number(round(float(parse_number(row.get(value_field))) * value_multiplier, 12))
 		validate_value_range(indicator, area_id, year, value, "value")
 		interval = None
 		if has_confidence_intervals:
-			lower = parse_number(row.get(str(lower_field)))
-			upper = parse_number(row.get(str(upper_field)))
+			lower = parse_number(round(float(parse_number(row.get(str(lower_field)))) * value_multiplier, 12))
+			upper = parse_number(round(float(parse_number(row.get(str(upper_field)))) * value_multiplier, 12))
 			validate_value_range(indicator, area_id, year, lower, "confidence lower bound")
 			validate_value_range(indicator, area_id, year, upper, "confidence upper bound")
 			if not float(lower) <= float(value) <= float(upper):
@@ -410,6 +420,9 @@ def normalize_indicator(
 	fallback_count = 0
 	fallback_countries: set[str] = set()
 	fallback_code = str(indicator.get("fallbackWdiIndicator", "")).strip()
+	fallback_provider_name = str(indicator.get("fallbackProviderName", "World Bank WDI")).strip()
+	fallback_provenance = str(indicator.get("fallbackProvenance", "WHO-origin series distributed by World Bank WDI")).strip()
+	fallback_usage = str(indicator.get("fallbackUsage", "Only country-year observations missing from the direct WHO dataset")).strip()
 	if fallback_code:
 		fallback_values = fetch_wdi(fallback_code, start_year, end_year, area_by_m49, timeout, wdi_cache)
 		for (area_id, year), value in sorted(fallback_values.items()):
@@ -421,9 +434,9 @@ def normalize_indicator(
 			fallback_metadata.setdefault(year, {})[area_id] = {
 				"fallback": True,
 				"sourceProviderId": "world-bank",
-				"sourceProviderName": "World Bank WDI",
+				"sourceProviderName": fallback_provider_name,
 				"sourceIndicator": fallback_code,
-				"provenance": "WHO-origin value distributed by World Bank WDI",
+				"provenance": fallback_provenance,
 			}
 			fallback_count += 1
 			fallback_countries.add(area_id)
@@ -432,13 +445,14 @@ def normalize_indicator(
 	if not available_years:
 		raise RuntimeError(f"WHO indicator {indicator['id']} has no mapped values in {start_year}-{end_year}.")
 	minimum = int(indicator["minAreasWithAnyValue"])
+	minimum_default = int(indicator.get("minAreasInDefaultYear", minimum))
 	areas_with_any_value = set().union(*(set(values_by_year[year]) for year in available_years))
 	if len(areas_with_any_value) < minimum:
 		raise RuntimeError(
 			f"WHO coverage too small for {indicator['id']}: {len(areas_with_any_value)} areas, "
 			f"expected at least {minimum}."
 		)
-	broad_years = [year for year in available_years if len(values_by_year[year]) >= minimum]
+	broad_years = [year for year in available_years if len(values_by_year[year]) >= minimum_default]
 	default_year = max(broad_years or available_years)
 	for area_id in indicator["requiredAreas"]:
 		if area_id not in values_by_year[default_year]:
@@ -474,6 +488,12 @@ def normalize_indicator(
 		"valueField": value_field,
 		"sourceFormat": source_format,
 	}
+	if value_multiplier != 1.0:
+		source["normalization"] = {
+			"valueMultiplier": value_multiplier,
+			"sourceUnit": indicator.get("sourceUnit"),
+			"targetUnit": indicator["unit"],
+		}
 	if source_uuid:
 		source["indicatorUuid"] = source_uuid
 	if dimension_filters:
@@ -486,10 +506,10 @@ def normalize_indicator(
 	if fallback_code:
 		source["fallback"] = {
 			"providerId": "world-bank",
-			"providerName": "World Bank WDI",
+			"providerName": fallback_provider_name,
 			"indicator": fallback_code,
-			"usage": "Only country-year observations missing from the direct WHO dataset",
-			"provenance": "WHO-origin series distributed by World Bank WDI",
+			"usage": fallback_usage,
+			"provenance": fallback_provenance,
 		}
 
 	payload: dict[str, Any] = {
@@ -598,7 +618,7 @@ def main() -> None:
 		"notes": [
 			"Direct WHO World Health Data Hub and Global Health Observatory observations are canonical.",
 			"Confidence intervals from WHO are preserved in each indicator payload where available.",
-			"Configured World Bank WDI fallbacks are used only for country-year gaps in WHO-origin series and are marked in observationMetadata.",
+			"Configured World Bank WDI fallbacks are used only for country-year gaps and carry indicator-specific provenance in observationMetadata.",
 		],
 	}
 	common.write_json(provider_dir / "index.json", provider_index)
