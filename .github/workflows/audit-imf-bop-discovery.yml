@@ -22,90 +22,79 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Discover IMF BOP SDMX structure
+      - name: Discover IMF BOP codes
         shell: bash
         run: |
           python - <<'PY'
           from __future__ import annotations
 
-          import csv
-          import io
-          import re
-          import xml.etree.ElementTree as ET
-          from urllib.error import HTTPError, URLError
+          import json
           from urllib.request import Request, urlopen
 
-          BASE = "https://api.imf.org/external/sdmx/3.0"
-          USER_AGENT = "kartensammlung-area-statistics-builds/1"
+          URL = "https://api.imf.org/external/sdmx/3.0/structure/dataflow/IMF.STA/BOP/~?references=all"
+          request = Request(
+          	URL,
+          	headers={
+          		"User-Agent": "kartensammlung-area-statistics-builds/1",
+          		"Accept": "application/vnd.sdmx.structure+json;version=2.0.0",
+          	},
+          )
+          with urlopen(request, timeout=120) as response:
+          	payload = json.load(response)
 
-          def fetch(url: str, accept: str) -> tuple[bytes, str]:
-          	request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
-          	with urlopen(request, timeout=120) as response:
-          		return response.read(), response.headers.get("Content-Type", "")
+          data = payload["data"]
+          flows = [item for item in data.get("dataflows", []) if item.get("id") == "BOP"]
+          print("=== BOP DATAFLOW ===")
+          for item in flows:
+          	print(json.dumps({
+          		"id": item.get("id"),
+          		"agencyID": item.get("agencyID"),
+          		"version": item.get("version"),
+          		"name": item.get("name"),
+          		"structure": item.get("structure"),
+          	}, ensure_ascii=False, indent=2))
 
-          def try_fetch(label: str, url: str, accepts: list[str]) -> bytes | None:
-          	print(f"\n=== {label} ===")
-          	print(url)
-          	for accept in accepts:
-          		try:
-          			data, content_type = fetch(url, accept)
-          		except (HTTPError, URLError, TimeoutError, OSError) as error:
-          			print(f"accept={accept!r} ERROR {error}")
-          			continue
-          		print(f"accept={accept!r} bytes={len(data)} content-type={content_type!r}")
-          		text = data.decode("utf-8-sig", errors="replace")
-          		print(text[:12000])
-          		return data
-          	return None
+          structures = [item for item in data.get("dataStructures", []) if item.get("id") == "DSD_BOP"]
+          print("\n=== DSD_BOP ===")
+          for item in structures:
+          	print("agency/version:", item.get("agencyID"), item.get("version"))
+          	components = item.get("dataStructureComponents", {})
+          	print(json.dumps(components.get("dimensionList", components), ensure_ascii=False, indent=2)[:30000])
 
-          accepts = [
-          	"application/vnd.sdmx.structure+csv;version=2.0",
-          	"text/csv",
-          	"application/xml",
-          	"application/vnd.sdmx.structure+xml;version=3.0",
-          	"*/*",
-          ]
-
-          dataflow_url = f"{BASE}/structure/dataflow/IMF.STA/BOP/~?references=all"
-          raw = try_fetch("BOP dataflow with references", dataflow_url, accepts)
-
-          if raw:
-          	text = raw.decode("utf-8-sig", errors="replace")
-          	print("\n=== candidate identifiers ===")
-          	for pattern in (
-          		r"DataStructure[^>]{0,300}",
-          		r"datastructure[^\"'<> ]*",
-          		r"dimension[^\"'<> ]*",
-          		r"BOP[^\"'<> ]{0,80}",
-          	):
-          		matches = []
-          		for match in re.finditer(pattern, text, flags=re.I):
-          			value = match.group(0)
-          			if value not in matches:
-          				matches.append(value)
-          			if len(matches) >= 40:
-          				break
-          		print(pattern, matches)
-
-          # Test whether a narrow country query can be made with an unconstrained key.
-          # This intentionally does not assume the dimension order yet.
-          for key in ("AUT", "AUT.*", "AUT.*.*.*.*.*.*.*.*.*.*.*", "AUT..........."):
-          	url = f"{BASE}/data/dataflow/IMF.STA/BOP/~/{key}?startPeriod=2023&endPeriod=2024"
-          	try:
-          		data, content_type = fetch(url, "text/csv")
-          	except (HTTPError, URLError, TimeoutError, OSError) as error:
-          		print(f"\nDATA key={key!r} ERROR {error}")
+          terms = (
+          	"current account",
+          	"direct investment",
+          	"net acquisition",
+          	"net incurrence",
+          	"financial assets",
+          	"liabilities",
+          )
+          print("\n=== RELEVANT CODELIST MATCHES ===")
+          for codelist in data.get("codelists", []):
+          	cid = str(codelist.get("id", ""))
+          	if not any(token in cid.upper() for token in ("BOP", "ACCOUNT", "INDICATOR", "UNIT", "FREQ")):
           		continue
-          	text = data.decode("utf-8-sig", errors="replace")
-          	print(f"\nDATA key={key!r} bytes={len(data)} content-type={content_type!r}")
-          	print(text[:8000])
-          	if len(data) > 200:
-          		reader = csv.DictReader(io.StringIO(text))
-          		print("fields:", reader.fieldnames)
-          		rows = []
-          		for row in reader:
-          			rows.append(row)
-          			if len(rows) >= 5:
-          				break
-          		print("sample rows:", rows)
+          	matches = []
+          	for code in codelist.get("codes", []):
+          		name = str(code.get("name", ""))
+          		description = str(code.get("description", ""))
+          		haystack = f"{name} {description}".lower()
+          		if any(term in haystack for term in terms):
+          			matches.append({
+          				"id": code.get("id"),
+          				"name": name,
+          				"description": description,
+          			})
+          	if matches:
+          		print(f"\n{codelist.get('agencyID')}:{cid}({codelist.get('version')}) {codelist.get('name')}")
+          		for match in matches[:200]:
+          			print(json.dumps(match, ensure_ascii=False))
+
+          print("\n=== SHORT ACCOUNTING/UNIT/FREQUENCY CODELISTS ===")
+          for codelist in data.get("codelists", []):
+          	cid = str(codelist.get("id", "")).upper()
+          	if cid in {"CL_BOP_ACCOUNTING_ENTRY", "CL_ACCOUNT_ENTRY", "CL_UNIT", "CL_FREQ", "CL_FREQUENCY"}:
+          		print(f"\n{codelist.get('id')} {codelist.get('version')}")
+          		for code in codelist.get("codes", [])[:150]:
+          			print(code.get("id"), "=", code.get("name"))
           PY
