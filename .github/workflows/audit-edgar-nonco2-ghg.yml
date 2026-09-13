@@ -88,9 +88,7 @@ jobs:
           		return json.loads(body)
 
           def parse_year(value):
-          	if value is None:
-          		return None
-          	if isinstance(value, bool):
+          	if value is None or isinstance(value, bool):
           		return None
           	if isinstance(value, (int, float)):
           		if math.isfinite(float(value)) and float(value).is_integer():
@@ -98,6 +96,8 @@ jobs:
           			return year if 1970 <= year <= 2024 else None
           		return None
           	text = str(value).strip()
+          	if text.upper().startswith('Y_'):
+          		text = text[2:]
           	try:
           		numeric = float(text)
           	except ValueError:
