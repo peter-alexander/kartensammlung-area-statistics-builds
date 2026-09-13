@@ -1,0 +1,211 @@
+name: Build JRC LULUCF statistics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "29 6 17 * *"
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "config/jrc-lulucf-indicators.json"
+      - "scripts/build_jrc_lulucf.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-jrc-lulucf-statistics.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "config/statistics-providers.json"
+      - "config/jrc-lulucf-indicators.json"
+      - "scripts/build_jrc_lulucf.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-jrc-lulucf-statistics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-jrc-lulucf-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate scripts
+        run: |
+          bash -n .github/scripts/deploy-world-bank-statistics.sh
+          python -m py_compile scripts/build_jrc_lulucf.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/jrc-lulucf-indicators.json >/dev/null
+
+      - name: Build JRC LULUCF statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_jrc_lulucf.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/jrc-lulucf.log
+
+      - name: Validate JRC LULUCF output
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path("config/jrc-lulucf-indicators.json").read_text(encoding="utf-8"))
+          provider = json.loads(Path("dist/statistics/jrc-lulucf/index.json").read_text(encoding="utf-8"))
+          global_index = json.loads(Path("dist/statistics/index.json").read_text(encoding="utf-8"))
+
+          assert provider["provider"]["id"] == "jrc-lulucf"
+          assert len(provider["indicators"]) == len(config["indicators"]) == 3
+          assert any(item["id"] == "jrc-lulucf" for item in global_index["providers"])
+          dataset = provider["dataset"]
+          assert dataset["zenodoRecordId"] == "18352395"
+          assert dataset["releaseVersion"] == "3.1.1"
+          assert dataset["sourceVersion"] == "V3.1 (NGHGI 2025)"
+          assert dataset["sourceFile"] == "timeseries_NGHGI_v3.1.csv"
+          assert dataset["licenseId"] == "cc-by-4.0"
+          assert dataset["checksum"] == "md5:702b46bfe67cca47264fdf272d312005"
+          assert dataset["sourceStartYear"] == 2000
+          assert dataset["sourceLatestYear"] == 2023
+          assert dataset["sourceVersions"] == ["V3.1 (NGHGI 2025)"]
+          assert dataset["sourceSubmissions"] == ["2023 (pre-Paris)", "CRT_2024", "CRT_2025"]
+          assert dataset["sourceCategories"] == ["DEFORESTATION", "FOREST", "HWP", "LULUCF", "ORG_SOILS", "OTHER"]
+
+          configured = {item["id"]: item for item in config["indicators"]}
+          for item in provider["indicators"]:
+          	cfg = configured[item["id"]]
+          	coverage = item["coverage"]
+          	assert item["sourceIndicator"] == cfg["sourceCategory"]
+          	assert item["availableYears"][0] == 2000
+          	assert item["availableYears"][-1] == 2023
+          	assert item["defaultYear"] == 2023
+          	assert coverage["areasWithAnyValue"] >= cfg["minAreasWithAnyValue"]
+          	assert coverage["areasInDefaultYear"] >= cfg["minAreasInDefaultYear"]
+
+          	payload = json.loads(Path("dist/statistics/jrc-lulucf", item["path"]).read_text(encoding="utf-8"))
+          	source = payload["source"]
+          	assert source["providerId"] == "jrc-lulucf"
+          	assert source["zenodoRecordId"] == "18352395"
+          	assert source["releaseVersion"] == "3.1.1"
+          	assert source["sourceVersion"] == "V3.1 (NGHGI 2025)"
+          	assert source["sourceFile"] == "timeseries_NGHGI_v3.1.csv"
+          	assert source["sourceChecksum"] == "md5:702b46bfe67cca47264fdf272d312005"
+          	assert source["indicator"] == cfg["sourceCategory"]
+          	assert source["gas"] == "CO2"
+          	assert source["sourceUnit"] == "Mt CO₂ yr⁻¹"
+          	assert source["normalization"]["valueMultiplier"] == 1
+          	assert "fallback" not in source
+          	print(
+          		f"{item['id']}: defaultYear={item['defaultYear']} "
+          		f"areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+          		f"years={item['availableYears'][0]}-{item['availableYears'][-1]}"
+          	)
+
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"retrievedAt={provider['retrievedAt']}")
+          PY
+          du -h dist/statistics/jrc-lulucf/index.json
+          du -ch dist/statistics/jrc-lulucf/releases/*/*.json | tail -n 1
+
+      - name: Upload statistics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: jrc-lulucf-statistics-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Deploy to tiles.radlobby.at
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          PROVIDER_ID: jrc-lulucf
+        run: |
+          chmod +x .github/scripts/deploy-world-bank-statistics.sh
+          .github/scripts/deploy-world-bank-statistics.sh dist/statistics
+
+      - name: Verify public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          check_file() {
+          	local url="$1"
+          	local local_file="$2"
+          	local output="$3"
+          	local headers
+          	local allow_origin
+          	headers="$(mktemp)"
+          	curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          		--header "Origin: ${BROWSER_ORIGIN}" --dump-header "$headers" \
+          		--output "$output" "${url}?${CACHE_BUST}"
+          	cmp "$local_file" "$output"
+          	allow_origin="$(awk '
+          		BEGIN { IGNORECASE = 1 }
+          		tolower($1) == "access-control-allow-origin:" {
+          			value = $0
+          			sub(/^[^:]+:[[:space:]]*/, "", value)
+          			gsub(/\r/, "", value)
+          			print value
+          		}
+          	' "$headers" | tail -n 1)"
+          	rm -f "$headers"
+          	if [ "$allow_origin" != "*" ] && [ "$allow_origin" != "$BROWSER_ORIGIN" ]; then
+          		echo "CORS check failed for ${url}: Access-Control-Allow-Origin='${allow_origin:-<missing>}'" >&2
+          		exit 1
+          	fi
+          }
+
+          check_file "${PUBLIC_BASE}/index.json" "dist/statistics/index.json" /tmp/public-statistics-index.json
+          check_file "${PUBLIC_BASE}/jrc-lulucf/index.json" "dist/statistics/jrc-lulucf/index.json" /tmp/public-jrc-lulucf-index.json
+          while IFS= read -r path; do
+          	mkdir -p "/tmp/public-jrc-lulucf/$(dirname "$path")"
+          	check_file \
+          		"${PUBLIC_BASE}/jrc-lulucf/${path}" \
+          		"dist/statistics/jrc-lulucf/${path}" \
+          		"/tmp/public-jrc-lulucf/${path}"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/jrc-lulucf/index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
+          PY
+          )
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jrc-lulucf-statistics-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
