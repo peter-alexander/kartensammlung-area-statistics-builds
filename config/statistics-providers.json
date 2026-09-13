@@ -130,6 +130,11 @@
 			"id": "aquastat",
 			"name": "AQUASTAT (FAO) – Wasserressourcen & Wassernutzung",
 			"index": "aquastat/index.json"
+		},
+		{
+			"id": "oecd-revenue-statistics",
+			"name": "OECD – Steuern & Abgaben",
+			"index": "oecd-revenue-statistics/index.json"
 		}
 	]
 }
