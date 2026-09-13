@@ -1,0 +1,238 @@
+name: Build World Bank WGI statistics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 7 20 * *"
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "config/world-bank-wgi-indicators.json"
+      - "scripts/build_world_bank_wgi.py"
+      - "scripts/build_world_bank.py"
+      - "docs/world-bank-wgi-source-policy.md"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-world-bank-wgi-statistics.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "config/statistics-providers.json"
+      - "config/world-bank-wgi-indicators.json"
+      - "scripts/build_world_bank_wgi.py"
+      - "scripts/build_world_bank.py"
+      - "docs/world-bank-wgi-source-policy.md"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-world-bank-wgi-statistics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-world-bank-wgi-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate scripts
+        run: |
+          bash -n .github/scripts/deploy-world-bank-statistics.sh
+          python -m py_compile scripts/build_world_bank_wgi.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/world-bank-wgi-indicators.json >/dev/null
+          git diff --check
+
+      - name: Build World Bank WGI statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_world_bank_wgi.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/world-bank-wgi.log
+
+      - name: Validate World Bank WGI statistics
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          provider_dir = Path("dist/statistics/world-bank-wgi")
+          provider = json.loads((provider_dir / "index.json").read_text(encoding="utf-8"))
+          assert provider["provider"]["id"] == "world-bank-wgi"
+          assert provider["provider"]["license"] == "CC BY 4.0"
+          assert provider["dataset"]["release"] == "2025 Revision"
+          assert len(provider["indicators"]) == 6
+
+          expected = {
+              "governance.voice-accountability-score": ("GOV_WGI_VA_SC", 204, 5000),
+              "governance.political-stability-score": ("GOV_WGI_PV_SC", 206, 5000),
+              "governance.government-effectiveness-score": ("GOV_WGI_GE_SC", 204, 5000),
+              "governance.regulatory-quality-score": ("GOV_WGI_RQ_SC", 204, 5000),
+              "governance.rule-of-law-score": ("GOV_WGI_RL_SC", 206, 5000),
+              "governance.control-of-corruption-score": ("GOV_WGI_CC_SC", 206, 5000),
+          }
+          by_id = {item["id"]: item for item in provider["indicators"]}
+          assert set(by_id) == set(expected)
+
+          for indicator_id, (source_code, min_latest, min_observations) in expected.items():
+              item = by_id[indicator_id]
+              assert item["sourceIndicator"] == source_code
+              assert item["unit"]["id"] == "score-0-100"
+              assert item["classification"] == {"type": "fixed", "breaks": [20, 35, 50, 65, 80, 90]}
+              assert item["availableYears"][0] == 1996
+              assert item["availableYears"][-1] == 2024
+              assert item["defaultYear"] == 2024
+              assert item["coverage"]["areasWithAnyValue"] >= 200
+              assert item["coverage"]["areasInLatestYear"] >= min_latest
+              assert item["coverage"]["areasInDefaultYear"] >= min_latest
+              assert item["coverage"]["observations"] >= min_observations
+              payload = json.loads((provider_dir / item["path"]).read_text(encoding="utf-8"))
+              assert payload["source"]["release"] == "2025 Revision"
+              assert payload["source"]["license"] == "CC BY 4.0"
+              assert "fallback" not in payload["source"]
+              values_2024 = payload["values"]["2024"]
+              for area_id in ("country:AUT", "country:DEU", "country:USA", "country:BRA", "country:IND"):
+                  assert area_id in values_2024, (indicator_id, area_id)
+              assert all(0 <= float(value) <= 100 for values in payload["values"].values() for value in values.values())
+
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"retrievedAt={provider['retrievedAt']}")
+          print(f"release={provider['dataset']['release']}")
+          for item in provider["indicators"]:
+              coverage = item["coverage"]
+              print(
+                  f"{item['id']}: defaultYear={item['defaultYear']} "
+                  f"areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+                  f"observations={coverage['observations']}"
+              )
+          PY
+          du -h dist/statistics/world-bank-wgi/index.json
+          du -ch dist/statistics/world-bank-wgi/releases/*/*.json | tail -n 1
+
+      - name: Upload statistics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-bank-wgi-statistics-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Deploy to tiles.radlobby.at
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          PROVIDER_ID: world-bank-wgi
+        run: |
+          chmod +x .github/scripts/deploy-world-bank-statistics.sh
+          .github/scripts/deploy-world-bank-statistics.sh dist/statistics
+
+      - name: Verify browser access to deployed statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="cors=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          check_cors() {
+              local url="$1"
+              local output="$2"
+              local headers
+              local allow_origin
+              headers="$(mktemp)"
+              curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+                  --header "Origin: ${BROWSER_ORIGIN}" \
+                  --dump-header "$headers" --output "$output" "${url}?${CACHE_BUST}"
+              allow_origin="$(awk '
+                  BEGIN { IGNORECASE = 1 }
+                  tolower($1) == "access-control-allow-origin:" {
+                      value = $0
+                      sub(/^[^:]+:[[:space:]]*/, "", value)
+                      gsub(/\r/, "", value)
+                      print value
+                  }
+              ' "$headers" | tail -n 1)"
+              rm -f "$headers"
+              if [ "$allow_origin" != "*" ] && [ "$allow_origin" != "$BROWSER_ORIGIN" ]; then
+                  echo "CORS check failed for ${url}: Access-Control-Allow-Origin='${allow_origin:-<missing>}'" >&2
+                  exit 1
+              fi
+              echo "CORS OK: ${url} -> ${allow_origin}"
+          }
+
+          check_cors "${PUBLIC_BASE}/index.json" /tmp/browser-statistics-index.json
+          check_cors "${PUBLIC_BASE}/world-bank-wgi/index.json" /tmp/browser-world-bank-wgi-index.json
+          while IFS= read -r path; do
+              safe_name="$(printf '%s' "$path" | tr '/.' '__')"
+              check_cors "${PUBLIC_BASE}/world-bank-wgi/${path}" "/tmp/browser-world-bank-wgi-${safe_name}.json"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("/tmp/browser-world-bank-wgi-index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+              print(indicator["path"])
+          PY
+          )
+
+      - name: Verify public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+              "${PUBLIC_BASE}/index.json?${CACHE_BUST}" --output /tmp/public-statistics-index.json
+          cmp dist/statistics/index.json /tmp/public-statistics-index.json
+
+          curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+              "${PUBLIC_BASE}/world-bank-wgi/index.json?${CACHE_BUST}" --output /tmp/public-world-bank-wgi-index.json
+          cmp dist/statistics/world-bank-wgi/index.json /tmp/public-world-bank-wgi-index.json
+
+          while IFS= read -r path; do
+              mkdir -p "/tmp/public-world-bank-wgi/$(dirname "$path")"
+              curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+                  "${PUBLIC_BASE}/world-bank-wgi/${path}?${CACHE_BUST}" \
+                  --output "/tmp/public-world-bank-wgi/${path}"
+              cmp "dist/statistics/world-bank-wgi/${path}" "/tmp/public-world-bank-wgi/${path}"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/world-bank-wgi/index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+              print(indicator["path"])
+          PY
+          )
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-bank-wgi-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
