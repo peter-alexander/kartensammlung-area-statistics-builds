@@ -1,0 +1,205 @@
+name: Audit derived ILOSTAT gender pay gap
+
+on:
+  push:
+    branches:
+      - audit/ilostat-gender-gap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compare derived and published gender pay gap
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import math
+          import sys
+          import urllib.parse
+          import urllib.request
+          from collections import Counter, defaultdict
+
+          sys.path.insert(0, 'scripts')
+          import build_world_bank as common
+
+          UA = {'User-Agent': 'kartensammlung-area-statistics-builds/1'}
+
+          def fetch_rows(dataset_id):
+          	params = urllib.parse.urlencode({
+          		'id': dataset_id,
+          		'type': 'code',
+          		'format': '.csv',
+          		'channel': 'ilostat',
+          	})
+          	url = f'https://rplumber.ilo.org/data/indicator/?{params}'
+          	req = urllib.request.Request(url, headers=UA)
+          	with urllib.request.urlopen(req, timeout=120) as response:
+          		data = response.read()
+          	print('FETCH', dataset_id, len(data))
+          	return list(csv.DictReader(io.StringIO(data.decode('utf-8-sig'))))
+
+          area_by_iso3, _ = common.load_registry(
+          	'https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?audit=ilostat-gender-pay-gap-derived',
+          	120,
+          )
+
+          earnings_rows = fetch_rows('EAR_EHRA_SEX_CUR_NB_A')
+          published_rows = fetch_rows('EAR_GGAP_OCU_RT_A')
+
+          # Derive raw unadjusted pay gap from male/female hourly earnings in local currency.
+          paired = defaultdict(dict)
+          source_by_key = defaultdict(dict)
+          status_by_key = defaultdict(dict)
+          for row in earnings_rows:
+          	if str(row.get('classif1', '')).strip() != 'CUR_TYPE_LCU':
+          		continue
+          	sex = str(row.get('sex', '')).strip()
+          	if sex not in {'SEX_M', 'SEX_F'}:
+          		continue
+          	iso3 = str(row.get('ref_area', '')).strip().upper()
+          	year_text = str(row.get('time', '')).strip()
+          	value_text = str(row.get('obs_value', '')).strip()
+          	if iso3 not in area_by_iso3 or not year_text.isdigit() or not value_text:
+          		continue
+          	key = (iso3, int(year_text))
+          	if sex in paired[key]:
+          		raise RuntimeError(f'duplicate earnings observation {key} {sex}')
+          	paired[key][sex] = float(value_text)
+          	source_by_key[key][sex] = str(row.get('source', '')).strip()
+          	status_by_key[key][sex] = str(row.get('obs_status', '')).strip()
+
+          derived = {}
+          derived_meta = {}
+          invalid_male = []
+          for key, values in paired.items():
+          	male = values.get('SEX_M')
+          	female = values.get('SEX_F')
+          	if male is None or female is None:
+          		continue
+          	if male <= 0:
+          		invalid_male.append((key, male, female))
+          		continue
+          	derived[key] = (male - female) / male * 100.0
+          	derived_meta[key] = {
+          		'maleSource': source_by_key[key].get('SEX_M'),
+          		'femaleSource': source_by_key[key].get('SEX_F'),
+          		'maleStatus': status_by_key[key].get('SEX_M'),
+          		'femaleStatus': status_by_key[key].get('SEX_F'),
+          	}
+          if invalid_male:
+          	raise RuntimeError(f'non-positive male hourly earnings: {invalid_male[:10]}')
+
+          # Published broad TOTAL comparison series.
+          published = {}
+          for row in published_rows:
+          	if str(row.get('classif1', '')).strip() != 'OCU_SKILL_TOTAL':
+          		continue
+          	iso3 = str(row.get('ref_area', '')).strip().upper()
+          	year_text = str(row.get('time', '')).strip()
+          	value_text = str(row.get('obs_value', '')).strip()
+          	if iso3 not in area_by_iso3 or not year_text.isdigit() or not value_text:
+          		continue
+          	key = (iso3, int(year_text))
+          	if key in published:
+          		raise RuntimeError(f'duplicate published gap {key}')
+          	published[key] = float(value_text)
+
+          print('\n=== COVERAGE ===')
+          for name, values in [('derived', derived), ('published', published)]:
+          	countries = {iso3 for iso3, _year in values}
+          	by_year = Counter(year for _iso3, year in values)
+          	years = sorted(by_year)
+          	print(name, 'observations', len(values), 'countries', len(countries), 'years', (years[0], years[-1]))
+          	print('  recent', [(year, by_year[year]) for year in years if year >= 2018])
+          	print('  top', by_year.most_common(10))
+
+          print('\n=== OVERLAP DERIVED VS PUBLISHED ===')
+          common_keys = sorted(set(derived) & set(published))
+          diffs = []
+          for key in common_keys:
+          	dv = derived[key]
+          	pv = published[key]
+          	diff = dv - pv
+          	diffs.append((abs(diff), diff, key, dv, pv))
+          abs_diffs = sorted(item[0] for item in diffs)
+          print('overlap', len(common_keys))
+          if diffs:
+          	print('mean abs diff', sum(abs_diffs) / len(abs_diffs))
+          	print('max abs diff', max(diffs))
+          	for threshold in (1e-9, 0.001, 0.01, 0.05, 0.1, 0.5, 1.0):
+          		print('within', threshold, sum(1 for x in abs_diffs if x <= threshold), '/', len(abs_diffs))
+          	print('largest differences')
+          	for item in sorted(diffs, reverse=True)[:25]:
+          		print(item)
+
+          only_derived = sorted(set(derived) - set(published))
+          only_published = sorted(set(published) - set(derived))
+          print('only derived', len(only_derived), 'countries', len({k[0] for k in only_derived}), 'sample', only_derived[:30])
+          print('only published', len(only_published), 'countries', len({k[0] for k in only_published}), 'sample', only_published[:30])
+
+          print('\n=== SOURCE CONSISTENCY ===')
+          same_source = sum(
+          	1 for key, meta in derived_meta.items()
+          	if meta['maleSource'] and meta['maleSource'] == meta['femaleSource']
+          )
+          different_source = [
+          	(key, meta) for key, meta in derived_meta.items()
+          	if meta['maleSource'] != meta['femaleSource']
+          ]
+          print('same male/female source', same_source, 'of', len(derived_meta))
+          print('different source', len(different_source), 'sample', different_source[:20])
+          print('male status', Counter(meta['maleStatus'] for meta in derived_meta.values()))
+          print('female status', Counter(meta['femaleStatus'] for meta in derived_meta.values()))
+
+          print('\n=== RECENCY AS OF 2026 ===')
+          latest = {}
+          for (iso3, year), value in derived.items():
+          	current = latest.get(iso3)
+          	if current is None or year > current[0]:
+          		latest[iso3] = (year, value)
+          ages = Counter(2026 - year for year, _value in latest.values())
+          print('countries', len(latest))
+          print('within3', sum(n for age, n in ages.items() if age <= 3))
+          print('within5', sum(n for age, n in ages.items() if age <= 5))
+          print('within10', sum(n for age, n in ages.items() if age <= 10))
+          print('oldest age', max(ages))
+          print('age distribution', sorted(ages.items()))
+          print('latest source year distribution', sorted(Counter(year for year, _ in latest.values()).items(), reverse=True))
+          for iso3 in ('AUT', 'DEU', 'USA', 'IND', 'FRA', 'POL'):
+          	items = sorted((year, value) for (code, year), value in derived.items() if code == iso3)
+          	print('required', iso3, items[-5:])
+
+          print('\n=== VALUE DISTRIBUTION ===')
+          latest_values = sorted(value for _year, value in latest.values())
+          all_values = sorted(derived.values())
+
+          def percentile(values, p):
+          	if not values:
+          		return None
+          	pos = (len(values) - 1) * p
+          	lo = math.floor(pos)
+          	hi = math.ceil(pos)
+          	if lo == hi:
+          		return values[lo]
+          	return values[lo] * (hi - pos) + values[hi] * (pos - lo)
+
+          for label, values in [('all', all_values), ('latest', latest_values)]:
+          	print(label, 'n', len(values), 'min', min(values), 'max', max(values))
+          	for p in (0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99):
+          		print(label, f'p{int(p*100):02d}', round(percentile(values, p), 4))
+          print('latest lowest', sorted((value, iso3, year) for iso3, (year, value) in latest.items())[:20])
+          print('latest highest', sorted((value, iso3, year) for iso3, (year, value) in latest.items(), reverse=True)[:20])
+          PY
