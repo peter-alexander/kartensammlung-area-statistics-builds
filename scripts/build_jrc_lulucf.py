@@ -26,6 +26,10 @@ USER_AGENT = "kartensammlung-area-statistics-builds/1"
 EXPECTED_COLUMNS = ["ISO3", "Version", "Source", "Gas", "Year", "Category", "CFluxes_yr"]
 
 
+class FetchError(RuntimeError):
+	pass
+
+
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
 		description="Build country LULUCF CO2 statistics from the JRC LULUCF Data Hub."
@@ -44,9 +48,12 @@ def validate_config(payload: Any) -> dict[str, Any]:
 	for key in ("sourceUrl", "downloadUrl", "metadataUrl", "doiUrl"):
 		if not str(payload.get(key, "")).startswith("https://"):
 			raise ValueError(f"JRC LULUCF {key} must use HTTPS.")
-	for key in ("recordId", "releaseVersion", "sourceVersion", "sourceFile", "expectedChecksum"):
+	for key in ("recordId", "releaseVersion", "sourceVersion", "sourceFile", "expectedChecksum", "publicationDate"):
 		if not str(payload.get(key, "")).strip():
 			raise ValueError(f"JRC LULUCF config is missing {key}.")
+	expected_bytes = payload.get("expectedBytes")
+	if not isinstance(expected_bytes, int) or expected_bytes < 500_000:
+		raise ValueError("JRC LULUCF expectedBytes is invalid.")
 	if payload.get("expectedStartYear") != 2000 or payload.get("expectedLatestYear") != 2023:
 		raise ValueError("JRC LULUCF expected source years must be 2000-2023.")
 	expected_categories = payload.get("expectedCategories")
@@ -113,7 +120,7 @@ def fetch_bytes(url: str, timeout: int, accept: str) -> bytes:
 			print(f"Request failed ({attempt}/5): {url}: {error}")
 	if last_error is None:
 		raise RuntimeError(f"Request failed without an exception: {url}")
-	raise RuntimeError(f"Request failed after 5 attempts: {url}") from last_error
+	raise FetchError(f"Request failed after 5 attempts: {url}") from last_error
 
 
 def load_zenodo_metadata(config: dict[str, Any], timeout: int) -> dict[str, Any]:
@@ -135,8 +142,10 @@ def load_zenodo_metadata(config: dict[str, Any], timeout: int) -> dict[str, Any]
 			f"JRC LULUCF source checksum changed: {checksum!r}, expected {config['expectedChecksum']!r}."
 		)
 	size = file_metadata.get("size")
-	if not isinstance(size, int) or size < 500_000:
-		raise RuntimeError(f"JRC LULUCF source size is invalid: {size!r}.")
+	if size != int(config["expectedBytes"]):
+		raise RuntimeError(
+			f"JRC LULUCF source size changed: {size!r}, expected {config['expectedBytes']!r}."
+		)
 	return {
 		"title": str(metadata.get("title") or ""),
 		"publicationDate": str(metadata.get("publication_date") or ""),
@@ -168,8 +177,13 @@ def load_direct_values(
 	)
 	if len(raw) != expected_bytes:
 		raise RuntimeError(
-			f"JRC LULUCF downloaded byte count differs from Zenodo metadata: "
-			f"{len(raw)} != {expected_bytes}."
+			f"JRC LULUCF downloaded byte count changed: {len(raw)} != {expected_bytes}."
+		)
+	downloaded_checksum = "md5:" + hashlib.md5(raw).hexdigest()
+	if downloaded_checksum != str(config["expectedChecksum"]):
+		raise RuntimeError(
+			f"JRC LULUCF downloaded checksum changed: {downloaded_checksum!r}, "
+			f"expected {config['expectedChecksum']!r}."
 		)
 	reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
 	if reader.fieldnames != EXPECTED_COLUMNS:
@@ -376,7 +390,17 @@ def main() -> None:
 
 	area_by_iso3, registry_payload = common.load_registry(args.registry, args.timeout)
 	print(f"Fetching JRC LULUCF Zenodo metadata from {config['metadataUrl']}")
-	dataset_metadata = load_zenodo_metadata(config, args.timeout)
+	try:
+		dataset_metadata = load_zenodo_metadata(config, args.timeout)
+	except FetchError as error:
+		print(f"Zenodo metadata API unavailable; using pinned audited metadata: {error}")
+		dataset_metadata = {
+			"title": provider["dataset"],
+			"publicationDate": config["publicationDate"],
+			"licenseId": "cc-by-4.0",
+			"checksum": config["expectedChecksum"],
+			"bytes": int(config["expectedBytes"]),
+		}
 	print(f"Fetching JRC LULUCF data from {config['downloadUrl']}")
 	(
 		values_by_id,

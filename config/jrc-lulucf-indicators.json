@@ -127,5 +127,7 @@
 				"country:IND"
 			]
 		}
-	]
+	],
+	"expectedBytes": 1180037,
+	"publicationDate": "2026-01-23"
 }

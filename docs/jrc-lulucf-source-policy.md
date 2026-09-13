@@ -53,6 +53,8 @@ This is deliberate:
 
 If future JRC releases change coverage materially, that should trigger a new source audit rather than silently enabling WDI fallback.
 
+Build integrity is enforced against the downloaded CSV itself: the pinned byte size and MD5 checksum must match exactly. The live Zenodo metadata endpoint is an additional provenance check when available, but a transient metadata-API outage does not block an otherwise byte-identical, audited release.
+
 ## Semantics and units
 
 The NGHGI database is compiled by JRC from National Greenhouse Gas Inventories submitted to the UNFCCC using IPCC methodologies. Reported country CO₂ fluxes are harmonized into JRC classes and gaps are filled without altering the levels and trends of the reported data.
