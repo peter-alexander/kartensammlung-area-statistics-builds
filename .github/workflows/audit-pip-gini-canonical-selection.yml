@@ -1,0 +1,135 @@
+name: Audit PIP canonical Gini survey selection
+
+on:
+  push:
+    branches:
+      - feature/pip-gini
+    paths:
+      - ".github/workflows/audit-pip-gini-canonical-selection.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: python -m pip install --disable-pip-version-check --quiet pyarrow
+
+      - name: Compare survey rows with annualized canonical rows
+        shell: bash
+        run: |
+          python - <<'PY'
+          import io
+          import urllib.parse
+          import urllib.request
+          from collections import Counter, defaultdict
+
+          import pyarrow.feather as feather
+
+          BASE = "https://api.worldbank.org/pip/v1/pip"
+          VERSION = "20260324_2021_01_02_PROD"
+
+          def fetch(fill):
+          	params = {
+          		"country": "all",
+          		"year": "all",
+          		"ppp_version": "2021",
+          		"reporting_level": "national",
+          		"version": VERSION,
+          		"format": "arrow",
+          		"povline": "3",
+          		"fill_gaps": "true" if fill else "false",
+          	}
+          	url = BASE + "?" + urllib.parse.urlencode(params)
+          	req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1"})
+          	with urllib.request.urlopen(req, timeout=180) as response:
+          		return feather.read_table(io.BytesIO(response.read())).to_pylist()
+
+          survey = [row for row in fetch(False) if row.get("gini") is not None]
+          annual = fetch(True)
+
+          survey_groups = defaultdict(list)
+          for row in survey:
+          	key = (str(row["country_code"]), int(row["reporting_year"]))
+          	survey_groups[key].append(row)
+
+          annual_by_key = {}
+          annual_duplicates = 0
+          for row in annual:
+          	key = (str(row["country_code"]), int(row["reporting_year"]))
+          	if key in annual_by_key:
+          		annual_duplicates += 1
+          	annual_by_key[key] = row
+
+          duplicates = {key: rows for key, rows in survey_groups.items() if len(rows) > 1}
+          print(f"survey_rows={len(survey)} survey_keys={len(survey_groups)} duplicate_keys={len(duplicates)}")
+          print(f"annual_rows={len(annual)} annual_keys={len(annual_by_key)} annual_duplicate_rows={annual_duplicates}")
+
+          criteria_counts = Counter()
+          unresolved = []
+          resolved = {}
+          for key, rows in duplicates.items():
+          	canonical = annual_by_key.get(key)
+          	if canonical is None:
+          		unresolved.append((key, "missing annual row", rows, None))
+          		continue
+
+          	match_sets = {}
+          	for criterion, fields in (
+          		("welfare", ("welfare_type",)),
+          		("welfare+survey", ("welfare_type", "survey_acronym")),
+          		("welfare+survey+spell", ("welfare_type", "survey_acronym", "comparable_spell")),
+          		("full-meta", ("welfare_type", "survey_acronym", "survey_year", "survey_comparability", "comparable_spell", "distribution_type", "estimation_type")),
+          	):
+          		matches = [row for row in rows if all(row.get(field) == canonical.get(field) for field in fields)]
+          		match_sets[criterion] = matches
+          		if len(matches) == 1:
+          			criteria_counts[criterion] += 1
+
+          	chosen = match_sets["full-meta"]
+          	if len(chosen) != 1:
+          		chosen = match_sets["welfare+survey+spell"]
+          	if len(chosen) != 1:
+          		chosen = match_sets["welfare+survey"]
+          	if len(chosen) != 1:
+          		chosen = match_sets["welfare"]
+          	if len(chosen) != 1:
+          		unresolved.append((key, "not uniquely selectable", rows, canonical))
+          	else:
+          		resolved[key] = chosen[0]
+
+          print("unique selection counts=" + repr(dict(criteria_counts)))
+          print(f"resolved_duplicates={len(resolved)} unresolved_duplicates={len(unresolved)}")
+
+          selected_rows = []
+          for key, rows in survey_groups.items():
+          	if len(rows) == 1:
+          		selected_rows.append(rows[0])
+          	elif key in resolved:
+          		selected_rows.append(resolved[key])
+          print(f"canonical_survey_rows={len(selected_rows)}")
+          print(f"canonical_countries={len({str(row['country_code']) for row in selected_rows})}")
+
+          for key in sorted(duplicates)[:20]:
+          	rows = duplicates[key]
+          	canonical = annual_by_key.get(key)
+          	chosen = resolved.get(key)
+          	print(f"\n{key[0]} {key[1]} annual welfare={canonical.get('welfare_type') if canonical else None!r} survey={canonical.get('survey_acronym') if canonical else None!r} surveyYear={canonical.get('survey_year') if canonical else None!r} spell={canonical.get('comparable_spell') if canonical else None!r} interpolated={canonical.get('is_interpolated') if canonical else None!r}")
+          	for row in rows:
+          		flag = "CHOSEN" if row is chosen else "other"
+          		print(f"  {flag}: welfare={row.get('welfare_type')!r} survey={row.get('survey_acronym')!r} surveyYear={row.get('survey_year')!r} spell={row.get('comparable_spell')!r} gini={row.get('gini')!r}")
+
+          if unresolved:
+          	print("\nUNRESOLVED:")
+          	for key, reason, rows, canonical in unresolved[:20]:
+          		print(key, reason, "annual=", {field: canonical.get(field) for field in ("welfare_type", "survey_acronym", "survey_year", "comparable_spell") } if canonical else None)
+          		for row in rows:
+          			print(" ", {field: row.get(field) for field in ("welfare_type", "survey_acronym", "survey_year", "comparable_spell", "gini")})
+          PY
