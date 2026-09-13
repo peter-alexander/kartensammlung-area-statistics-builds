@@ -14,7 +14,7 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Setup Python
@@ -22,50 +22,206 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Inspect WHO Data Hub downloads
+      - name: Install dependency
+        run: python -m pip install --disable-pip-version-check pycountry
+
+      - name: Compare direct WHO with WDI
         shell: bash
         run: |
           python - <<'PY'
           import csv
           import io
+          import json
+          import math
           import time
+          from collections import defaultdict
           from urllib.error import HTTPError, URLError
+          from urllib.parse import urlencode
           from urllib.request import Request, urlopen
 
-          USER_AGENT = "kartensammlung-area-statistics-builds/1"
-          DATASETS = {
-          	"physicians": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/217795A_ALL_LATEST.csv",
-          	"nurses-midwives": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/5C8435F_ALL_LATEST.csv",
-          }
+          import pycountry
 
-          def fetch(url):
-          	delays = (0, 5, 15)
+          USER_AGENT = "kartensammlung-area-statistics-builds/1"
+          WDI_BASE = "https://api.worldbank.org/v2"
+          INDICATORS = [
+          	{
+          		"name": "physicians",
+          		"whoCode": "HWF_0001",
+          		"whoUuid": "217795A",
+          		"whoUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/217795A_ALL_LATEST.csv",
+          		"wdiCode": "SH.MED.PHYS.ZS",
+          		"startYear": 1960,
+          		"endYear": 2025,
+          	},
+          	{
+          		"name": "nurses-midwives",
+          		"whoCode": "HWF_0006",
+          		"whoUuid": "5C8435F",
+          		"whoUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/5C8435F_ALL_LATEST.csv",
+          		"wdiCode": "SH.MED.NUMW.P3",
+          		"startYear": 1990,
+          		"endYear": 2025,
+          	},
+          ]
+
+          def fetch_bytes(url, accept, timeout=90):
+          	delays = (0, 5, 15, 30)
           	last = None
           	for attempt, delay in enumerate(delays, 1):
           		if delay:
           			time.sleep(delay)
-          		request = Request(url, headers={"Accept": "text/csv,*/*", "User-Agent": USER_AGENT})
+          		request = Request(url, headers={"Accept": accept, "User-Agent": USER_AGENT})
           		try:
-          			with urlopen(request, timeout=90) as response:
-          				return response.read(), response.headers
+          			with urlopen(request, timeout=timeout) as response:
+          				return response.read()
           		except (HTTPError, URLError, TimeoutError) as error:
           			last = error
           			print(f"request failed {attempt}/{len(delays)}: {url}: {error}")
-          	raise RuntimeError(url) from last
+          	raise RuntimeError(f"request failed: {url}") from last
 
-          for name, url in DATASETS.items():
-          	print("=" * 80)
-          	print(name, url)
-          	data, headers = fetch(url)
-          	text = data.decode("utf-8-sig")
-          	reader = csv.DictReader(io.StringIO(text))
+          def fetch_json(url):
+          	return json.loads(fetch_bytes(url, "application/json,*/*").decode("utf-8"))
+
+          def iso3_from_m49(value):
+          	text = str(value or "").strip()
+          	if not text:
+          		return None
+          	try:
+          		numeric = f"{int(float(text)):03d}"
+          	except ValueError:
+          		return None
+          	country = pycountry.countries.get(numeric=numeric)
+          	return str(country.alpha_3) if country is not None else None
+
+          def fetch_who(cfg):
+          	data = fetch_bytes(cfg["whoUrl"], "text/csv,*/*")
+          	reader = csv.DictReader(io.StringIO(data.decode("utf-8-sig")))
           	rows = list(reader)
-          	print(f"bytes={len(data)} rows={len(rows)} content-type={headers.get('Content-Type')}")
-          	print("fields:")
-          	for field in reader.fieldnames or []:
-          		print(f"  {field}")
-          	print("sample rows:")
-          	for row in rows[:3]:
-          		print(row)
-          	print("year range:", min((row.get("DIM_TIME") for row in rows if str(row.get("DIM_TIME", "")).isdigit()), default=None), max((row.get("DIM_TIME") for row in rows if str(row.get("DIM_TIME", "")).isdigit()), default=None))
+          	expected = {
+          		"IND_CODE", "IND_UUID", "DIM_TIME", "DIM_TIME_TYPE",
+          		"DIM_GEO_CODE_M49", "DIM_GEO_CODE_TYPE", "DIM_PUBLISH_STATE_CODE",
+          		"RATE_PER_10000_N",
+          	}
+          	missing = expected - set(reader.fieldnames or [])
+          	if missing:
+          		raise RuntimeError(f"WHO schema changed for {cfg['name']}: {sorted(missing)}")
+
+          	values = {}
+          	ignored_m49 = set()
+          	for row in rows:
+          		if str(row.get("IND_CODE") or "").strip() != cfg["whoCode"]:
+          			raise RuntimeError(f"WHO code mismatch for {cfg['name']}")
+          		if str(row.get("IND_UUID") or "").strip() != cfg["whoUuid"]:
+          			raise RuntimeError(f"WHO UUID mismatch for {cfg['name']}")
+          		if str(row.get("DIM_TIME_TYPE") or "").strip() != "YEAR":
+          			continue
+          		if str(row.get("DIM_GEO_CODE_TYPE") or "").strip() != "COUNTRY":
+          			continue
+          		if str(row.get("DIM_PUBLISH_STATE_CODE") or "").strip() != "PUBLISHED":
+          			continue
+          		year_text = str(row.get("DIM_TIME") or "").strip()
+          		if not year_text.isdigit():
+          			continue
+          		year = int(year_text)
+          		iso3 = iso3_from_m49(row.get("DIM_GEO_CODE_M49"))
+          		if iso3 is None:
+          			ignored_m49.add(str(row.get("DIM_GEO_CODE_M49") or "").strip())
+          			continue
+          		raw = str(row.get("RATE_PER_10000_N") or "").strip()
+          		if not raw:
+          			continue
+          		value = float(raw) * 0.1
+          		if not math.isfinite(value):
+          			continue
+          		key = (iso3, year)
+          		if key in values:
+          			raise RuntimeError(f"duplicate WHO country-year {cfg['name']} {key}")
+          		values[key] = value
+          	return data, rows, values, ignored_m49
+
+          def fetch_wdi(cfg):
+          	base_query = {
+          		"format": "json",
+          		"source": "2",
+          		"per_page": "20000",
+          		"page": "1",
+          		"date": f"{cfg['startYear']}:{cfg['endYear']}",
+          	}
+          	url = f"{WDI_BASE}/country/all/indicator/{cfg['wdiCode']}?{urlencode(base_query)}"
+          	payload = fetch_json(url)
+          	if not isinstance(payload, list) or len(payload) != 2 or not isinstance(payload[0], dict):
+          		raise RuntimeError(f"unexpected WDI response for {cfg['name']}")
+          	rows = list(payload[1] or [])
+          	pages = int(payload[0].get("pages", 1))
+          	for page in range(2, pages + 1):
+          		base_query["page"] = str(page)
+          		part = fetch_json(f"{WDI_BASE}/country/all/indicator/{cfg['wdiCode']}?{urlencode(base_query)}")
+          		rows.extend(part[1] or [])
+
+          	values = {}
+          	for row in rows:
+          		if not isinstance(row, dict) or row.get("value") is None:
+          			continue
+          		iso3 = str(row.get("countryiso3code") or "").strip().upper()
+          		if pycountry.countries.get(alpha_3=iso3) is None:
+          			continue
+          		year_text = str(row.get("date") or "").strip()
+          		if not year_text.isdigit():
+          			continue
+          		value = float(row["value"])
+          		if math.isfinite(value):
+          			values[(iso3, int(year_text))] = value
+          	return rows, values
+
+          def yearly_counts(values):
+          	counts = defaultdict(int)
+          	for _, year in values:
+          		counts[year] += 1
+          	return counts
+
+          for cfg in INDICATORS:
+          	print("=" * 100)
+          	print(f"AUDIT {cfg['name']}: WHO={cfg['whoCode']} WDI={cfg['wdiCode']}")
+          	data, who_rows, who, ignored_m49 = fetch_who(cfg)
+          	wdi_rows, wdi = fetch_wdi(cfg)
+
+          	who_years = sorted({year for _, year in who})
+          	wdi_years = sorted({year for _, year in wdi})
+          	who_countries = {iso3 for iso3, _ in who}
+          	wdi_countries = {iso3 for iso3, _ in wdi}
+          	overlap = sorted(set(who) & set(wdi))
+          	who_only = set(who) - set(wdi)
+          	wdi_only = set(wdi) - set(who)
+          	diffs = [abs(who[key] - wdi[key]) for key in overlap]
+
+          	who_counts = yearly_counts(who)
+          	wdi_counts = yearly_counts(wdi)
+          	combined = dict(wdi)
+          	combined.update(who)
+          	combined_counts = yearly_counts(combined)
+          	broad_who = [(year, count) for year, count in sorted(who_counts.items()) if count >= 160]
+          	broad_combined = [(year, count) for year, count in sorted(combined_counts.items()) if count >= 160]
+
+          	print(f"WHO bytes={len(data)} rawRows={len(who_rows)} mappedObservations={len(who)} countries={len(who_countries)} years={who_years[0]}-{who_years[-1]}")
+          	print(f"WDI rawRows={len(wdi_rows)} mappedObservations={len(wdi)} countries={len(wdi_countries)} years={wdi_years[0]}-{wdi_years[-1]}")
+          	print(f"ignored WHO M49={sorted(value for value in ignored_m49 if value) or '(none)'}")
+          	print(f"overlap={len(overlap)} exact={sum(d <= 1e-9 for d in diffs)} <=0.01={sum(d <= 0.01 for d in diffs)} <=0.1={sum(d <= 0.1 for d in diffs)}")
+          	print(f"meanAbsDiff={(sum(diffs) / len(diffs)) if diffs else 0:.12g} maxAbsDiff={max(diffs, default=0):.12g}")
+          	print(f"WHO-only observations={len(who_only)} WDI-only observations={len(wdi_only)}")
+          	print(f"latest WHO coverage={sorted(who_counts.items())[-10:]}")
+          	print(f"latest WDI coverage={sorted(wdi_counts.items())[-10:]}")
+          	print(f"latest combined coverage={sorted(combined_counts.items())[-10:]}")
+          	print(f"latest broad WHO year >=160={broad_who[-1] if broad_who else None}")
+          	print(f"latest broad WHO+WDI year >=160={broad_combined[-1] if broad_combined else None}")
+
+          	for iso3 in ("AUT", "DEU", "USA", "IND"):
+          		keys = sorted((key for key in set(who) | set(wdi) if key[0] == iso3), key=lambda key: key[1])
+          		print(f"{iso3} latest:")
+          		for key in keys[-8:]:
+          			print(f"  {key[1]} WHO={who.get(key)} WDI={wdi.get(key)}")
+
+          	if overlap:
+          		print("largest overlap differences:")
+          		for key in sorted(overlap, key=lambda item: abs(who[item] - wdi[item]), reverse=True)[:20]:
+          			print(f"  {key[0]} {key[1]} WHO={who[key]:.12g} WDI={wdi[key]:.12g} diff={abs(who[key] - wdi[key]):.12g}")
           PY
