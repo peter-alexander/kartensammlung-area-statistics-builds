@@ -245,6 +245,347 @@
 			"valueRange": [0, 20000],
 			"minAreasWithAnyValue": 190,
 			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "risk-factor.obesity-adults-percent",
+			"slug": "risk-factor-obesity-adults-percent",
+			"sourceIndicator": "NCD_BMI_30A",
+			"sourceUuid": "BEFA58B",
+			"sourceUrl": "https://data.who.int/indicators/i/C6262EC/BEFA58B",
+			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/BEFA58B_ALL_LATEST.csv",
+			"dimensionFilters": {
+				"DIM_SEX": "TOTAL",
+				"DIM_AGE": "Y_GE18"
+			},
+			"valueField": "RATE_PER_100_N",
+			"lowerField": "RATE_PER_100_NL",
+			"upperField": "RATE_PER_100_NU",
+			"startYear": 1990,
+			"endYear": 2022,
+			"expectedReferenceYear": 2022,
+			"title": "Adipositas bei Erwachsenen",
+			"description": "WHO-Schätzung des altersstandardisierten Anteils der Erwachsenen ab 18 Jahren mit Adipositas (BMI ≥ 30), beide Geschlechter. Direkte WHO-Modellreihe mit Unsicherheitsintervallen.",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					5,
+					10,
+					20,
+					30,
+					40,
+					50
+				]
+			},
+			"valueRange": [
+				0,
+				100
+			],
+			"minAreasWithAnyValue": 190,
+			"minAreasInDefaultYear": 190,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "risk-factor.obesity-adults-male-percent",
+			"slug": "risk-factor-obesity-adults-male-percent",
+			"sourceIndicator": "NCD_BMI_30A",
+			"sourceUuid": "BEFA58B",
+			"sourceUrl": "https://data.who.int/indicators/i/C6262EC/BEFA58B",
+			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/BEFA58B_ALL_LATEST.csv",
+			"dimensionFilters": {
+				"DIM_SEX": "MALE",
+				"DIM_AGE": "Y_GE18"
+			},
+			"valueField": "RATE_PER_100_N",
+			"lowerField": "RATE_PER_100_NL",
+			"upperField": "RATE_PER_100_NU",
+			"startYear": 1990,
+			"endYear": 2022,
+			"expectedReferenceYear": 2022,
+			"title": "Adipositas bei Männern",
+			"description": "WHO-Schätzung des altersstandardisierten Anteils der Männer ab 18 Jahren mit Adipositas (BMI ≥ 30). Direkte WHO-Modellreihe mit Unsicherheitsintervallen.",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					5,
+					10,
+					20,
+					30,
+					40,
+					50
+				]
+			},
+			"valueRange": [
+				0,
+				100
+			],
+			"minAreasWithAnyValue": 190,
+			"minAreasInDefaultYear": 190,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "risk-factor.obesity-adults-female-percent",
+			"slug": "risk-factor-obesity-adults-female-percent",
+			"sourceIndicator": "NCD_BMI_30A",
+			"sourceUuid": "BEFA58B",
+			"sourceUrl": "https://data.who.int/indicators/i/C6262EC/BEFA58B",
+			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/BEFA58B_ALL_LATEST.csv",
+			"dimensionFilters": {
+				"DIM_SEX": "FEMALE",
+				"DIM_AGE": "Y_GE18"
+			},
+			"valueField": "RATE_PER_100_N",
+			"lowerField": "RATE_PER_100_NL",
+			"upperField": "RATE_PER_100_NU",
+			"startYear": 1990,
+			"endYear": 2022,
+			"expectedReferenceYear": 2022,
+			"title": "Adipositas bei Frauen",
+			"description": "WHO-Schätzung des altersstandardisierten Anteils der Frauen ab 18 Jahren mit Adipositas (BMI ≥ 30). Direkte WHO-Modellreihe mit Unsicherheitsintervallen.",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					5,
+					10,
+					20,
+					30,
+					40,
+					50
+				]
+			},
+			"valueRange": [
+				0,
+				100
+			],
+			"minAreasWithAnyValue": 190,
+			"minAreasInDefaultYear": 190,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "risk-factor.tobacco-use-percent",
+			"slug": "risk-factor-tobacco-use-percent",
+			"sourceIndicator": "M_Est_tob_curr_std",
+			"sourceUuid": "75DDA77",
+			"sourceUrl": "https://data.who.int/indicators/i/847662C/75DDA77",
+			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/75DDA77_ALL_LATEST.csv",
+			"dimensionFilters": {
+				"DIM_SEX": "TOTAL"
+			},
+			"valueField": "PERCENT_POP_N",
+			"lowerField": "PERCENT_POP_NL",
+			"upperField": "PERCENT_POP_NU",
+			"startYear": 2000,
+			"endYear": 2022,
+			"excludedYears": [
+				2018
+			],
+			"expectedReferenceYear": 2022,
+			"title": "Tabakkonsum",
+			"description": "WHO-Schätzung des altersstandardisierten Anteils der Bevölkerung ab 15 Jahren mit aktuellem Tabakkonsum, beide Geschlechter. Umfasst gerauchte und rauchfreie Tabakprodukte; E-Zigaretten sind nicht enthalten. Das nur für sieben Länder vorhandene Sonderjahr 2018 wird nicht als globales Kartenjahr veröffentlicht.",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					5,
+					10,
+					20,
+					30,
+					40,
+					50
+				]
+			},
+			"valueRange": [
+				0,
+				100
+			],
+			"minAreasWithAnyValue": 160,
+			"minAreasInDefaultYear": 160,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "risk-factor.tobacco-use-male-percent",
+			"slug": "risk-factor-tobacco-use-male-percent",
+			"sourceIndicator": "M_Est_tob_curr_std",
+			"sourceUuid": "75DDA77",
+			"sourceUrl": "https://data.who.int/indicators/i/847662C/75DDA77",
+			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/75DDA77_ALL_LATEST.csv",
+			"dimensionFilters": {
+				"DIM_SEX": "MALE"
+			},
+			"valueField": "PERCENT_POP_N",
+			"lowerField": "PERCENT_POP_NL",
+			"upperField": "PERCENT_POP_NU",
+			"startYear": 2000,
+			"endYear": 2022,
+			"excludedYears": [
+				2018
+			],
+			"expectedReferenceYear": 2022,
+			"title": "Tabakkonsum Männer",
+			"description": "WHO-Schätzung des altersstandardisierten Anteils der Männer ab 15 Jahren mit aktuellem Tabakkonsum. Umfasst gerauchte und rauchfreie Tabakprodukte; E-Zigaretten sind nicht enthalten. Das nur für sieben Länder vorhandene Sonderjahr 2018 wird ausgeschlossen.",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					5,
+					10,
+					20,
+					30,
+					40,
+					50
+				]
+			},
+			"valueRange": [
+				0,
+				100
+			],
+			"minAreasWithAnyValue": 160,
+			"minAreasInDefaultYear": 160,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "risk-factor.tobacco-use-female-percent",
+			"slug": "risk-factor-tobacco-use-female-percent",
+			"sourceIndicator": "M_Est_tob_curr_std",
+			"sourceUuid": "75DDA77",
+			"sourceUrl": "https://data.who.int/indicators/i/847662C/75DDA77",
+			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/75DDA77_ALL_LATEST.csv",
+			"dimensionFilters": {
+				"DIM_SEX": "FEMALE"
+			},
+			"valueField": "PERCENT_POP_N",
+			"lowerField": "PERCENT_POP_NL",
+			"upperField": "PERCENT_POP_NU",
+			"startYear": 2000,
+			"endYear": 2022,
+			"excludedYears": [
+				2018
+			],
+			"expectedReferenceYear": 2022,
+			"title": "Tabakkonsum Frauen",
+			"description": "WHO-Schätzung des altersstandardisierten Anteils der Frauen ab 15 Jahren mit aktuellem Tabakkonsum. Umfasst gerauchte und rauchfreie Tabakprodukte; E-Zigaretten sind nicht enthalten. Das nur für sieben Länder vorhandene Sonderjahr 2018 wird ausgeschlossen.",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					5,
+					10,
+					20,
+					30,
+					40,
+					50
+				]
+			},
+			"valueRange": [
+				0,
+				100
+			],
+			"minAreasWithAnyValue": 160,
+			"minAreasInDefaultYear": 160,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "risk-factor.alcohol-consumption-litres",
+			"slug": "risk-factor-alcohol-consumption-litres",
+			"sourceIndicator": "SA_0000001688",
+			"sourceUuid": "EE6F72A",
+			"sourceUrl": "https://data.who.int/indicators/i/EF38E6A/EE6F72A",
+			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/EE6F72A_ALL_LATEST.csv",
+			"dimensionFilters": {
+				"DIM_SEX": "TOTAL"
+			},
+			"valueField": "RATE_PER_CAPITA_N",
+			"lowerField": "RATE_PER_CAPITA_NL",
+			"upperField": "RATE_PER_CAPITA_NU",
+			"startYear": 2000,
+			"endYear": 2022,
+			"expectedReferenceYear": 2022,
+			"title": "Alkoholkonsum pro Kopf (15+)",
+			"description": "WHO-Schätzung des gesamten Alkoholkonsums pro Person ab 15 Jahren und Jahr in Litern reinen Alkohols (SDG 3.5.2). Umfasst registrierten und nicht registrierten Konsum und berücksichtigt grenzüberschreitenden bzw. touristischen Konsum.",
+			"unit": {
+				"id": "litres-pure-alcohol-per-adult-year",
+				"label": "Liter reiner Alkohol je Person ab 15 Jahren und Jahr",
+				"symbol": "l"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					1,
+					3,
+					5,
+					7,
+					10,
+					15
+				]
+			},
+			"valueRange": [
+				0,
+				50
+			],
+			"minAreasWithAnyValue": 185,
+			"minAreasInDefaultYear": 185,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
 		}
 	]
 }

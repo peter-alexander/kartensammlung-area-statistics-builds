@@ -117,6 +117,18 @@ def validate_config(payload: Any) -> dict[str, Any]:
 				raise ValueError(f"WHO indicator {indicator_id} startYear exceeds endYear.")
 		if "expectedReferenceYear" in indicator:
 			validate_year(indicator["expectedReferenceYear"], f"WHO indicator {indicator_id} expectedReferenceYear")
+		excluded_years = indicator.get("excludedYears", [])
+		if not isinstance(excluded_years, list) or any(isinstance(year, bool) or not isinstance(year, int) for year in excluded_years):
+			raise ValueError(f"WHO indicator {indicator_id} has invalid excludedYears.")
+		if len(set(excluded_years)) != len(excluded_years):
+			raise ValueError(f"WHO indicator {indicator_id} has duplicate excludedYears.")
+		for year in excluded_years:
+			validate_year(year, f"WHO indicator {indicator_id} excludedYear")
+		if excluded_years and "startYear" in indicator:
+			start_year = int(indicator["startYear"])
+			end_year = int(indicator["endYear"])
+			if any(year < start_year or year > end_year for year in excluded_years):
+				raise ValueError(f"WHO indicator {indicator_id} has excludedYears outside its configured year window.")
 		value_range = indicator.get("valueRange")
 		if value_range is not None:
 			if not isinstance(value_range, list) or len(value_range) != 2:
@@ -363,6 +375,7 @@ def normalize_indicator(
 		raise RuntimeError(f"WHO CSV schema changed for {indicator['id']}: missing {sorted(missing_fields)}")
 
 	start_year, end_year = indicator_year_window(config, indicator)
+	excluded_years = {int(year) for year in indicator.get("excludedYears", [])}
 	values_by_year: dict[int, dict[str, int | float]] = {}
 	intervals_by_year: dict[int, dict[str, dict[str, int | float]]] = {}
 	ignored_m49: set[str] = set()
@@ -385,7 +398,7 @@ def normalize_indicator(
 		if not year_text.isdigit():
 			continue
 		year = int(year_text)
-		if not start_year <= year <= end_year:
+		if not start_year <= year <= end_year or year in excluded_years:
 			continue
 		m49 = normalize_m49(row.get("DIM_GEO_CODE_M49"))
 		if m49 not in area_by_m49:
@@ -426,6 +439,8 @@ def normalize_indicator(
 	if fallback_code:
 		fallback_values = fetch_wdi(fallback_code, start_year, end_year, area_by_m49, timeout, wdi_cache)
 		for (area_id, year), value in sorted(fallback_values.items()):
+			if year in excluded_years:
+				continue
 			year_values = values_by_year.setdefault(year, {})
 			if area_id in year_values:
 				continue
@@ -503,6 +518,8 @@ def normalize_indicator(
 		source["referenceYear"] = direct_available_years[0]
 	elif direct_available_years:
 		source["timeCoverage"] = {"startYear": direct_available_years[0], "endYear": direct_available_years[-1]}
+	if excluded_years:
+		source["excludedYears"] = sorted(excluded_years)
 	if fallback_code:
 		source["fallback"] = {
 			"providerId": "world-bank",

@@ -69,7 +69,7 @@ jobs:
           from pathlib import Path
 
           provider = json.loads(Path("dist/statistics/who/index.json").read_text(encoding="utf-8"))
-          assert len(provider["indicators"]) == 11, len(provider["indicators"])
+          assert len(provider["indicators"]) == 18, len(provider["indicators"])
           by_id = {item["id"]: item for item in provider["indicators"]}
           annual_ids = {
           	"mortality.suicide-per-100000",
@@ -193,6 +193,41 @@ jobs:
           assert maternal_intervals == 7605, maternal_intervals
           assert "country:COK" in maternal_payload["values"]["2023"]
           assert not maternal_payload.get("observationMetadata")
+
+          risk_expected = {
+          	"risk-factor.obesity-adults-percent": {"source": "NCD_BMI_30A", "uuid": "BEFA58B", "years": list(range(1990, 2023)), "coverage": 192, "direct": 6336, "sex": "TOTAL"},
+          	"risk-factor.obesity-adults-male-percent": {"source": "NCD_BMI_30A", "uuid": "BEFA58B", "years": list(range(1990, 2023)), "coverage": 192, "direct": 6336, "sex": "MALE"},
+          	"risk-factor.obesity-adults-female-percent": {"source": "NCD_BMI_30A", "uuid": "BEFA58B", "years": list(range(1990, 2023)), "coverage": 192, "direct": 6336, "sex": "FEMALE"},
+          	"risk-factor.tobacco-use-percent": {"source": "M_Est_tob_curr_std", "uuid": "75DDA77", "years": [2000, 2005, 2007, 2010, 2015, 2020, 2021, 2022], "coverage": 165, "direct": 1319, "sex": "TOTAL", "excluded": [2018]},
+          	"risk-factor.tobacco-use-male-percent": {"source": "M_Est_tob_curr_std", "uuid": "75DDA77", "years": [2000, 2005, 2007, 2010, 2015, 2020, 2021, 2022], "coverage": 165, "direct": 1319, "sex": "MALE", "excluded": [2018]},
+          	"risk-factor.tobacco-use-female-percent": {"source": "M_Est_tob_curr_std", "uuid": "75DDA77", "years": [2000, 2005, 2007, 2010, 2015, 2020, 2021, 2022], "coverage": 165, "direct": 1320, "sex": "FEMALE", "excluded": [2018]},
+          	"risk-factor.alcohol-consumption-litres": {"source": "SA_0000001688", "uuid": "EE6F72A", "years": list(range(2000, 2023)), "coverage": 188, "direct": 4324, "sex": "TOTAL"},
+          }
+          for indicator_id, expected in risk_expected.items():
+          	item = by_id[indicator_id]
+          	assert item["frequency"] == "annual", (indicator_id, item["frequency"])
+          	assert item["availableYears"] == expected["years"], (indicator_id, item["availableYears"])
+          	assert item["defaultYear"] == 2022, (indicator_id, item["defaultYear"])
+          	assert item["coverage"]["areasWithAnyValue"] == expected["coverage"], (indicator_id, item["coverage"])
+          	assert item["coverage"]["areasInDefaultYear"] == expected["coverage"], (indicator_id, item["coverage"])
+          	assert item["coverage"]["directObservations"] == expected["direct"], (indicator_id, item["coverage"])
+          	assert item["coverage"]["fallbackObservations"] == 0, (indicator_id, item["coverage"])
+          	assert item["confidenceIntervals"] is True
+          	payload = json.loads(Path("dist/statistics/who", item["path"]).read_text(encoding="utf-8"))
+          	assert payload["source"]["providerId"] == "who"
+          	assert payload["source"]["indicator"] == expected["source"]
+          	assert payload["source"]["indicatorUuid"] == expected["uuid"]
+          	assert payload["source"]["sourceFormat"] == "data-hub-csv"
+          	assert payload["source"]["dimensionFilters"]["DIM_SEX"] == expected["sex"]
+          	assert "fallback" not in payload["source"]
+          	assert payload["indicator"]["confidenceIntervals"]["available"] is True
+          	interval_count = sum(len(values) for values in payload["confidenceIntervals"]["values"].values())
+          	assert interval_count == expected["direct"], (indicator_id, interval_count)
+          	if "excluded" in expected:
+          		assert payload["source"]["excludedYears"] == expected["excluded"]
+          		assert 2018 not in payload["availableYears"]
+          		assert 2025 not in payload["availableYears"]
+          		assert 2030 not in payload["availableYears"]
 
           print(f"snapshot={provider['activeSnapshot']}")
           print(f"retrievedAt={provider['retrievedAt']}")
