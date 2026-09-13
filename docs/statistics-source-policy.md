@@ -338,27 +338,50 @@ Produkt-Testbuild:
 
 #### Ärzte
 
-Die direkte WHO-Reihe `HWF_0001` misst die Ärztedichte je 10.000 Einwohner. Für den Vergleich wurde sie auf je 1.000 Einwohner skaliert. WDI `SH.MED.PHYS.ZS` nennt ausdrücklich WHO Global Health Workforce Statistics, OECD und nationale Daten als gemeinsame Quellen und ist daher keine reine WHO-Kopie.
+Direkte WHO-Quelle: World Health Data Hub, `HWF_0001` (Medical doctors). Die WHO veröffentlicht die Ärztedichte je 10.000 Einwohner; der Kartensammlungs-Builder normiert sie mit dem Faktor 0,1 auf Ärzte je 1.000 Einwohner.
 
-- WHO direkt: 3.682 Beobachtungen, 194 Länder, 1990–2024; 72 Länder mit Wert 2024.
-- WDI: 5.355 Beobachtungen, 207 Länder, 1960–2023; deutlich längere Historie und zusätzliche Gebiete.
-- 3.397 gemeinsame Länder-Jahr-Werte; 3.122 davon numerisch identisch innerhalb `1e-6`.
-- Mediane absolute Differenz: 0; mittlere absolute Differenz etwa 0,0245 Ärzte je 1.000; maximale Differenz 5,8.
-- Auch in aktuellen Jahren existieren reale Abweichungen, z. B. 2022 bis 1,542 Ärzte je 1.000.
+Die frühere Audit-Entscheidung, WDI als sichtbare kanonische Reihe zu belassen, wurde nach der direkten WHO-Migration revidiert. Entscheidend ist die Quellenhierarchie: `HWF_0001` ist die fachlich zuständige WHO-Originalreihe. WDI `SH.MED.PHYS.ZS` bleibt wegen seiner längeren Historie und zusätzlicher Länder-/Jahreswerte nützlich, wird aber nicht mehr als zweite sichtbare Kennzahl geführt.
 
-Entscheidung: **WDI bleibt für diese Kennzahl kanonisch und sichtbar.** Die gemischte WHO/OECD/Länderreihe bietet eigenständige Harmonisierung, zusätzliche Historie und zusätzliche Länder-/Gebietsabdeckung. Eine zweite, fast gleich benannte direkte WHO-Kennzahl würde den Katalog eher duplizieren als ergänzen.
+Aktuelle Produktionslogik:
+
+- direkte WHO-Werte haben für jedes gemeinsame Land/Jahr immer Vorrang;
+- WDI `SH.MED.PHYS.ZS` ergänzt ausschließlich historische oder geografische Lücken;
+- jeder WDI-Wert wird in `observationMetadata` ausdrücklich als `world-bank`-Fallback markiert;
+- die WHO-Normalisierung von je 10.000 auf je 1.000 Einwohner wird in den Quellenmetadaten dokumentiert;
+- es gibt keine Interpolation oder Extrapolation.
+
+Produktiver WHO-Build vom 13. September 2026:
+
+- 3.396 direkte WHO-Beobachtungen,
+- 1.972 explizite WDI-Fallbacks,
+- 209 Gebiete mit mindestens einem Wert,
+- gemeinsame veröffentlichte Historie 1960–2023,
+- Standardjahr 2018 mit 157 Gebieten.
+
+Entscheidung: **WHO ist kanonisch; WDI ist ausschließlich expliziter Fallback.** Die sichtbare Kennzahl bleibt `health-workforce.physicians-per-1000` im WHO-Provider.
 
 #### Pflegepersonal und Hebammen
 
-Die direkte WHO-Reihe `HWF_0006` misst Pflege- und Hebammenpersonal je 10.000 Einwohner und wurde für den Vergleich auf je 1.000 skaliert. WDI `SH.MED.NUMW.P3` ist ebenfalls eine gemischte WHO/OECD/Länderreihe.
+Direkte WHO-Quelle: World Health Data Hub, `HWF_0006` (Nursing and midwifery personnel). Auch diese Quelle wird von je 10.000 Einwohner auf je 1.000 Einwohner normiert.
 
-- WHO direkt: 3.582 Beobachtungen, 194 Länder, 1990–2024; 75 Länder mit Wert 2024.
-- WDI: 3.410 Beobachtungen, 198 Länder, 1990–2023.
-- 3.323 gemeinsame Länder-Jahr-Werte; 2.713 davon numerisch identisch innerhalb `1e-6`.
-- Mediane absolute Differenz praktisch 0; mittlere absolute Differenz etwa 0,0704 je 1.000; maximale Differenz 5,284.
-- Reale Abweichungen bestehen auch in jüngeren Jahren; 2023 betrug die maximale Differenz 3,278 je 1.000.
+Wie bei den Ärzten wurde die frühere Entscheidung zugunsten einer sichtbaren WDI-Reihe revidiert. Die direkte WHO-Originalreihe ist kanonisch; WDI `SH.MED.NUMW.P3` wird nur dort verwendet, wo der direkte WHO-Datensatz eine historische oder geografische Lücke hat.
 
-Entscheidung: **WDI bleibt kanonisch und sichtbar.** Die Reihe ist methodisch keine bloße Replikation des direkten WHO-Indikators; die abweichenden nationalen/OECD-Komponenten sind ein echter Mehrwert.
+Aktuelle Produktionslogik:
+
+- direkte WHO-Werte haben Vorrang;
+- WDI `SH.MED.NUMW.P3` ergänzt nur fehlende Länder-/Jahrwerte;
+- Fallback-Beobachtungen sind in `observationMetadata` als `world-bank` gekennzeichnet;
+- keine Interpolation oder Extrapolation.
+
+Produktiver WHO-Build vom 13. September 2026:
+
+- 3.374 direkte WHO-Beobachtungen,
+- 54 explizite WDI-Fallbacks,
+- 200 Gebiete mit mindestens einem Wert,
+- veröffentlichte Historie 1990–2023,
+- Standardjahr 2018 mit 181 Gebieten.
+
+Entscheidung: **WHO ist kanonisch; WDI ist ausschließlich expliziter Fallback.** Die sichtbare Kennzahl bleibt `health-workforce.nurses-midwives-per-1000` im WHO-Provider.
 
 #### Masern-Impfquote (MCV1)
 
