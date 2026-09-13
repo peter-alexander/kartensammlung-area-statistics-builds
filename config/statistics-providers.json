@@ -7,6 +7,11 @@
 			"index": "world-bank/index.json"
 		},
 		{
+			"id": "world-bank-electrification",
+			"name": "World Bank Global Electrification Database",
+			"index": "world-bank-electrification/index.json"
+		},
+		{
 			"id": "itu-datahub",
 			"name": "ITU DataHub",
 			"index": "itu-datahub/index.json"

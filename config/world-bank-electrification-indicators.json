@@ -1,0 +1,64 @@
+{
+	"schema": "kartensammlung.world-bank-electrification-statistics/v1",
+	"downloadUrl": "https://trackingsdg7.esmap.org/sites/default/files/download-documents/sdg7.1.1_-_access_to_electricity.xlsx",
+	"sourceUrl": "https://trackingsdg7.esmap.org/download/sdg-711-electrification-dataset",
+	"catalogUrl": "https://trackingsdg7.esmap.org/downloads",
+	"provider": {
+		"id": "world-bank-electrification",
+		"name": "World Bank Global Electrification Database",
+		"dataset": "SDG 7.1.1 Electrification Dataset",
+		"license": "CC BY 4.0",
+		"licenseUrl": "https://datacatalog.worldbank.org/public-licenses#cc-by",
+		"attribution": "World Bank"
+	},
+	"distribution": {
+		"provider": "Tracking SDG 7",
+		"report": "Tracking SDG 7: The Energy Progress Report"
+	},
+	"wdiFallback": {
+		"apiBase": "https://api.worldbank.org/v2",
+		"sourceId": 2,
+		"providerId": "world-bank",
+		"providerName": "World Bank WDI",
+		"maximumYear": 1999
+	},
+	"sourceInvariants": {
+		"SeriesCode": "EG_ACS_ELEC",
+		"Indicator": "7.1.1",
+		"Units": "PERCENT",
+		"Location": "ALLAREA",
+		"Reporting Type": "G",
+		"Source": "World Bank",
+		"Type": "Country"
+	},
+	"expectedIgnoredIso3Codes": ["CHI"],
+	"natureLabels": {
+		"C": "Country data",
+		"CA": "Country adjusted data",
+		"E": "Estimated data",
+		"G": "Global monitoring data",
+		"M": "Modeled data",
+		"N": "Non-relevant"
+	},
+	"indicators": [
+		{
+			"id": "energy.electricity-access-percent",
+			"slug": "energy-electricity-access-percent",
+			"sourceIndicator": "EG_ACS_ELEC",
+			"sourceIndicatorName": "Proportion of population with access to electricity, by urban/rural (%)",
+			"fallbackWdiIndicator": "EG.ELC.ACCS.ZS",
+			"title": "Zugang zu Elektrizität",
+			"description": "Anteil der Bevölkerung mit Zugang zu Elektrizität.",
+			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [20, 40, 60, 80, 95, 99]},
+			"minAreasWithAnyValue": 215,
+			"minAreasInDefaultYear": 215,
+			"minimumDirectObservations": 5300,
+			"minimumLatestYear": 2024,
+			"minimumDefaultYear": 2024,
+			"maximumDirectStartYear": 2000,
+			"maximumOverlapDifference": 0.051,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		}
+	]
+}
