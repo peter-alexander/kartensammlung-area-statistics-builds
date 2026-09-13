@@ -1,0 +1,159 @@
+name: Audit tax revenue sources
+
+on:
+  push:
+    branches:
+      - audit/tax-revenue
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Audit OECD Global Revenue Statistics and WDI
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import csv
+          import io
+          import json
+          import sys
+          from collections import defaultdict
+          from urllib.request import Request, urlopen
+
+          sys.path.insert(0, "scripts")
+          import build_world_bank as common
+
+          registry_url = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?audit=tax-revenue"
+          area_by_iso3, _registry = common.load_registry(registry_url, 90)
+          print(f"registryCountries={len(area_by_iso3)}")
+
+          print("\n=== OECD Global Revenue Statistics: total tax revenue, general government, % GDP ===")
+          oecd_url = (
+          	"https://sdmx.oecd.org/public/rest/data/"
+          	"OECD.CTP.TPS,DSD_REV_COMP_GLOBAL@DF_RSGLOBAL,2.1/"
+          	"..S13._T..PT_B1GQ.A"
+          	"?startPeriod=1990&dimensionAtObservation=AllDimensions"
+          )
+          request = Request(
+          	oecd_url,
+          	headers={
+          		"Accept": "text/csv",
+          		"User-Agent": "kartensammlung-area-statistics-builds/1",
+          	},
+          )
+          with urlopen(request, timeout=120) as response:
+          	raw = response.read()
+          	print(f"status={response.status} contentType={response.headers.get('Content-Type')} bytes={len(raw)}")
+          text = raw.decode("utf-8-sig")
+          reader = csv.DictReader(io.StringIO(text))
+          rows = list(reader)
+          print("columns=" + json.dumps(reader.fieldnames, ensure_ascii=False))
+          print(f"rows={len(rows)}")
+          if rows:
+          	print("sample=" + json.dumps(rows[0], ensure_ascii=False, sort_keys=True))
+
+          def find_key(candidates: tuple[str, ...]) -> str:
+          	for candidate in candidates:
+          		if candidate in (reader.fieldnames or []):
+          			return candidate
+          	raise RuntimeError(f"Could not find any of {candidates} in OECD columns")
+
+          area_key = find_key(("REF_AREA", "Reference area"))
+          year_key = find_key(("TIME_PERIOD", "Time period"))
+          value_key = find_key(("OBS_VALUE", "Observation value"))
+
+          oecd_values: dict[int, dict[str, float]] = defaultdict(dict)
+          ignored_oecd: set[str] = set()
+          for row in rows:
+          	iso3 = str(row.get(area_key, "")).strip().upper()
+          	area_id = area_by_iso3.get(iso3)
+          	if area_id is None:
+          		if iso3:
+          			ignored_oecd.add(iso3)
+          		continue
+          	year_text = str(row.get(year_key, "")).strip()
+          	value_text = str(row.get(value_key, "")).strip()
+          	if len(year_text) != 4 or not year_text.isdigit() or not value_text:
+          		continue
+          	year = int(year_text)
+          	if area_id in oecd_values[year]:
+          		raise RuntimeError(f"Duplicate OECD total-tax value: {iso3} {year}")
+          	oecd_values[year][area_id] = float(value_text)
+
+          oecd_years = sorted(oecd_values)
+          oecd_any = set().union(*(set(oecd_values[year]) for year in oecd_years))
+          print(f"mappedAreasAny={len(oecd_any)} years={oecd_years[0]}-{oecd_years[-1]} ignored={sorted(ignored_oecd)}")
+          print("recentCoverage=" + json.dumps({year: len(oecd_values[year]) for year in oecd_years[-10:]}, sort_keys=True))
+          latest_by_area = {area: max(year for year in oecd_years if area in oecd_values[year]) for area in oecd_any}
+          latest_counts = defaultdict(int)
+          for year in latest_by_area.values():
+          	latest_counts[year] += 1
+          print("latestObservationYearDistribution=" + json.dumps(dict(sorted(latest_counts.items())), sort_keys=True))
+          for area_id in ("country:AUT", "country:DEU", "country:USA", "country:IND", "country:BRA", "country:ZAF"):
+          	years = [year for year in oecd_years if area_id in oecd_values[year]]
+          	print(f"OECD {area_id}: first={years[0] if years else None} last={years[-1] if years else None} value={oecd_values[years[-1]][area_id] if years else None}")
+
+          print("\n=== World Bank WDI GC.TAX.TOTL.GD.ZS ===")
+          code = "GC.TAX.TOTL.GD.ZS"
+          records = common.fetch_world_bank_records(
+          	"https://api.worldbank.org/v2",
+          	f"country/all/indicator/{code}",
+          	2,
+          	120,
+          )
+          print(f"rows={len(records)}")
+          wdi_values: dict[int, dict[str, float]] = defaultdict(dict)
+          ignored_wdi: set[str] = set()
+          for row in records:
+          	value = row.get("value")
+          	if value is None:
+          		continue
+          	iso3 = str(row.get("countryiso3code", "")).strip().upper()
+          	area_id = area_by_iso3.get(iso3)
+          	if area_id is None:
+          		if iso3:
+          			ignored_wdi.add(iso3)
+          		continue
+          	year_text = str(row.get("date", "")).strip()
+          	if len(year_text) != 4 or not year_text.isdigit():
+          		continue
+          	year = int(year_text)
+          	if area_id in wdi_values[year]:
+          		raise RuntimeError(f"Duplicate WDI tax value: {iso3} {year}")
+          	wdi_values[year][area_id] = float(value)
+
+          wdi_years = sorted(wdi_values)
+          wdi_any = set().union(*(set(wdi_values[year]) for year in wdi_years))
+          print(f"mappedAreasAny={len(wdi_any)} years={wdi_years[0]}-{wdi_years[-1]} ignoredCount={len(ignored_wdi)}")
+          print("recentCoverage=" + json.dumps({year: len(wdi_values[year]) for year in wdi_years[-10:]}, sort_keys=True))
+          latest_wdi = {area: max(year for year in wdi_years if area in wdi_values[year]) for area in wdi_any}
+          latest_counts = defaultdict(int)
+          for year in latest_wdi.values():
+          	latest_counts[year] += 1
+          print("latestObservationYearDistribution=" + json.dumps(dict(sorted(latest_counts.items())), sort_keys=True))
+          for area_id in ("country:AUT", "country:DEU", "country:USA", "country:IND", "country:BRA", "country:ZAF"):
+          	years = [year for year in wdi_years if area_id in wdi_values[year]]
+          	print(f"WDI {area_id}: first={years[0] if years else None} last={years[-1] if years else None} value={wdi_values[years[-1]][area_id] if years else None}")
+
+          print("\n=== overlap diagnostics (not for splicing) ===")
+          overlaps = []
+          for year in sorted(set(oecd_values) & set(wdi_values)):
+          	for area_id in set(oecd_values[year]) & set(wdi_values[year]):
+          		oecd_value = oecd_values[year][area_id]
+          		wdi_value = wdi_values[year][area_id]
+          		overlaps.append((abs(oecd_value - wdi_value), year, area_id, oecd_value, wdi_value))
+          print(f"overlapCountryYears={len(overlaps)}")
+          if overlaps:
+          	diffs = sorted(item[0] for item in overlaps)
+          	print(f"medianAbsDiff={diffs[len(diffs)//2]:.6g} maxAbsDiff={diffs[-1]:.6g}")
+          	for diff, year, area_id, oecd_value, wdi_value in sorted(overlaps, reverse=True)[:20]:
+          		print(f"diff={diff:.6g} year={year} area={area_id} OECD={oecd_value:.6g} WDI={wdi_value:.6g}")
+          PY
