@@ -1,0 +1,106 @@
+name: Audit World Bank WGI
+
+on:
+  push:
+    branches:
+      - audit/world-bank-wgi
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Audit WGI score series
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import math
+          from collections import defaultdict
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+
+          indicators = {
+          	"GOV_WGI_VA_SC": "voice-accountability",
+          	"GOV_WGI_PV_SC": "political-stability",
+          	"GOV_WGI_GE_SC": "government-effectiveness",
+          	"GOV_WGI_RQ_SC": "regulatory-quality",
+          	"GOV_WGI_RL_SC": "rule-of-law",
+          	"GOV_WGI_CC_SC": "control-corruption",
+          }
+
+          def fetch_json(url):
+          	request = Request(url, headers={"User-Agent": "kartensammlung-area-statistics-audit/1"})
+          	with urlopen(request, timeout=60) as response:
+          		return json.load(response)
+
+          registry = fetch_json("https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?audit=wgi")
+          areas = registry.get("areas", registry)
+          registry_iso3 = set()
+          if isinstance(areas, list):
+          	for area in areas:
+          		iso3 = str(area.get("iso3") or "").upper()
+          		if iso3:
+          			registry_iso3.add(iso3)
+          elif isinstance(areas, dict):
+          	for area in areas.values():
+          		if isinstance(area, dict):
+          			iso3 = str(area.get("iso3") or "").upper()
+          			if iso3:
+          				registry_iso3.add(iso3)
+          print("registry_iso3", len(registry_iso3))
+
+          for code, label in indicators.items():
+          	params = urlencode({"format": "json", "per_page": 20000})
+          	url = f"https://api.worldbank.org/v2/country/all/indicator/{code}?{params}"
+          	payload = fetch_json(url)
+          	if not isinstance(payload, list) or len(payload) < 2:
+          		raise RuntimeError(f"Unexpected API response for {code}")
+          	metadata, rows = payload[0], payload[1]
+          	if int(metadata.get("total", 0)) <= 0:
+          		raise RuntimeError(f"No values for {code}")
+          	by_year = defaultdict(dict)
+          	all_values = []
+          	ignored = set()
+          	for row in rows:
+          		value = row.get("value")
+          		iso3 = str(row.get("countryiso3code") or "").upper()
+          		year_text = str(row.get("date") or "")
+          		if value is None or not iso3 or not year_text.isdigit():
+          			continue
+          		value = float(value)
+          		if not math.isfinite(value):
+          			raise RuntimeError(f"Non-finite {code} {iso3} {year_text}")
+          		if value < 0 or value > 100:
+          			raise RuntimeError(f"Out-of-range {code} {iso3} {year_text} {value}")
+          		if iso3 not in registry_iso3:
+          			ignored.add(iso3)
+          			continue
+          		year = int(year_text)
+          		if iso3 in by_year[year]:
+          			raise RuntimeError(f"Duplicate {code} {iso3} {year}")
+          		by_year[year][iso3] = value
+          		all_values.append(value)
+          	years = sorted(by_year)
+          	all_areas = {iso3 for values in by_year.values() for iso3 in values}
+          	print("---", code, label, "---")
+          	print("rows", len(all_values), "areas", len(all_areas), "years", f"{years[0]}-{years[-1]}", "ignored", sorted(ignored))
+          	for year in range(max(years[-1] - 5, years[0]), years[-1] + 1):
+          		print("coverage", year, len(by_year.get(year, {})))
+          	latest = by_year[years[-1]]
+          	for iso3 in ("AUT", "DEU", "USA", "BRA", "IND"):
+          		print("sample", years[-1], iso3, latest.get(iso3))
+          	ordered = sorted(all_values)
+          	def percentile(p):
+          		position = (len(ordered) - 1) * p
+          		lo = math.floor(position)
+          		hi = math.ceil(position)
+          		if lo == hi:
+          			return ordered[lo]
+          		fraction = position - lo
+          		return ordered[lo] * (1 - fraction) + ordered[hi] * fraction
+          	print("distribution", "min", ordered[0], "p10", percentile(0.1), "p25", percentile(0.25), "median", percentile(0.5), "p75", percentile(0.75), "p90", percentile(0.9), "max", ordered[-1])
+          PY
