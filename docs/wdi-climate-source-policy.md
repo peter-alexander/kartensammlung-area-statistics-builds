@@ -15,7 +15,13 @@ This is a deliberate source-policy decision, not an unfinished migration.
 
 ## Upstream lineage
 
-The World Bank's public `WDI_GHG_emissions` preparation repository documents how the current WDI greenhouse-gas series are assembled. The current preparation script uses the EDGAR 2025 GHG release, published in October 2025, and combines several EDGAR datasets including:
+The public `WDI_GHG_emissions` preparation repository maintained by Thijs Benschop documents how the WDI greenhouse-gas series are assembled:
+
+- repository: `https://github.com/thijsbenschop/WDI_GHG_emissions`
+- audited preparation script: `20251117_prepare_EDGAR_data_for_WDI_v2.R`
+- current EDGAR source documented by that script: EDGAR 2025 GHG, published in October 2025.
+
+The preparation script combines several EDGAR datasets including:
 
 - total greenhouse gases in AR5 CO₂-equivalents;
 - methane;
@@ -52,7 +58,7 @@ A preliminary audit that included World Bank aggregate codes showed larger diffe
 
 EDGAR 2025 is not governed by one uniform licence for every component used by the WDI pipeline.
 
-The official EDGAR 2025 data page states that most European Commission / JRC material is distributed under CC BY 4.0. However, the fossil-fuel CO₂ component `IEA-EDGAR CO2 (v4)`, based on IEA energy data, is distributed under **CC BY-NC-ND 4.0** and carries additional IEA attribution and use conditions.
+The official EDGAR 2025 data page (`https://edgar.jrc.ec.europa.eu/dataset_ghg2025`) states that European Commission / JRC material is generally distributed under CC BY 4.0. However, the fossil-fuel CO₂ component `IEA-EDGAR CO2 (v4)`, based on IEA energy data, is distributed under **CC BY-NC-ND 4.0** and carries additional IEA attribution and use conditions.
 
 That distinction matters for the Kartensammlung build system:
 
