@@ -1,4 +1,5 @@
 name: Build EDGAR statistics
+# Temporary branch-test trigger; removed before merge.
 
 on:
   workflow_dispatch:
