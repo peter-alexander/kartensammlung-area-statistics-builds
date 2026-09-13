@@ -1,0 +1,271 @@
+name: Patch WHO health risk factors
+
+on:
+  push:
+    branches:
+      - feature/who-health-risk-factors
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/who-health-risk-factors
+
+      - name: Patch production files
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          builder = Path('scripts/build_who.py')
+          text = builder.read_text(encoding='utf-8')
+
+          old = '''\t\tif "expectedReferenceYear" in indicator:\n\t\t\tvalidate_year(indicator["expectedReferenceYear"], f"WHO indicator {indicator_id} expectedReferenceYear")\n\t\tvalue_range = indicator.get("valueRange")\n'''
+          new = '''\t\tif "expectedReferenceYear" in indicator:\n\t\t\tvalidate_year(indicator["expectedReferenceYear"], f"WHO indicator {indicator_id} expectedReferenceYear")\n\t\texcluded_years = indicator.get("excludedYears", [])\n\t\tif not isinstance(excluded_years, list) or any(isinstance(year, bool) or not isinstance(year, int) for year in excluded_years):\n\t\t\traise ValueError(f"WHO indicator {indicator_id} has invalid excludedYears.")\n\t\tif len(set(excluded_years)) != len(excluded_years):\n\t\t\traise ValueError(f"WHO indicator {indicator_id} has duplicate excludedYears.")\n\t\tfor year in excluded_years:\n\t\t\tvalidate_year(year, f"WHO indicator {indicator_id} excludedYear")\n\t\tif excluded_years and "startYear" in indicator:\n\t\t\tstart_year = int(indicator["startYear"])\n\t\t\tend_year = int(indicator["endYear"])\n\t\t\tif any(year < start_year or year > end_year for year in excluded_years):\n\t\t\t\traise ValueError(f"WHO indicator {indicator_id} has excludedYears outside its configured year window.")\n\t\tvalue_range = indicator.get("valueRange")\n'''
+          if text.count(old) != 1:
+          	raise SystemExit(f'Expected one WHO config-validation anchor, found {text.count(old)}')
+          text = text.replace(old, new)
+
+          old = '''\tstart_year, end_year = indicator_year_window(config, indicator)\n\tvalues_by_year: dict[int, dict[str, int | float]] = {}\n'''
+          new = '''\tstart_year, end_year = indicator_year_window(config, indicator)\n\texcluded_years = {int(year) for year in indicator.get("excludedYears", [])}\n\tvalues_by_year: dict[int, dict[str, int | float]] = {}\n'''
+          if text.count(old) != 1:
+          	raise SystemExit(f'Expected one year-window anchor, found {text.count(old)}')
+          text = text.replace(old, new)
+
+          old = '''\t\tyear = int(year_text)\n\t\tif not start_year <= year <= end_year:\n\t\t\tcontinue\n\t\tm49 = normalize_m49(row.get("DIM_GEO_CODE_M49"))\n'''
+          new = '''\t\tyear = int(year_text)\n\t\tif not start_year <= year <= end_year or year in excluded_years:\n\t\t\tcontinue\n\t\tm49 = normalize_m49(row.get("DIM_GEO_CODE_M49"))\n'''
+          if text.count(old) != 1:
+          	raise SystemExit(f'Expected one direct-row year filter anchor, found {text.count(old)}')
+          text = text.replace(old, new)
+
+          old = '''\t\tfor (area_id, year), value in sorted(fallback_values.items()):\n\t\t\tyear_values = values_by_year.setdefault(year, {})\n'''
+          new = '''\t\tfor (area_id, year), value in sorted(fallback_values.items()):\n\t\t\tif year in excluded_years:\n\t\t\t\tcontinue\n\t\t\tyear_values = values_by_year.setdefault(year, {})\n'''
+          if text.count(old) != 1:
+          	raise SystemExit(f'Expected one fallback-year anchor, found {text.count(old)}')
+          text = text.replace(old, new)
+
+          old = '''\telif direct_available_years:\n\t\tsource["timeCoverage"] = {"startYear": direct_available_years[0], "endYear": direct_available_years[-1]}\n\tif fallback_code:\n'''
+          new = '''\telif direct_available_years:\n\t\tsource["timeCoverage"] = {"startYear": direct_available_years[0], "endYear": direct_available_years[-1]}\n\tif excluded_years:\n\t\tsource["excludedYears"] = sorted(excluded_years)\n\tif fallback_code:\n'''
+          if text.count(old) != 1:
+          	raise SystemExit(f'Expected one source-year metadata anchor, found {text.count(old)}')
+          builder.write_text(text.replace(old, new), encoding='utf-8')
+
+          config_path = Path('config/who-indicators.json')
+          config = json.loads(config_path.read_text(encoding='utf-8'))
+          existing_ids = {item['id'] for item in config['indicators']}
+          required = ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+          new_indicators = [
+          	{
+          		"id": "risk-factor.obesity-adults-percent",
+          		"slug": "risk-factor-obesity-adults-percent",
+          		"sourceIndicator": "NCD_BMI_30A",
+          		"sourceUuid": "BEFA58B",
+          		"sourceUrl": "https://data.who.int/indicators/i/C6262EC/BEFA58B",
+          		"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/BEFA58B_ALL_LATEST.csv",
+          		"dimensionFilters": {"DIM_SEX": "TOTAL", "DIM_AGE": "Y_GE18"},
+          		"valueField": "RATE_PER_100_N",
+          		"lowerField": "RATE_PER_100_NL",
+          		"upperField": "RATE_PER_100_NU",
+          		"startYear": 1990,
+          		"endYear": 2022,
+          		"expectedReferenceYear": 2022,
+          		"title": "Adipositas bei Erwachsenen",
+          		"description": "WHO-Schätzung des altersstandardisierten Anteils der Erwachsenen ab 18 Jahren mit Adipositas (BMI ≥ 30), beide Geschlechter. Direkte WHO-Modellreihe mit Unsicherheitsintervallen.",
+          		"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+          		"classification": {"type": "fixed", "breaks": [5, 10, 20, 30, 40, 50]},
+          		"valueRange": [0, 100],
+          		"minAreasWithAnyValue": 190,
+          		"minAreasInDefaultYear": 190,
+          		"requiredAreas": required,
+          	},
+          	{
+          		"id": "risk-factor.obesity-adults-male-percent",
+          		"slug": "risk-factor-obesity-adults-male-percent",
+          		"sourceIndicator": "NCD_BMI_30A",
+          		"sourceUuid": "BEFA58B",
+          		"sourceUrl": "https://data.who.int/indicators/i/C6262EC/BEFA58B",
+          		"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/BEFA58B_ALL_LATEST.csv",
+          		"dimensionFilters": {"DIM_SEX": "MALE", "DIM_AGE": "Y_GE18"},
+          		"valueField": "RATE_PER_100_N",
+          		"lowerField": "RATE_PER_100_NL",
+          		"upperField": "RATE_PER_100_NU",
+          		"startYear": 1990,
+          		"endYear": 2022,
+          		"expectedReferenceYear": 2022,
+          		"title": "Adipositas bei Männern",
+          		"description": "WHO-Schätzung des altersstandardisierten Anteils der Männer ab 18 Jahren mit Adipositas (BMI ≥ 30). Direkte WHO-Modellreihe mit Unsicherheitsintervallen.",
+          		"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+          		"classification": {"type": "fixed", "breaks": [5, 10, 20, 30, 40, 50]},
+          		"valueRange": [0, 100],
+          		"minAreasWithAnyValue": 190,
+          		"minAreasInDefaultYear": 190,
+          		"requiredAreas": required,
+          	},
+          	{
+          		"id": "risk-factor.obesity-adults-female-percent",
+          		"slug": "risk-factor-obesity-adults-female-percent",
+          		"sourceIndicator": "NCD_BMI_30A",
+          		"sourceUuid": "BEFA58B",
+          		"sourceUrl": "https://data.who.int/indicators/i/C6262EC/BEFA58B",
+          		"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/BEFA58B_ALL_LATEST.csv",
+          		"dimensionFilters": {"DIM_SEX": "FEMALE", "DIM_AGE": "Y_GE18"},
+          		"valueField": "RATE_PER_100_N",
+          		"lowerField": "RATE_PER_100_NL",
+          		"upperField": "RATE_PER_100_NU",
+          		"startYear": 1990,
+          		"endYear": 2022,
+          		"expectedReferenceYear": 2022,
+          		"title": "Adipositas bei Frauen",
+          		"description": "WHO-Schätzung des altersstandardisierten Anteils der Frauen ab 18 Jahren mit Adipositas (BMI ≥ 30). Direkte WHO-Modellreihe mit Unsicherheitsintervallen.",
+          		"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+          		"classification": {"type": "fixed", "breaks": [5, 10, 20, 30, 40, 50]},
+          		"valueRange": [0, 100],
+          		"minAreasWithAnyValue": 190,
+          		"minAreasInDefaultYear": 190,
+          		"requiredAreas": required,
+          	},
+          	{
+          		"id": "risk-factor.tobacco-use-percent",
+          		"slug": "risk-factor-tobacco-use-percent",
+          		"sourceIndicator": "M_Est_tob_curr_std",
+          		"sourceUuid": "75DDA77",
+          		"sourceUrl": "https://data.who.int/indicators/i/847662C/75DDA77",
+          		"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/75DDA77_ALL_LATEST.csv",
+          		"dimensionFilters": {"DIM_SEX": "TOTAL"},
+          		"valueField": "PERCENT_POP_N",
+          		"lowerField": "PERCENT_POP_NL",
+          		"upperField": "PERCENT_POP_NU",
+          		"startYear": 2000,
+          		"endYear": 2022,
+          		"excludedYears": [2018],
+          		"expectedReferenceYear": 2022,
+          		"title": "Tabakkonsum",
+          		"description": "WHO-Schätzung des altersstandardisierten Anteils der Bevölkerung ab 15 Jahren mit aktuellem Tabakkonsum, beide Geschlechter. Umfasst gerauchte und rauchfreie Tabakprodukte; E-Zigaretten sind nicht enthalten. Das nur für sieben Länder vorhandene Sonderjahr 2018 wird nicht als globales Kartenjahr veröffentlicht.",
+          		"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+          		"classification": {"type": "fixed", "breaks": [5, 10, 20, 30, 40, 50]},
+          		"valueRange": [0, 100],
+          		"minAreasWithAnyValue": 160,
+          		"minAreasInDefaultYear": 160,
+          		"requiredAreas": required,
+          	},
+          	{
+          		"id": "risk-factor.tobacco-use-male-percent",
+          		"slug": "risk-factor-tobacco-use-male-percent",
+          		"sourceIndicator": "M_Est_tob_curr_std",
+          		"sourceUuid": "75DDA77",
+          		"sourceUrl": "https://data.who.int/indicators/i/847662C/75DDA77",
+          		"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/75DDA77_ALL_LATEST.csv",
+          		"dimensionFilters": {"DIM_SEX": "MALE"},
+          		"valueField": "PERCENT_POP_N",
+          		"lowerField": "PERCENT_POP_NL",
+          		"upperField": "PERCENT_POP_NU",
+          		"startYear": 2000,
+          		"endYear": 2022,
+          		"excludedYears": [2018],
+          		"expectedReferenceYear": 2022,
+          		"title": "Tabakkonsum Männer",
+          		"description": "WHO-Schätzung des altersstandardisierten Anteils der Männer ab 15 Jahren mit aktuellem Tabakkonsum. Umfasst gerauchte und rauchfreie Tabakprodukte; E-Zigaretten sind nicht enthalten. Das nur für sieben Länder vorhandene Sonderjahr 2018 wird ausgeschlossen.",
+          		"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+          		"classification": {"type": "fixed", "breaks": [5, 10, 20, 30, 40, 50]},
+          		"valueRange": [0, 100],
+          		"minAreasWithAnyValue": 160,
+          		"minAreasInDefaultYear": 160,
+          		"requiredAreas": required,
+          	},
+          	{
+          		"id": "risk-factor.tobacco-use-female-percent",
+          		"slug": "risk-factor-tobacco-use-female-percent",
+          		"sourceIndicator": "M_Est_tob_curr_std",
+          		"sourceUuid": "75DDA77",
+          		"sourceUrl": "https://data.who.int/indicators/i/847662C/75DDA77",
+          		"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/75DDA77_ALL_LATEST.csv",
+          		"dimensionFilters": {"DIM_SEX": "FEMALE"},
+          		"valueField": "PERCENT_POP_N",
+          		"lowerField": "PERCENT_POP_NL",
+          		"upperField": "PERCENT_POP_NU",
+          		"startYear": 2000,
+          		"endYear": 2022,
+          		"excludedYears": [2018],
+          		"expectedReferenceYear": 2022,
+          		"title": "Tabakkonsum Frauen",
+          		"description": "WHO-Schätzung des altersstandardisierten Anteils der Frauen ab 15 Jahren mit aktuellem Tabakkonsum. Umfasst gerauchte und rauchfreie Tabakprodukte; E-Zigaretten sind nicht enthalten. Das nur für sieben Länder vorhandene Sonderjahr 2018 wird ausgeschlossen.",
+          		"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+          		"classification": {"type": "fixed", "breaks": [5, 10, 20, 30, 40, 50]},
+          		"valueRange": [0, 100],
+          		"minAreasWithAnyValue": 160,
+          		"minAreasInDefaultYear": 160,
+          		"requiredAreas": required,
+          	},
+          	{
+          		"id": "risk-factor.alcohol-consumption-litres",
+          		"slug": "risk-factor-alcohol-consumption-litres",
+          		"sourceIndicator": "SA_0000001688",
+          		"sourceUuid": "EE6F72A",
+          		"sourceUrl": "https://data.who.int/indicators/i/EF38E6A/EE6F72A",
+          		"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/EE6F72A_ALL_LATEST.csv",
+          		"dimensionFilters": {"DIM_SEX": "TOTAL"},
+          		"valueField": "RATE_PER_CAPITA_N",
+          		"lowerField": "RATE_PER_CAPITA_NL",
+          		"upperField": "RATE_PER_CAPITA_NU",
+          		"startYear": 2000,
+          		"endYear": 2022,
+          		"expectedReferenceYear": 2022,
+          		"title": "Alkoholkonsum pro Kopf (15+)",
+          		"description": "WHO-Schätzung des gesamten Alkoholkonsums pro Person ab 15 Jahren und Jahr in Litern reinen Alkohols (SDG 3.5.2). Umfasst registrierten und nicht registrierten Konsum und berücksichtigt grenzüberschreitenden bzw. touristischen Konsum.",
+          		"unit": {"id": "litres-pure-alcohol-per-adult-year", "label": "Liter reiner Alkohol je Person ab 15 Jahren und Jahr", "symbol": "l"},
+          		"classification": {"type": "fixed", "breaks": [1, 3, 5, 7, 10, 15]},
+          		"valueRange": [0, 50],
+          		"minAreasWithAnyValue": 185,
+          		"minAreasInDefaultYear": 185,
+          		"requiredAreas": required,
+          	},
+          ]
+          duplicates = [item['id'] for item in new_indicators if item['id'] in existing_ids]
+          if duplicates:
+          	raise SystemExit(f'WHO risk-factor indicators already exist: {duplicates}')
+          config['indicators'].extend(new_indicators)
+          config_path.write_text(json.dumps(config, ensure_ascii=False, indent='\t') + '\n', encoding='utf-8')
+
+          workflow = Path('.github/workflows/build-who-statistics.yml')
+          text = workflow.read_text(encoding='utf-8')
+          old = '          assert len(provider["indicators"]) == 11, len(provider["indicators"])\n'
+          new = '          assert len(provider["indicators"]) == 18, len(provider["indicators"])\n'
+          if text.count(old) != 1:
+          	raise SystemExit(f'Expected one WHO indicator-count assertion, found {text.count(old)}')
+          text = text.replace(old, new)
+
+          anchor = '''          print(f"snapshot={provider['activeSnapshot']}")\n'''
+          block = '''          risk_expected = {\n          \t"risk-factor.obesity-adults-percent": {"source": "NCD_BMI_30A", "uuid": "BEFA58B", "years": list(range(1990, 2023)), "coverage": 192, "direct": 6336, "sex": "TOTAL"},\n          \t"risk-factor.obesity-adults-male-percent": {"source": "NCD_BMI_30A", "uuid": "BEFA58B", "years": list(range(1990, 2023)), "coverage": 192, "direct": 6336, "sex": "MALE"},\n          \t"risk-factor.obesity-adults-female-percent": {"source": "NCD_BMI_30A", "uuid": "BEFA58B", "years": list(range(1990, 2023)), "coverage": 192, "direct": 6336, "sex": "FEMALE"},\n          \t"risk-factor.tobacco-use-percent": {"source": "M_Est_tob_curr_std", "uuid": "75DDA77", "years": [2000, 2005, 2007, 2010, 2015, 2020, 2021, 2022], "coverage": 165, "direct": 1319, "sex": "TOTAL", "excluded": [2018]},\n          \t"risk-factor.tobacco-use-male-percent": {"source": "M_Est_tob_curr_std", "uuid": "75DDA77", "years": [2000, 2005, 2007, 2010, 2015, 2020, 2021, 2022], "coverage": 165, "direct": 1319, "sex": "MALE", "excluded": [2018]},\n          \t"risk-factor.tobacco-use-female-percent": {"source": "M_Est_tob_curr_std", "uuid": "75DDA77", "years": [2000, 2005, 2007, 2010, 2015, 2020, 2021, 2022], "coverage": 165, "direct": 1320, "sex": "FEMALE", "excluded": [2018]},\n          \t"risk-factor.alcohol-consumption-litres": {"source": "SA_0000001688", "uuid": "EE6F72A", "years": list(range(2000, 2023)), "coverage": 188, "direct": 4324, "sex": "TOTAL"},\n          }\n          for indicator_id, expected in risk_expected.items():\n          \titem = by_id[indicator_id]\n          \tassert item["frequency"] == "annual", (indicator_id, item["frequency"])\n          \tassert item["availableYears"] == expected["years"], (indicator_id, item["availableYears"])\n          \tassert item["defaultYear"] == 2022, (indicator_id, item["defaultYear"])\n          \tassert item["coverage"]["areasWithAnyValue"] == expected["coverage"], (indicator_id, item["coverage"])\n          \tassert item["coverage"]["areasInDefaultYear"] == expected["coverage"], (indicator_id, item["coverage"])\n          \tassert item["coverage"]["directObservations"] == expected["direct"], (indicator_id, item["coverage"])\n          \tassert item["coverage"]["fallbackObservations"] == 0, (indicator_id, item["coverage"])\n          \tassert item["confidenceIntervals"] is True\n          \tpayload = json.loads(Path("dist/statistics/who", item["path"]).read_text(encoding="utf-8"))\n          \tassert payload["source"]["providerId"] == "who"\n          \tassert payload["source"]["indicator"] == expected["source"]\n          \tassert payload["source"]["indicatorUuid"] == expected["uuid"]\n          \tassert payload["source"]["sourceFormat"] == "data-hub-csv"\n          \tassert payload["source"]["dimensionFilters"]["DIM_SEX"] == expected["sex"]\n          \tassert "fallback" not in payload["source"]\n          \tassert payload["indicator"]["confidenceIntervals"]["available"] is True\n          \tinterval_count = sum(len(values) for values in payload["confidenceIntervals"]["values"].values())\n          \tassert interval_count == expected["direct"], (indicator_id, interval_count)\n          \tif "excluded" in expected:\n          \t\tassert payload["source"]["excludedYears"] == expected["excluded"]\n          \t\tassert 2018 not in payload["availableYears"]\n          \t\tassert 2025 not in payload["availableYears"]\n          \t\tassert 2030 not in payload["availableYears"]\n\n'''
+          if text.count(anchor) != 1:
+          	raise SystemExit(f'Expected one WHO workflow summary anchor, found {text.count(anchor)}')
+          workflow.write_text(text.replace(anchor, block + anchor), encoding='utf-8')
+
+          policy = Path('docs/who-health-risk-factors-source-policy.md')
+          policy.write_text('''# WHO health risk factors source policy\n\n## Scope\n\nThe Kartensammlung publishes seven country indicators from direct World Health Organization data for three major health risk factors: adult obesity, current tobacco use and total alcohol consumption.\n\nAll seven indicators remain inside the existing `who` provider. No World Bank WDI fallback is used because the direct WHO series already have broad, internally consistent country coverage.\n\n## Canonical direct sources\n\n### Adult obesity\n\n- WHO indicator: `NCD_BMI_30A`\n- UUID: `BEFA58B`\n- published name: `Obesity in adults (age 18+)`\n- age: 18 years and older\n- measure: age-standardized prevalence, BMI >= 30\n- sexes: total, male, female\n- production years: 1990-2022\n- mapped Kartensammlung countries: 192 for every published year and each sex\n- confidence intervals: retained\n\nThe September 2026 live WHO CSV contains a complete annual panel through 2022. This is newer than the year range still shown on some human-readable WHO metadata pages; the production build validates the current machine-readable download directly.\n\n### Current tobacco use\n\n- WHO indicator: `M_Est_tob_curr_std`\n- UUID: `75DDA77`\n- published name: `Tobacco use`\n- age: 15 years and older\n- measure: age-standardized current use of smoked and/or smokeless tobacco\n- e-cigarettes: not included in this indicator\n- sexes: total, male, female\n- mapped Kartensammlung countries: 165\n- confidence intervals: retained\n\nThe current source file contains broad model years 2000, 2005, 2007, 2010, 2015, 2020, 2021, 2022, 2025 and 2030 plus a special 2018 partial release.\n\nProduction deliberately publishes only the non-future series through 2022. The 2025 and 2030 values are not exposed as ordinary historical observations because the current country-statistics frontend/provider contract does not yet distinguish model projections from observations/estimates. They may be added later with explicit projection semantics.\n\nThe source year 2018 is also deliberately excluded from the map series: it contains only seven mapped countries per sex and would otherwise appear in the year selector as if it were a comparable worldwide data year. The exclusion is explicit in configuration and is copied into payload source metadata as `excludedYears: [2018]`.\n\nAfter these rules the production years are:\n\n`2000, 2005, 2007, 2010, 2015, 2020, 2021, 2022`\n\nCoverage in 2022 is 165 countries for total, men and women. In 2021 one male and total-country value is missing, which is retained as a real source gap rather than filled or interpolated.\n\n### Alcohol consumption\n\n- WHO indicator: `SA_0000001688`\n- UUID: `EE6F72A`\n- published name: `Alcohol consumption (age 15+)`\n- measure: litres of pure alcohol consumed per person aged 15+ per year\n- production years: 2000-2022\n- mapped Kartensammlung countries: 188 in every year\n- sex dimension: total only in this WHO series\n- confidence intervals: retained\n\nThe WHO measure covers total consumption, including recorded and unrecorded alcohol, with adjustments for tourist/cross-border consumption. It corresponds to the SDG 3.5.2 concept.\n\n## Production indicators\n\nThe seven published ids are:\n\n- `risk-factor.obesity-adults-percent`\n- `risk-factor.obesity-adults-male-percent`\n- `risk-factor.obesity-adults-female-percent`\n- `risk-factor.tobacco-use-percent`\n- `risk-factor.tobacco-use-male-percent`\n- `risk-factor.tobacco-use-female-percent`\n- `risk-factor.alcohol-consumption-litres`\n\n## No interpolation or cross-provider splicing\n\nNo missing country-year value is interpolated, extrapolated or filled from another provider. Direct WHO values are the complete production source for these indicators.\n\nThe tobacco series therefore remains intentionally sparse in time, and the single 2021 source gap remains visible.\n\n## Confidence intervals\n\nAll seven source series provide lower and upper uncertainty bounds. The WHO builder retains them in the normalized payload and validates for every direct observation that the point estimate lies within its published interval.\n\n## Stable map classes\n\nAdult obesity, all sexes:\n\n`5 / 10 / 20 / 30 / 40 / 50 %`\n\nTobacco use, all sexes:\n\n`5 / 10 / 20 / 30 / 40 / 50 %`\n\nUsing the same tobacco breaks for total, male and female series makes direct visual comparison possible.\n\nAlcohol consumption:\n\n`1 / 3 / 5 / 7 / 10 / 15 litres of pure alcohol per person aged 15+ per year`\n\nThese boundaries are fixed and are not recalculated when WHO updates the source.\n\n## Live audit, 13 September 2026\n\nThe direct WHO downloads were audited against the production country registry before implementation. Results after M49 mapping:\n\n- obesity total: 192 countries, 1990-2022, 192 countries in 2022\n- obesity male: 192 countries, 1990-2022, 192 countries in 2022\n- obesity female: 192 countries, 1990-2022, 192 countries in 2022\n- tobacco total: 165 countries through 2022; 2018 excluded as a 7-country partial year\n- tobacco male: 165 countries through 2022; one country missing in 2021\n- tobacco female: 165 countries through 2022\n- alcohol total: 188 countries, annual 2000-2022, 188 countries in 2022\n\nAll required sanity-check countries Austria, Germany, the United States and India are present in the 2022 values of every new indicator.\n\n## Update strategy\n\nThe normal monthly WHO workflow downloads the current WHO files directly. Source schemas, indicator ids, configured dimensions, country coverage, value ranges and confidence intervals are validated before a snapshot can be published. Production deployment continues to use the existing content-addressed snapshot, FTP, public-manifest comparison and browser-access checks.\n''', encoding='utf-8')
+
+          helper = Path('.github/workflows/patch-who-health-risk-factors.yml')
+          helper.unlink()
+          PY
+
+      - name: Validate patched production files
+        run: |
+          python -m py_compile scripts/build_who.py scripts/build_world_bank.py
+          python -m json.tool config/who-indicators.json >/dev/null
+          git diff --check
+
+      - name: Commit validated patch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Add WHO health risk-factor statistics"
+          echo "PATCH_COMMIT=$(git rev-parse HEAD)"
+          git push origin HEAD:feature/who-health-risk-factors
