@@ -19,11 +19,33 @@
 			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/F8524F2_ALL_LATEST.csv",
 			"title": "Intimpartnergewalt – letzte 12 Monate",
 			"description": "WHO-Schätzung des Anteils jemals verpartnerter Frauen, die in den vorangegangenen 12 Monaten körperliche und/oder sexuelle Gewalt durch einen aktuellen oder früheren Intimpartner erfahren haben. Modellierte, international harmonisierte Prävalenzschätzung; kein Register- oder Polizeidatensatz.",
-			"unit": {"id": "percent", "label": "%", "symbol": "%"},
-			"classification": {"type": "fixed", "breaks": [5, 10, 15, 20, 25, 30]},
-			"valueRange": [0, 100],
+			"unit": {
+				"id": "percent",
+				"label": "%",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					5,
+					10,
+					15,
+					20,
+					25,
+					30
+				]
+			},
+			"valueRange": [
+				0,
+				100
+			],
 			"minAreasWithAnyValue": 140,
-			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
 		},
 		{
 			"id": "violence.ipv-lifetime-percent",
@@ -34,11 +56,33 @@
 			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/E0D4E17_ALL_LATEST.csv",
 			"title": "Intimpartnergewalt – Lebenszeit",
 			"description": "WHO-Schätzung des Anteils jemals verpartnerter Frauen, die seit dem Alter von 15 Jahren körperliche und/oder sexuelle Gewalt durch einen aktuellen oder früheren Intimpartner erfahren haben. Modellierte, international harmonisierte Prävalenzschätzung; kein Register- oder Polizeidatensatz.",
-			"unit": {"id": "percent", "label": "%", "symbol": "%"},
-			"classification": {"type": "fixed", "breaks": [10, 20, 25, 30, 35, 40]},
-			"valueRange": [0, 100],
+			"unit": {
+				"id": "percent",
+				"label": "%",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					10,
+					20,
+					25,
+					30,
+					35,
+					40
+				]
+			},
+			"valueRange": [
+				0,
+				100
+			],
 			"minAreasWithAnyValue": 135,
-			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
 		},
 		{
 			"id": "mortality.suicide-per-100000",
@@ -47,7 +91,10 @@
 			"sourceUuid": "16BBF41",
 			"sourceUrl": "https://data.who.int/indicators/i/F08B4FD/16BBF41",
 			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/16BBF41_ALL_LATEST.csv",
-			"dimensionFilters": {"DIM_SEX": "TOTAL", "DIM_AGE": "TOTAL"},
+			"dimensionFilters": {
+				"DIM_SEX": "TOTAL",
+				"DIM_AGE": "TOTAL"
+			},
 			"valueField": "RATE_PER_100000_N",
 			"lowerField": "RATE_PER_100000_NL",
 			"upperField": "RATE_PER_100000_NU",
@@ -56,11 +103,32 @@
 			"fallbackWdiIndicator": "SH.STA.SUIC.P5",
 			"title": "Suizidsterblichkeit",
 			"description": "WHO-Schätzung der Suizidsterblichkeit je 100.000 Einwohner, beide Geschlechter. Direkte WHO-Werte sind kanonisch; Länder-/Jahrlücken werden mit der identischen WHO-originären Reihe aus World Bank WDI ergänzt und im Datensatz als Fallback markiert.",
-			"unit": {"id": "per-100000-population", "label": "je 100.000 Einwohner"},
-			"classification": {"type": "fixed", "breaks": [3, 5, 10, 15, 20, 30]},
-			"valueRange": [0, 1000],
+			"unit": {
+				"id": "per-100000-population",
+				"label": "je 100.000 Einwohner"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					3,
+					5,
+					10,
+					15,
+					20,
+					30
+				]
+			},
+			"valueRange": [
+				0,
+				1000
+			],
 			"minAreasWithAnyValue": 180,
-			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
 		},
 		{
 			"id": "mortality.suicide-male-per-100000",
@@ -69,7 +137,10 @@
 			"sourceUuid": "16BBF41",
 			"sourceUrl": "https://data.who.int/indicators/i/F08B4FD/16BBF41",
 			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/16BBF41_ALL_LATEST.csv",
-			"dimensionFilters": {"DIM_SEX": "MALE", "DIM_AGE": "TOTAL"},
+			"dimensionFilters": {
+				"DIM_SEX": "MALE",
+				"DIM_AGE": "TOTAL"
+			},
 			"valueField": "RATE_PER_100000_N",
 			"lowerField": "RATE_PER_100000_NL",
 			"upperField": "RATE_PER_100000_NU",
@@ -78,11 +149,32 @@
 			"fallbackWdiIndicator": "SH.STA.SUIC.MA.P5",
 			"title": "Suizidsterblichkeit Männer",
 			"description": "WHO-Schätzung der Suizidsterblichkeit je 100.000 männliche Einwohner. Direkte WHO-Werte sind kanonisch; Länder-/Jahrlücken werden mit der identischen WHO-originären Reihe aus World Bank WDI ergänzt und im Datensatz als Fallback markiert.",
-			"unit": {"id": "per-100000-male-population", "label": "je 100.000 Männer"},
-			"classification": {"type": "fixed", "breaks": [5, 10, 15, 25, 40, 60]},
-			"valueRange": [0, 1000],
+			"unit": {
+				"id": "per-100000-male-population",
+				"label": "je 100.000 Männer"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					5,
+					10,
+					15,
+					25,
+					40,
+					60
+				]
+			},
+			"valueRange": [
+				0,
+				1000
+			],
 			"minAreasWithAnyValue": 180,
-			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
 		},
 		{
 			"id": "mortality.suicide-female-per-100000",
@@ -91,7 +183,10 @@
 			"sourceUuid": "16BBF41",
 			"sourceUrl": "https://data.who.int/indicators/i/F08B4FD/16BBF41",
 			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/16BBF41_ALL_LATEST.csv",
-			"dimensionFilters": {"DIM_SEX": "FEMALE", "DIM_AGE": "TOTAL"},
+			"dimensionFilters": {
+				"DIM_SEX": "FEMALE",
+				"DIM_AGE": "TOTAL"
+			},
 			"valueField": "RATE_PER_100000_N",
 			"lowerField": "RATE_PER_100000_NL",
 			"upperField": "RATE_PER_100000_NU",
@@ -100,11 +195,32 @@
 			"fallbackWdiIndicator": "SH.STA.SUIC.FE.P5",
 			"title": "Suizidsterblichkeit Frauen",
 			"description": "WHO-Schätzung der Suizidsterblichkeit je 100.000 weibliche Einwohner. Direkte WHO-Werte sind kanonisch; Länder-/Jahrlücken werden mit der identischen WHO-originären Reihe aus World Bank WDI ergänzt und im Datensatz als Fallback markiert.",
-			"unit": {"id": "per-100000-female-population", "label": "je 100.000 Frauen"},
-			"classification": {"type": "fixed", "breaks": [1, 3, 5, 8, 12, 20]},
-			"valueRange": [0, 1000],
+			"unit": {
+				"id": "per-100000-female-population",
+				"label": "je 100.000 Frauen"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					1,
+					3,
+					5,
+					8,
+					12,
+					20
+				]
+			},
+			"valueRange": [
+				0,
+				1000
+			],
 			"minAreasWithAnyValue": 180,
-			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
 		},
 		{
 			"id": "mortality.ncd-premature-percent",
@@ -113,7 +229,10 @@
 			"sourceUuid": "1F96863",
 			"sourceUrl": "https://data.who.int/indicators/i/C540135/1F96863",
 			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/1F96863_ALL_LATEST.csv",
-			"dimensionFilters": {"DIM_SEX": "TOTAL", "DIM_AGE": "YEARS30-69"},
+			"dimensionFilters": {
+				"DIM_SEX": "TOTAL",
+				"DIM_AGE": "YEARS30-69"
+			},
 			"valueField": "RATE_PER_100_N",
 			"lowerField": "RATE_PER_100_NL",
 			"upperField": "RATE_PER_100_NU",
@@ -122,11 +241,33 @@
 			"fallbackWdiIndicator": "SH.DYN.NCOM.ZS",
 			"title": "Vorzeitige NCD-Sterblichkeit",
 			"description": "Wahrscheinlichkeit in Prozent, zwischen dem 30. und 70. Geburtstag an Herz-Kreislauf-Erkrankungen, Krebs, Diabetes oder chronischen Atemwegserkrankungen zu sterben (SDG 3.4.1). Direkte WHO-Werte sind kanonisch; Länder-/Jahrlücken werden mit der identischen WHO-originären Reihe aus World Bank WDI ergänzt und im Datensatz als Fallback markiert.",
-			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
-			"classification": {"type": "fixed", "breaks": [5, 10, 15, 20, 25, 30]},
-			"valueRange": [0, 100],
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					5,
+					10,
+					15,
+					20,
+					25,
+					30
+				]
+			},
+			"valueRange": [
+				0,
+				100
+			],
 			"minAreasWithAnyValue": 180,
-			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
 		},
 		{
 			"id": "immunization.dpt-percent",
@@ -142,11 +283,33 @@
 			"fallbackWdiIndicator": "SH.IMM.IDPT",
 			"title": "DPT-Impfquote",
 			"description": "Anteil der Einjährigen, die drei Dosen eines Diphtherie-, Tetanus- und Pertussis-haltigen Impfstoffs (DTP3) erhalten haben; offizielle WHO/UNICEF-Schätzung. Direkte WHO-Werte ab 2000 sind kanonisch; die identische WHO-originäre WDI-Reihe ergänzt ausschließlich frühere Jahre und Länder-/Jahrlücken und wird als Fallback markiert.",
-			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
-			"classification": {"type": "fixed", "breaks": [50, 70, 80, 90, 95, 99]},
-			"valueRange": [0, 100],
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					50,
+					70,
+					80,
+					90,
+					95,
+					99
+				]
+			},
+			"valueRange": [
+				0,
+				100
+			],
 			"minAreasWithAnyValue": 180,
-			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
 		},
 		{
 			"id": "immunization.measles-percent",
@@ -165,11 +328,133 @@
 			"fallbackWdiIndicator": "SH.IMM.MEAS",
 			"title": "Masern-Impfquote",
 			"description": "WHO/UNICEF-Schätzung (WUENIC) der MCV1-Impfquote, also des Anteils der Einjährigen mit mindestens einer Dosis eines masernhaltigen Impfstoffs. Der jeweils aktuelle direkte WHO-GHO-Stand ist kanonisch; World Bank WDI ergänzt ausschließlich die Historie vor 2000 und Länder-/Jahrlücken und wird als Fallback markiert.",
-			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
-			"classification": {"type": "fixed", "breaks": [50, 70, 80, 90, 95, 99]},
-			"valueRange": [0, 100],
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					50,
+					70,
+					80,
+					90,
+					95,
+					99
+				]
+			},
+			"valueRange": [
+				0,
+				100
+			],
 			"minAreasWithAnyValue": 180,
-			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "health-workforce.physicians-per-1000",
+			"slug": "health-workforce-physicians-per-1000",
+			"sourceIndicator": "HWF_0001",
+			"sourceUuid": "217795A",
+			"sourceUrl": "https://data.who.int/indicators/i/CCCEBB2/217795A",
+			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/217795A_ALL_LATEST.csv",
+			"valueField": "RATE_PER_10000_N",
+			"valueMultiplier": 0.1,
+			"sourceUnit": {
+				"id": "per-10000-population",
+				"label": "je 10.000 Einwohner"
+			},
+			"confidenceIntervals": false,
+			"startYear": 1960,
+			"endYear": 2023,
+			"fallbackWdiIndicator": "SH.MED.PHYS.ZS",
+			"fallbackProviderName": "Weltbank (WDI) – Entwicklung, Wirtschaft & Gesellschaft",
+			"fallbackUsage": "Only country-year observations missing from the direct WHO dataset",
+			"fallbackProvenance": "World Bank WDI series combining WHO Global Health Workforce Statistics, OECD and country data",
+			"title": "Ärztinnen und Ärzte",
+			"description": "Ärztinnen und Ärzte je 1.000 Einwohner nach dem WHO-Indikator SDG 3.c.1. Die WHO-Quelldaten je 10.000 Einwohner werden auf je 1.000 Einwohner normiert. Direkte WHO-Werte sind kanonisch; World Bank WDI ergänzt ausschließlich fehlende Länder-/Jahreswerte und kann WHO-, OECD- und nationale Daten enthalten. Wegen unterschiedlicher nationaler Quellen und Abgrenzungen, etwa praktizierender gegenüber registrierter Ärztinnen und Ärzte, sind historische Brüche möglich.",
+			"unit": {
+				"id": "per-1000-population",
+				"label": "je 1.000 Einwohner"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					0.2,
+					0.5,
+					1,
+					2,
+					4,
+					6
+				]
+			},
+			"valueRange": [
+				0,
+				100
+			],
+			"minAreasWithAnyValue": 160,
+			"minAreasInDefaultYear": 150,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		},
+		{
+			"id": "health-workforce.nurses-midwives-per-1000",
+			"slug": "health-workforce-nurses-midwives-per-1000",
+			"sourceIndicator": "HWF_0006",
+			"sourceUuid": "5C8435F",
+			"sourceUrl": "https://data.who.int/indicators/i/B54EB15/5C8435F",
+			"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/5C8435F_ALL_LATEST.csv",
+			"valueField": "RATE_PER_10000_N",
+			"valueMultiplier": 0.1,
+			"sourceUnit": {
+				"id": "per-10000-population",
+				"label": "je 10.000 Einwohner"
+			},
+			"confidenceIntervals": false,
+			"startYear": 1990,
+			"endYear": 2023,
+			"fallbackWdiIndicator": "SH.MED.NUMW.P3",
+			"fallbackProviderName": "Weltbank (WDI) – Entwicklung, Wirtschaft & Gesellschaft",
+			"fallbackUsage": "Only country-year observations missing from the direct WHO dataset",
+			"fallbackProvenance": "World Bank WDI series combining WHO Global Health Workforce Statistics, OECD and country data",
+			"title": "Pflegepersonal und Hebammen",
+			"description": "Pflege- und Hebammenpersonal je 1.000 Einwohner nach dem WHO-Indikator SDG 3.c.1. Die WHO-Quelldaten je 10.000 Einwohner werden auf je 1.000 Einwohner normiert. Direkte WHO-Werte sind kanonisch; World Bank WDI ergänzt ausschließlich fehlende Länder-/Jahreswerte und kann WHO-, OECD- und nationale Daten enthalten. Wegen unterschiedlicher nationaler Quellen und Abgrenzungen, etwa aktivem gegenüber registriertem Personal, sind historische Brüche möglich.",
+			"unit": {
+				"id": "per-1000-population",
+				"label": "je 1.000 Einwohner"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					0.5,
+					1,
+					2,
+					5,
+					10,
+					15
+				]
+			},
+			"valueRange": [
+				0,
+				1000
+			],
+			"minAreasWithAnyValue": 160,
+			"minAreasInDefaultYear": 160,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
 		},
 		{
 			"id": "mortality.maternal-per-100000-live-births",
@@ -188,11 +473,32 @@
 			"expectedReferenceYear": 2023,
 			"title": "Müttersterblichkeit",
 			"description": "Modellierte Müttersterblichkeitsrate je 100.000 Lebendgeburten nach der aktuellen international vergleichbaren Schätzung der UN Maternal Mortality Estimation Inter-Agency Group (WHO, UNICEF, UNFPA, World Bank Group und UNDESA). Direkte WHO-GHO-Werte sind kanonisch; die 80-%-Unsicherheitsintervalle werden mit veröffentlicht.",
-			"unit": {"id": "per-100000-live-births", "label": "je 100.000 Lebendgeburten"},
-			"classification": {"type": "fixed", "breaks": [5, 20, 50, 100, 300, 600]},
-			"valueRange": [0, 20000],
+			"unit": {
+				"id": "per-100000-live-births",
+				"label": "je 100.000 Lebendgeburten"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					5,
+					20,
+					50,
+					100,
+					300,
+					600
+				]
+			},
+			"valueRange": [
+				0,
+				20000
+			],
 			"minAreasWithAnyValue": 190,
-			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
 		}
 	]
 }
