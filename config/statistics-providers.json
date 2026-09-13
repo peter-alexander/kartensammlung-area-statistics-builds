@@ -7,6 +7,11 @@
 			"index": "world-bank/index.json"
 		},
 		{
+			"id": "world-bank-wgi",
+			"name": "Weltbank WGI – Regierungsqualität & Institutionen",
+			"index": "world-bank-wgi/index.json"
+		},
+		{
 			"id": "world-bank-electrification",
 			"name": "Weltbank – Stromzugang & Elektrifizierung",
 			"index": "world-bank-electrification/index.json"
