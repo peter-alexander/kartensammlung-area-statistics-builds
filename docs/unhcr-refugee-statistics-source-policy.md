@@ -43,15 +43,20 @@ The production build therefore does not:
 
 The direct UNHCR API was audited against the production country registry. The first positive mapped years are:
 
-| Series | First year |
+| Series | First positive mapped year |
 | --- | ---: |
-| Refugees | 1951 |
-| Asylum-seekers | 2000 |
+| Refugees by host country | 1951 |
+| Refugees by origin country | 1960 |
+| Asylum-seekers by host country | 2000 |
+| Asylum-seekers by origin country | 2000 |
 | Internally displaced people under UNHCR protection/assistance | 1993 |
-| Other people in need of international protection (OIP) | 2018 |
-| Stateless people | 2004 |
+| OIP by host country | 2018 |
+| OIP by origin country | 2018 |
+| Stateless people by residence | 2004 |
 
-These starts are validated by the production build. A changed first year is treated as a source-model change that requires review.
+UNHCR documents refugee statistics as a category back to 1951. The production distinction above is more specific: when the live API is mapped to countries, the host-country refugee series has positive observations from 1951, while the origin-country refugee series begins in 1960.
+
+These mapped starts are validated by the production build. A changed first positive year is treated as a source-model change that requires review.
 
 ## Host and origin dimensions
 
@@ -77,11 +82,11 @@ The 2025 annual data were audited directly from the UNHCR API against the 250-co
 | Asylum-seekers by host country | 157 | 9.00 million |
 | Asylum-seekers by origin country | 204 | 7.42 million |
 | OIP by host country | 23 | 7.18 million |
-| OIP by origin country | 2 | about 7.18 million |
+| OIP by origin country | 2 | 7.07 million |
 | IDPs under UNHCR protection/assistance | 38 | 64.24 million |
 | Stateless people by residence | 94 | 4.48 million |
 
-The OIP origin series is highly concentrated in 2025: practically the complete mapped population is attributed to Venezuela and Afghanistan. This is a property of the source category, not a mapping fallback.
+The OIP origin series is highly concentrated in 2025: the mapped population is attributed to Venezuela and Afghanistan. This is a property of the source category, not a mapping fallback. Its mapped total differs from the host-country OIP total because the two dimensions are not interchangeable and because non-country source records are excluded from a country map.
 
 ## UNHCR IDPs are not the global IDP total
 
@@ -146,7 +151,7 @@ For the audited release it pins and validates:
 - latest source year: 2025;
 - release date: 11 June 2026;
 - exactly eight production indicators;
-- the documented first year of every category;
+- the first positive mapped year of every production series;
 - minimum positive-country coverage in 2025;
 - non-negative finite population values;
 - absence of duplicate country-year observations;
