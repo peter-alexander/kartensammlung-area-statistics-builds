@@ -1,0 +1,54 @@
+name: Audit electricity access CHI code
+
+on:
+  push:
+    branches:
+      - audit/electricity-access
+    paths:
+      - ".github/workflows/audit-electricity-access-chi.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Inspect CHI source rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet openpyxl
+          URL="https://trackingsdg7.esmap.org/sites/default/files/download-documents/sdg7.1.1_-_access_to_electricity.xlsx"
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 "$URL" -o /tmp/electricity.xlsx
+          python - <<'PY'
+          from openpyxl import load_workbook
+
+          wb = load_workbook('/tmp/electricity.xlsx', read_only=True, data_only=True)
+          ws = wb['UN reporting']
+          rows = ws.iter_rows(values_only=True)
+          header = next(rows)
+          ix = {str(value).strip(): i for i, value in enumerate(header) if value is not None}
+          matches = []
+          for row in rows:
+          	if str(row[ix['ISOalpha3']] or '').strip().upper() != 'CHI':
+          		continue
+          	matches.append({
+          			'area': row[ix['GeoAreaName/Reference Area Name']],
+          			'year': row[ix['TimePeriod']],
+          			'value': row[ix['Value']],
+          			'location': row[ix['Location']],
+          			'nature': row[ix['Nature']],
+          			'type': row[ix['Type']],
+          		})
+          print('count=', len(matches))
+          print('areas=', sorted({str(row['area']) for row in matches}))
+          print('types=', sorted({str(row['type']) for row in matches}))
+          print('locations=', sorted({str(row['location']) for row in matches}))
+          for row in matches[:15]:
+          	print(row)
+          PY
