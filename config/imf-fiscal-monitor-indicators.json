@@ -1,0 +1,53 @@
+{
+	"schema": "kartensammlung.imf-fiscal-monitor-statistics/v1",
+	"apiBase": "https://www.imf.org/external/datamapper/api/v2",
+	"sourcePage": "https://www.imf.org/external/datamapper/datasets/FM",
+	"datasetCode": "FM",
+	"minimumProjectionYear": 2026,
+	"provider": {
+		"id": "imf-fiscal-monitor",
+		"name": "IMF Fiscal Monitor",
+		"dataset": "Fiscal Monitor",
+		"license": "IMF Data Usage Terms",
+		"licenseUrl": "https://www.imf.org/en/about/copyright-and-terms",
+		"attribution": "International Monetary Fund (IMF), Fiscal Monitor"
+	},
+	"indicators": [
+		{
+			"id": "fiscal.general-government-revenue-percent-gdp",
+			"slug": "fiscal-general-government-revenue-percent-gdp",
+			"sourceIndicator": "GGR_G01_GDP_PT",
+			"title": "Staatseinnahmen",
+			"description": "Einnahmen des Gesamtstaats (General Government) in Prozent des BIP nach IMF Fiscal Monitor.",
+			"unit": {"id": "percent-of-gdp", "label": "Prozent des BIP", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [15, 25, 35, 45, 55, 65]},
+			"minAreasWithAnyValue": 185,
+			"minAreasInDefaultYear": 185,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "fiscal.general-government-expenditure-percent-gdp",
+			"slug": "fiscal-general-government-expenditure-percent-gdp",
+			"sourceIndicator": "G_X_G01_GDP_PT",
+			"title": "Staatsausgaben",
+			"description": "Ausgaben des Gesamtstaats (General Government) in Prozent des BIP nach IMF Fiscal Monitor.",
+			"unit": {"id": "percent-of-gdp", "label": "Prozent des BIP", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [20, 30, 40, 50, 60, 70]},
+			"minAreasWithAnyValue": 185,
+			"minAreasInDefaultYear": 185,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "fiscal.general-government-primary-balance-percent-gdp",
+			"slug": "fiscal-general-government-primary-balance-percent-gdp",
+			"sourceIndicator": "GGXONLB_G01_GDP_PT",
+			"title": "Primärsaldo des Gesamtstaats",
+			"description": "Budgetsaldo des Gesamtstaats ohne Nettozinszahlungen in Prozent des BIP nach IMF Fiscal Monitor; positive Werte bedeuten Überschuss, negative Werte Defizit.",
+			"unit": {"id": "percent-of-gdp", "label": "Prozent des BIP", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [-10, -5, -2, 0, 2, 5]},
+			"minAreasWithAnyValue": 180,
+			"minAreasInDefaultYear": 180,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		}
+	]
+}
