@@ -1,0 +1,119 @@
+name: Audit IMF fiscal series
+
+on:
+  push:
+    branches:
+      - audit/imf-weo-fiscal-expansion
+    paths:
+      - ".github/workflows/audit-imf-fiscal-series.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Audit Fiscal Monitor and historical fiscal series
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import math
+          import statistics
+          import urllib.request
+
+          BASE = "https://www.imf.org/external/datamapper/api/v2"
+          SERIES = {
+          	"weo_balance": "GGXCNL_NGDP",
+          	"weo_gross_debt": "GGXWDG_NGDP",
+          	"fm_balance": "GGXCNL_G01_GDP_PT",
+          	"fm_primary_balance": "GGXONLB_G01_GDP_PT",
+          	"fm_revenue": "GGR_G01_GDP_PT",
+          	"fm_expenditure": "G_X_G01_GDP_PT",
+          	"fm_gross_debt": "G_XWDG_G01_GDP_PT",
+          	"fm_net_debt": "GGXWDN_G01_GDP_PT",
+          	"fpp_revenue": "rev",
+          	"fpp_expenditure": "exp",
+          	"fpp_primary_balance": "pb",
+          	"fpp_interest": "ie",
+          	"fpp_gross_debt": "d",
+          }
+
+          def get_json(url):
+          	req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-audit/1", "Accept": "application/json"})
+          	with urllib.request.urlopen(req, timeout=60) as response:
+          		return json.load(response)
+
+          countries = set(get_json(f"{BASE}/countries").get("countries", {}))
+          indicators = get_json(f"{BASE}/indicators").get("indicators", {})
+          print(f"country catalog: {len(countries)}")
+
+          normalized = {}
+          for key, code in SERIES.items():
+          	print(f"\n=== {key}: {code} ===")
+          	meta = indicators.get(code)
+          	print("meta:", meta)
+          	payload = get_json(f"{BASE}/{code}")
+          	values = payload.get("values", {}).get(code)
+          	if not isinstance(values, dict):
+          		print("NO VALUES")
+          		continue
+          	series = {}
+          	for country, yearly in values.items():
+          		if country not in countries or not isinstance(yearly, dict):
+          			continue
+          		for raw_year, raw_value in yearly.items():
+          			if raw_value is None or not str(raw_year).isdigit():
+          				continue
+          			year = int(raw_year)
+          			try:
+          				value = float(raw_value)
+          			except (TypeError, ValueError):
+          				continue
+          			if math.isfinite(value):
+          				series[(country, year)] = value
+          	normalized[key] = series
+          	country_set = {country for country, _year in series}
+          	years = sorted({year for _country, year in series})
+          	print(f"countriesWithAny={len(country_set)} observations={len(series)} years={years[0] if years else None}-{years[-1] if years else None}")
+          	for year in (2020, 2022, 2023, 2024, 2025, 2026, 2030, 2031):
+          		print(f"coverage {year}: {sum(y == year for _c, y in series)}")
+          	for country in ("AUT", "DEU", "USA", "IND"):
+          		present = sorted((year, value) for (c, year), value in series.items() if c == country)
+          		print(country, "range", (present[0][0], present[-1][0]) if present else None, "latest", present[-3:] if present else [])
+
+          def compare(left_key, right_key):
+          	left = normalized.get(left_key, {})
+          	right = normalized.get(right_key, {})
+          	common = sorted(set(left) & set(right))
+          	print(f"\n--- compare {left_key} vs {right_key} ---")
+          	print("common", len(common), "leftOnly", len(set(left)-set(right)), "rightOnly", len(set(right)-set(left)))
+          	if not common:
+          		return
+          	diffs = [abs(left[k] - right[k]) for k in common]
+          	rel = [abs(left[k] - right[k]) / max(abs(left[k]), abs(right[k])) for k in common if max(abs(left[k]), abs(right[k])) > 0]
+          	print("medianAbs", statistics.median(diffs), "meanAbs", statistics.fmean(diffs), "maxAbs", max(diffs))
+          	if rel:
+          		print("medianRel", statistics.median(rel), "meanRel", statistics.fmean(rel))
+          	for year in (2023, 2024, 2025, 2026):
+          		year_keys = [k for k in common if k[1] == year]
+          		if year_keys:
+          			yd = [abs(left[k]-right[k]) for k in year_keys]
+          			print(f"year {year}: n={len(year_keys)} medianAbs={statistics.median(yd)} maxAbs={max(yd)}")
+          	worst = sorted(((abs(left[k]-right[k]), k, left[k], right[k]) for k in common), reverse=True)[:8]
+          	print("worst", worst)
+
+          compare("weo_balance", "fm_balance")
+          compare("weo_gross_debt", "fm_gross_debt")
+          compare("fm_revenue", "fpp_revenue")
+          compare("fm_expenditure", "fpp_expenditure")
+          compare("fm_primary_balance", "fpp_primary_balance")
+          compare("fm_gross_debt", "fpp_gross_debt")
+          PY
