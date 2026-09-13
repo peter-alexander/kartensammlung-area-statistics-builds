@@ -1,4 +1,4 @@
-name: Audit IMF BOP data structure
+name: Audit IMF BOP target series
 
 on:
   push:
@@ -22,79 +22,137 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Discover IMF BOP codes
+      - name: Probe target IMF BOP series
         shell: bash
         run: |
           python - <<'PY'
           from __future__ import annotations
 
-          import json
+          import csv
+          import io
+          from collections import Counter, defaultdict
+          from urllib.error import HTTPError, URLError
           from urllib.request import Request, urlopen
 
-          URL = "https://api.imf.org/external/sdmx/3.0/structure/dataflow/IMF.STA/BOP/~?references=all"
-          request = Request(
-          	URL,
-          	headers={
-          		"User-Agent": "kartensammlung-area-statistics-builds/1",
-          		"Accept": "application/vnd.sdmx.structure+json;version=2.0.0",
-          	},
-          )
-          with urlopen(request, timeout=120) as response:
-          	payload = json.load(response)
+          BASE = "https://api.imf.org/external/sdmx/3.0/data/dataflow/IMF.STA/BOP/21.0.0"
+          USER_AGENT = "kartensammlung-area-statistics-builds/1"
 
-          data = payload["data"]
-          flows = [item for item in data.get("dataflows", []) if item.get("id") == "BOP"]
-          print("=== BOP DATAFLOW ===")
-          for item in flows:
-          	print(json.dumps({
-          		"id": item.get("id"),
-          		"agencyID": item.get("agencyID"),
-          		"version": item.get("version"),
-          		"name": item.get("name"),
-          		"structure": item.get("structure"),
-          	}, ensure_ascii=False, indent=2))
+          def fetch_csv(key: str) -> tuple[list[dict[str, str]], int]:
+          	url = f"{BASE}/{key}"
+          	request = Request(
+          		url,
+          		headers={"User-Agent": USER_AGENT, "Accept": "text/csv"},
+          	)
+          	with urlopen(request, timeout=120) as response:
+          		raw = response.read()
+          	reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+          	rows = [row for row in reader if row.get("TIME_PERIOD") and row.get("OBS_VALUE")]
+          	return rows, len(raw)
 
-          structures = [item for item in data.get("dataStructures", []) if item.get("id") == "DSD_BOP"]
-          print("\n=== DSD_BOP ===")
-          for item in structures:
-          	print("agency/version:", item.get("agencyID"), item.get("version"))
-          	components = item.get("dataStructureComponents", {})
-          	print(json.dumps(components.get("dimensionList", components), ensure_ascii=False, indent=2)[:30000])
+          rows, byte_count = fetch_csv("AUT")
+          print(f"AUT raw bytes={byte_count:,} observations={len(rows):,}")
 
-          terms = (
-          	"current account",
-          	"direct investment",
-          	"net acquisition",
-          	"net incurrence",
-          	"financial assets",
-          	"liabilities",
-          )
-          print("\n=== RELEVANT CODELIST MATCHES ===")
-          for codelist in data.get("codelists", []):
-          	cid = str(codelist.get("id", ""))
-          	if not any(token in cid.upper() for token in ("BOP", "ACCOUNT", "INDICATOR", "UNIT", "FREQ")):
+          print("\n=== ACTUAL TARGET COMBINATIONS FOR AUT ===")
+          for indicator in ("CAB", "D_F"):
+          	target = [row for row in rows if row.get("INDICATOR") == indicator]
+          	combos = Counter(
+          		(
+          			row.get("BOP_ACCOUNTING_ENTRY", ""),
+          			row.get("UNIT", ""),
+          			row.get("FREQUENCY", ""),
+          		)
+          		for row in target
+          	)
+          	print(f"\nINDICATOR={indicator} observations={len(target)} combinations={len(combos)}")
+          	for combo, count in sorted(combos.items()):
+          		print(combo, "count=", count)
+
+          candidates = {
+          	"current-account-usd": "AUT.NETCD_T.CAB.USD.A",
+          	"current-account-percent": "AUT.NETCD_T.CAB.PT.A",
+          	"fdi-inflow-usd": "AUT.L_NIL_T.D_F.USD.A",
+          	"fdi-inflow-percent": "AUT.L_NIL_T.D_F.PT.A",
+          	"fdi-outflow-usd": "AUT.A_NFA_T.D_F.USD.A",
+          	"fdi-outflow-percent": "AUT.A_NFA_T.D_F.PT.A",
+          }
+
+          print("\n=== EXACT CANDIDATE QUERIES ===")
+          successful = {}
+          for label, key in candidates.items():
+          	try:
+          		candidate_rows, candidate_bytes = fetch_csv(key)
+          	except (HTTPError, URLError, TimeoutError, OSError) as error:
+          		print(label, key, "ERROR", repr(error))
           		continue
-          	matches = []
-          	for code in codelist.get("codes", []):
-          		name = str(code.get("name", ""))
-          		description = str(code.get("description", ""))
-          		haystack = f"{name} {description}".lower()
-          		if any(term in haystack for term in terms):
-          			matches.append({
-          				"id": code.get("id"),
-          				"name": name,
-          				"description": description,
-          			})
-          	if matches:
-          		print(f"\n{codelist.get('agencyID')}:{cid}({codelist.get('version')}) {codelist.get('name')}")
-          		for match in matches[:200]:
-          			print(json.dumps(match, ensure_ascii=False))
+          	print(label, key, f"bytes={candidate_bytes:,} observations={len(candidate_rows)}")
+          	if candidate_rows:
+          		years = [int(row["TIME_PERIOD"]) for row in candidate_rows if row["TIME_PERIOD"].isdigit()]
+          		print("  years=", min(years), max(years), "rows=", len(years))
+          		for row in candidate_rows[-5:]:
+          			print(
+          				" ",
+          				row.get("TIME_PERIOD"),
+          				row.get("OBS_VALUE"),
+          				"DERIVATION_TYPE=", row.get("DERIVATION_TYPE"),
+          				"IFS_FLAG=", row.get("IFS_FLAG"),
+          				"BOP_TYPE=", row.get("BOP_TYPE"),
+          				"OVERLAP=", row.get("OVERLAP"),
+          				"BPM6_START=", row.get("BPM6_BASIS_START_DATE"),
+          				"STATUS=", row.get("STATUS"),
+          			)
+          		successful[label] = key
 
-          print("\n=== SHORT ACCOUNTING/UNIT/FREQUENCY CODELISTS ===")
-          for codelist in data.get("codelists", []):
-          	cid = str(codelist.get("id", "")).upper()
-          	if cid in {"CL_BOP_ACCOUNTING_ENTRY", "CL_ACCOUNT_ENTRY", "CL_UNIT", "CL_FREQ", "CL_FREQUENCY"}:
-          		print(f"\n{codelist.get('id')} {codelist.get('version')}")
-          		for code in codelist.get("codes", [])[:150]:
-          			print(code.get("id"), "=", code.get("name"))
+          print("\n=== FOUR-COUNTRY QUERIES ===")
+          for label, suffix in (
+          	("current-account-usd", "NETCD_T.CAB.USD.A"),
+          	("fdi-inflow-usd", "L_NIL_T.D_F.USD.A"),
+          	("fdi-outflow-usd", "A_NFA_T.D_F.USD.A"),
+          ):
+          	key = f"AUT+DEU+USA+IND.{suffix}"
+          	try:
+          		group_rows, group_bytes = fetch_csv(key)
+          	except (HTTPError, URLError, TimeoutError, OSError) as error:
+          		print(label, key, "ERROR", repr(error))
+          		continue
+          	by_country: dict[str, list[dict[str, str]]] = defaultdict(list)
+          	for row in group_rows:
+          		by_country[row["COUNTRY"]].append(row)
+          	print(label, key, f"bytes={group_bytes:,} observations={len(group_rows)} countries={sorted(by_country)}")
+          	for country in sorted(by_country):
+          		country_rows = by_country[country]
+          		years = [int(row["TIME_PERIOD"]) for row in country_rows if row["TIME_PERIOD"].isdigit()]
+          		latest = country_rows[-1]
+          		print(
+          			country,
+          			f"years={min(years)}-{max(years)} n={len(years)}",
+          			f"latest={latest['TIME_PERIOD']}:{latest['OBS_VALUE']}",
+          		)
+
+          print("\n=== ALL-COUNTRY NARROW QUERIES ===")
+          for label, suffix in (
+          	("current-account-usd", "NETCD_T.CAB.USD.A"),
+          	("fdi-inflow-usd", "L_NIL_T.D_F.USD.A"),
+          	("fdi-outflow-usd", "A_NFA_T.D_F.USD.A"),
+          ):
+          	key = f"*.{suffix}"
+          	try:
+          		all_rows, all_bytes = fetch_csv(key)
+          	except (HTTPError, URLError, TimeoutError, OSError) as error:
+          		print(label, key, "ERROR", repr(error))
+          		continue
+          	countries = {row["COUNTRY"] for row in all_rows}
+          	years = [int(row["TIME_PERIOD"]) for row in all_rows if row["TIME_PERIOD"].isdigit()]
+          	latest_year = max(years) if years else None
+          	latest_countries = {
+          		row["COUNTRY"] for row in all_rows if row["TIME_PERIOD"] == str(latest_year)
+          	}
+          	print(
+          		label,
+          		key,
+          		f"bytes={all_bytes:,}",
+          		f"observations={len(all_rows):,}",
+          		f"countries={len(countries)}",
+          		f"years={min(years)}-{max(years)}",
+          		f"latestCountries={len(latest_countries)}",
+          	)
           PY
