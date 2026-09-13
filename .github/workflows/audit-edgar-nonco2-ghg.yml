@@ -13,35 +13,36 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install dependencies
         run: python -m pip install --quiet "openpyxl>=3.1,<4"
+      - name: Download EDGAR archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/edgar
+          CURL_RETRY=(--fail --location --show-error --connect-timeout 30 --max-time 300 --retry 2 --retry-delay 5 --retry-all-errors)
+          curl "${CURL_RETRY[@]}" --output /tmp/edgar/CH4.zip "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/EDGAR/datasets/EDGAR_2025_GHG/EDGAR_CH4_1970_2024.zip"
+          curl "${CURL_RETRY[@]}" --output /tmp/edgar/N2O.zip "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/EDGAR/datasets/EDGAR_2025_GHG/EDGAR_N2O_1970_2024.zip"
+          ls -lh /tmp/edgar/*.zip
       - name: Inspect EDGAR archives
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           import io
-          import urllib.request
+          from pathlib import Path
           import zipfile
 
           import openpyxl
 
-          urls = {
-          	'CH4': 'https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/EDGAR/datasets/EDGAR_2025_GHG/EDGAR_CH4_1970_2024.zip',
-          	'N2O': 'https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/EDGAR/datasets/EDGAR_2025_GHG/EDGAR_N2O_1970_2024.zip',
-          }
-
-          for gas, url in urls.items():
-          	request = urllib.request.Request(url, headers={'User-Agent': 'kartensammlung-area-statistics-builds/1'})
-          	with urllib.request.urlopen(request, timeout=120) as response:
-          		body = response.read()
-          		print('DOWNLOAD', gas, response.status, len(body), response.headers.get('Last-Modified'), response.headers.get('Content-Type'))
-
+          for gas in ('CH4', 'N2O'):
+          	body = Path(f'/tmp/edgar/{gas}.zip').read_bytes()
+          	print('ARCHIVE', gas, len(body))
           	with zipfile.ZipFile(io.BytesIO(body)) as archive:
           		print('FILES', gas, archive.namelist())
           		for name in archive.namelist():
