@@ -197,6 +197,7 @@ jobs:
           	'format': 'json',
           	'per_page': 20000,
           	'source': 2,
+          	'date': '1970:2024',
           })
           payload = fetch_json(wdi_url)
           if not isinstance(payload, list) or len(payload) < 2:
