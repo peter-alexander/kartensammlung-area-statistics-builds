@@ -1,0 +1,49 @@
+name: Fix IMF Fiscal Monitor unit validation
+
+on:
+  push:
+    branches:
+      - feature/imf-fiscal-monitor
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/imf-fiscal-monitor
+
+      - name: Patch validation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/build_imf_fiscal_monitor.py')
+          text = path.read_text()
+          old = 'if not isinstance(unit, dict) or unit.get("id") != "percent-of-gdp":\n\t\t\traise ValueError(f"IMF Fiscal Monitor indicator {indicator_id} must use percent-of-gdp.")'
+          new = 'if not isinstance(unit, dict) or unit.get("id") != "percent":\n\t\t\traise ValueError(f"IMF Fiscal Monitor indicator {indicator_id} must use percent.")'
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected exactly one unit validation block, found {text.count(old)}')
+          path.write_text(text.replace(old, new))
+          PY
+          rm .github/workflows/fix-imf-fiscal-monitor-unit.yml
+
+      - name: Validate
+        run: |
+          python -m py_compile scripts/build_imf_fiscal_monitor.py scripts/build_world_bank.py
+          python -m json.tool config/imf-fiscal-monitor-indicators.json >/dev/null
+          python -m json.tool config/imf-weo-indicators.json >/dev/null
+          git diff --check
+
+      - name: Commit fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/build_imf_fiscal_monitor.py .github/workflows/fix-imf-fiscal-monitor-unit.yml
+          git commit -m "Fix Fiscal Monitor percent unit validation"
+          git push origin HEAD:feature/imf-fiscal-monitor
