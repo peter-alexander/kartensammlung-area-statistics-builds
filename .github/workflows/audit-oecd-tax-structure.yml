@@ -1,0 +1,116 @@
+name: Audit OECD tax structure
+
+on:
+  push:
+    branches:
+      - audit/oecd-tax-structure
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Audit OECD category coverage
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import json
+          from collections import defaultdict
+          from urllib.request import Request, urlopen
+
+          registry_url = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+          api_url = "https://sdmx.oecd.org/public/rest/data/OECD.CTP.TPS,DSD_REV_COMP_GLOBAL@DF_RSGLOBAL,2.1/..S13.T_1100+T_1200+T_2000+T_4000+T_5111..PT_B1GQ.A?startPeriod=1990&dimensionAtObservation=AllDimensions"
+          categories = {
+          	"1100": "personal-income",
+          	"1200": "corporate-income",
+          	"2000": "social-security",
+          	"4000": "property",
+          	"5111": "vat",
+          }
+
+          with urlopen(Request(registry_url, headers={"User-Agent": "kartensammlung-area-statistics-audit/1"}), timeout=60) as response:
+          	registry = json.load(response)
+          iso3_to_area = {}
+          for area in registry["areas"]:
+          	if area.get("level") != "country":
+          		continue
+          	iso3 = str(area.get("codes", {}).get("iso3", "")).upper()
+          	if len(iso3) == 3:
+          		iso3_to_area[iso3] = area["area_id"]
+          print("registry countries", len(iso3_to_area))
+
+          request = Request(api_url, headers={"Accept": "text/csv", "User-Agent": "kartensammlung-area-statistics-audit/1"})
+          with urlopen(request, timeout=120) as response:
+          	raw = response.read()
+          print("download bytes", len(raw))
+          rows = list(csv.DictReader(io.StringIO(raw.decode("utf-8-sig"))))
+          print("rows", len(rows))
+          print("fields", sorted(rows[0]) if rows else [])
+          for field in ("MEASURE", "SECTOR", "STANDARD_REVENUE", "CTRY_SPECIFIC_REVENUE", "UNIT_MEASURE", "FREQ", "REVENUE_CODE", "OBS_STATUS", "UNIT_MULT"):
+          	print(field, sorted({str(row.get(field, "")) for row in rows}))
+
+          by_category = {code: defaultdict(dict) for code in categories}
+          ignored = {code: set() for code in categories}
+          statuses = {code: set() for code in categories}
+          zero_counts = {code: 0 for code in categories}
+          source_rows = {code: 0 for code in categories}
+
+          for row in rows:
+          	code = str(row.get("REVENUE_CODE", "")).strip()
+          	if code not in categories:
+          		continue
+          	source_rows[code] += 1
+          	status = str(row.get("OBS_STATUS", "")).strip()
+          	if status:
+          		statuses[code].add(status)
+          	iso3 = str(row.get("REF_AREA", "")).strip().upper()
+          	area_id = iso3_to_area.get(iso3)
+          	if not area_id:
+          		ignored[code].add(iso3)
+          		continue
+          	year_text = str(row.get("TIME_PERIOD", "")).strip()
+          	value_text = str(row.get("OBS_VALUE", "")).strip()
+          	if not year_text or not value_text:
+          		continue
+          	year = int(year_text)
+          	value = float(value_text)
+          	if value == 0:
+          		zero_counts[code] += 1
+          	if area_id in by_category[code][year]:
+          		raise RuntimeError(f"duplicate {code} {area_id} {year}")
+          	by_category[code][year][area_id] = value
+
+          for code, label in categories.items():
+          	by_year = by_category[code]
+          	years = sorted(year for year, values in by_year.items() if values)
+          	areas = {area_id for values in by_year.values() for area_id in values}
+          	print("---", code, label, "---")
+          	print("sourceRows", source_rows[code])
+          	print("mappedAreas", len(areas))
+          	print("years", years[0] if years else None, years[-1] if years else None)
+          	print("statuses", sorted(statuses[code]))
+          	print("ignored", sorted(ignored[code]))
+          	print("zeroObservations", zero_counts[code])
+          	for year in years[-12:]:
+          		print("coverage", year, len(by_year[year]))
+          	latest_by_area = {}
+          	for year in years:
+          		for area_id in by_year[year]:
+          			latest_by_area[area_id] = year
+          	dist = defaultdict(int)
+          	for year in latest_by_area.values():
+          		dist[year] += 1
+          	print("latestObservationDistribution", sorted(dist.items())[-12:])
+          	for iso3 in ("AUT", "DEU", "USA", "BRA", "IND", "ZAF", "CHN"):
+          		area_id = iso3_to_area.get(iso3)
+          		available = [(year, by_year[year][area_id]) for year in years if area_id in by_year[year]] if area_id else []
+          		print(iso3, available[-1] if available else None)
+          PY
