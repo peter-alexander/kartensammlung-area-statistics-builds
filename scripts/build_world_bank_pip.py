@@ -100,7 +100,7 @@ def validate_config(payload: Any) -> dict[str, Any]:
 			raise ValueError(f"World Bank PIP indicator {indicator_id} must define exactly one of field or derive.")
 		if derive and derive != "poor-population-millions":
 			raise ValueError(f"Unsupported World Bank PIP derivation for {indicator_id}: {derive}")
-		if field and field not in {"headcount", "poverty_gap", "mean", "median", "spr", "spl", "pg"}:
+		if field and field not in {"headcount", "poverty_gap", "mean", "median", "gini", "spr", "spl", "pg"}:
 			raise ValueError(f"Unsupported World Bank PIP field for {indicator_id}: {field}")
 		scale = indicator.get("scale", 1)
 		if not isinstance(scale, (int, float)) or not math.isfinite(float(scale)):
@@ -219,6 +219,7 @@ def read_arrow_rows(data: bytes, source: str) -> list[dict[str, Any]]:
 		"poverty_gap",
 		"mean",
 		"median",
+		"gini",
 		"reporting_pop",
 		"is_interpolated",
 		"estimation_type",
@@ -336,7 +337,7 @@ def validate_cross_line_consistency(
 		raise RuntimeError(f"World Bank PIP country-year coverage differs for poverty line {line}: missing={missing} extra={extra}")
 	for key, base_row in base.items():
 		row = other[key]
-		for field in ("mean", "median", "reporting_pop", "spl", "spr", "pg"):
+		for field in ("mean", "median", "gini", "reporting_pop", "spl", "spr", "pg"):
 			if not same_optional_number(base_row.get(field), row.get(field)):
 				raise RuntimeError(f"World Bank PIP field {field} differs across poverty lines for {key}.")
 		for field in ("estimate_type", "estimation_type", "welfare_type", "distribution_type", "is_interpolated"):
@@ -359,7 +360,7 @@ def indicator_value(indicator: dict[str, Any], row: dict[str, Any]) -> int | flo
 	value = finite_number(row.get(field))
 	if value is None:
 		return None
-	if field in {"headcount", "poverty_gap", "spr"} and not 0 <= value <= 1:
+	if field in {"headcount", "poverty_gap", "gini", "spr"} and not 0 <= value <= 1:
 		raise RuntimeError(f"World Bank PIP ratio outside 0..1 for {field}: {value}")
 	scale = float(indicator.get("scale", 1))
 	return normalize_number(value * scale)
