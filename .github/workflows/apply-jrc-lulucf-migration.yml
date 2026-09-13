@@ -1,0 +1,88 @@
+name: Apply JRC LULUCF migration
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/lulucf-primary-source
+    paths:
+      - .github/workflows/apply-jrc-lulucf-migration.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/lulucf-primary-source
+
+      - name: Update provider catalog and remove WDI duplicates
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          providers_path = Path("config/statistics-providers.json")
+          providers = json.loads(providers_path.read_text(encoding="utf-8"))
+          new_provider = {
+          	"id": "jrc-lulucf",
+          	"name": "JRC – Landnutzung & LULUCF",
+          	"index": "jrc-lulucf/index.json",
+          }
+          matches = [item for item in providers["providers"] if item["id"] == "jrc-lulucf"]
+          if not matches:
+          	edgar_index = next(i for i, item in enumerate(providers["providers"]) if item["id"] == "edgar")
+          	providers["providers"].insert(edgar_index + 1, new_provider)
+          elif matches != [new_provider]:
+          	raise RuntimeError(f"Unexpected existing jrc-lulucf provider metadata: {matches}")
+          if sum(item["id"] == "jrc-lulucf" for item in providers["providers"]) != 1:
+          	raise RuntimeError("Expected exactly one jrc-lulucf provider")
+          providers_path.write_text(json.dumps(providers, ensure_ascii=False, indent="\t") + "\n", encoding="utf-8")
+
+          wdi_path = Path("config/world-bank-indicators.json")
+          text = wdi_path.read_text(encoding="utf-8")
+          source_indicators = {
+          	"EN.GHG.CO2.LU.MT.CE.AR5",
+          	"EN.GHG.CO2.LU.DF.MT.CE.AR5",
+          	"EN.GHG.CO2.LU.FL.MT.CE.AR5",
+          }
+          lines = text.splitlines(keepends=True)
+          removed = [
+          	line for line in lines
+          	if any(f'"sourceIndicator":"{source}"' in line for source in source_indicators)
+          ]
+          if len(removed) != 3:
+          	raise RuntimeError(f"Expected exactly 3 WDI LULUCF rows, found {len(removed)}")
+          new_text = "".join(
+          	line for line in lines
+          	if not any(f'"sourceIndicator":"{source}"' in line for source in source_indicators)
+          )
+          payload = json.loads(new_text)
+          remaining_sources = {item["sourceIndicator"] for item in payload["indicators"]}
+          if source_indicators & remaining_sources:
+          	raise RuntimeError("A migrated WDI LULUCF indicator is still present")
+          if len(payload["indicators"]) != 22:
+          	raise RuntimeError(f"Expected 22 remaining WDI indicators, found {len(payload['indicators'])}")
+          wdi_path.write_text(new_text, encoding="utf-8")
+          print("Removed WDI LULUCF duplicates: " + ", ".join(sorted(source_indicators)))
+          print("Remaining WDI indicators: 22")
+          PY
+
+          git diff -- config/statistics-providers.json config/world-bank-indicators.json
+
+      - name: Commit migration
+        shell: bash
+        run: |
+          if git diff --quiet -- config/statistics-providers.json config/world-bank-indicators.json; then
+          	echo "No changes to commit."
+          	exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/statistics-providers.json config/world-bank-indicators.json
+          git commit -m "Move LULUCF statistics to direct JRC source"
+          git push origin HEAD:audit/lulucf-primary-source
