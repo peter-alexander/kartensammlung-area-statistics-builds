@@ -1,4 +1,4 @@
-name: Audit IMF FDI directional principle
+name: Audit WDI external-sector source lineage
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  discover:
+  audit:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Find directional-principle FDI series
+      - name: Resolve WDI and IMF FDI lineage
         shell: bash
         run: |
           python - <<'PY'
@@ -31,98 +31,88 @@ jobs:
           import csv
           import io
           import json
-          from collections import Counter
+          import sys
+          from pathlib import Path
+          from urllib.error import HTTPError, URLError
           from urllib.request import Request, urlopen
 
+          ROOT = Path.cwd()
+          sys.path.insert(0, str(ROOT / "scripts"))
+          import build_world_bank as common
+
+          WB_API = "https://api.worldbank.org/v2"
+          WB_SOURCE = 2
+          IMF_BASE = "https://api.imf.org/external/sdmx/3.0/data/dataflow/IMF.STA/BOP/21.0.0"
           USER_AGENT = "kartensammlung-area-statistics-builds/1"
-          STRUCTURE_URL = "https://api.imf.org/external/sdmx/3.0/structure/dataflow/IMF.STA/BOP/~?references=all"
-          DATA_URL = "https://api.imf.org/external/sdmx/3.0/data/dataflow/IMF.STA/BOP/21.0.0/AUT"
+          TIMEOUT = 120
 
-          request = Request(
-          	STRUCTURE_URL,
-          	headers={
-          		"User-Agent": USER_AGENT,
-          		"Accept": "application/vnd.sdmx.structure+json;version=2.0.0",
-          	},
-          )
-          with urlopen(request, timeout=120) as response:
-          	structure = json.load(response)["data"]
-
-          search_terms = (
-          	"directional",
-          	"inward",
-          	"outward",
-          	"abroad",
-          	"reporting economy",
-          	"net inflow",
-          	"net outflow",
-          	"reverse investment",
-          	"fellow enterprise",
-          	"asset/liability",
-          	"asset liability",
+          wdi_codes = (
+          	"BN.CAB.XOKA.GD.ZS",
+          	"BX.KLT.DINV.WD.GD.ZS",
+          	"BM.KLT.DINV.WD.GD.ZS",
           )
 
-          print("=== MATCHING CODELIST ENTRIES ===")
-          found_ids: set[str] = set()
-          for codelist in structure.get("codelists", []):
-          	matches = []
-          	for code in codelist.get("codes", []):
-          		name = str(code.get("name", ""))
-          		description = str(code.get("description", ""))
-          		haystack = f"{name} {description}".lower()
-          		if any(term in haystack for term in search_terms):
-          			matches.append({
-          				"id": code.get("id"),
-          				"name": name,
-          				"description": description,
-          			})
-          			found_ids.add(str(code.get("id", "")))
-          	if matches:
-          		print(f"\n{codelist.get('agencyID')}:{codelist.get('id')}({codelist.get('version')}) {codelist.get('name')}")
-          		for match in matches[:300]:
-          			print(json.dumps(match, ensure_ascii=False))
+          print("=== CURRENT WDI METADATA ===")
+          for code in wdi_codes:
+          	metadata = common.fetch_indicator_metadata(WB_API, WB_SOURCE, code, TIMEOUT)
+          	print(f"\n{code}")
+          	for field in (
+          		"name",
+          		"sourceNote",
+          		"sourceOrganization",
+          	):
+          		print(field + ":", metadata.get(field))
 
-          print("\n=== BOP ACCOUNTING ENTRY CODES ===")
-          for codelist in structure.get("codelists", []):
-          	if codelist.get("id") == "CL_BOP_ACCOUNTING_ENTRY":
-          		for code in codelist.get("codes", []):
-          			print(code.get("id"), "=", code.get("name"), "|", code.get("description", ""))
+          def fetch_imf(key: str) -> tuple[list[dict[str, str]], int]:
+          	url = f"{IMF_BASE}/{key}"
+          	request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/csv"})
+          	with urlopen(request, timeout=TIMEOUT) as response:
+          		raw = response.read()
+          	reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+          	rows = [row for row in reader if row.get("TIME_PERIOD") and row.get("OBS_VALUE")]
+          	return rows, len(raw)
 
-          print("\n=== BOP TYPE / DERIVATION CODELISTS ===")
-          for codelist in structure.get("codelists", []):
-          	cid = str(codelist.get("id", "")).upper()
-          	if "BOP_TYPE" in cid or "DERIVATION" in cid:
-          		print(f"\n{codelist.get('id')} {codelist.get('version')}")
-          		for code in codelist.get("codes", []):
-          			print(code.get("id"), "=", code.get("name"), "|", code.get("description", ""))
-
-          print("\n=== AUT DIRECT-INVESTMENT OBSERVATION ATTRIBUTE COMBINATIONS ===")
-          request = Request(DATA_URL, headers={"User-Agent": USER_AGENT, "Accept": "text/csv"})
-          with urlopen(request, timeout=120) as response:
-          	raw = response.read()
-          rows = list(csv.DictReader(io.StringIO(raw.decode("utf-8-sig"))))
-          direct_rows = [
-          	row for row in rows
-          	if row.get("INDICATOR", "").startswith("D_") and row.get("OBS_VALUE")
-          ]
-          combos = Counter(
-          	(
-          		row.get("BOP_ACCOUNTING_ENTRY", ""),
-          		row.get("INDICATOR", ""),
-          		row.get("UNIT", ""),
-          		row.get("FREQUENCY", ""),
-          		row.get("BOP_TYPE", ""),
-          		row.get("DERIVATION_TYPE", ""),
-          		row.get("IFS_FLAG", ""),
-          	)
-          	for row in direct_rows
+          print("\n=== IMF DIRECTIONAL-PRINCIPLE QUERY PROBES ===")
+          keys = (
+          	"AUT.NI.*.USD.A",
+          	"AUT.NO.*.USD.A",
+          	"AUT.NI.D_F.USD.A",
+          	"AUT.NO.D_F.USD.A",
+          	"*.NI.*.USD.A",
+          	"*.NO.*.USD.A",
           )
-          print(f"direct-investment observations={len(direct_rows):,} unique combinations={len(combos):,}")
-          for combo, count in sorted(combos.items()):
-          	account, indicator, unit, frequency, bop_type, derivation, ifs_flag = combo
-          	if indicator == "D_F" or bop_type or account in {"NI", "NO"}:
-          		print(combo, "count=", count)
-
-          print("\n=== FOUND IDS ===")
-          print(sorted(found_ids))
+          for key in keys:
+          	try:
+          		rows, byte_count = fetch_imf(key)
+          	except (HTTPError, URLError, TimeoutError, OSError) as error:
+          		print(key, "ERROR", repr(error))
+          		continue
+          	print(f"\n{key}: bytes={byte_count:,} observations={len(rows):,}")
+          	if not rows:
+          		continue
+          	series = sorted({
+          		(
+          			row.get("COUNTRY", ""),
+          			row.get("BOP_ACCOUNTING_ENTRY", ""),
+          			row.get("INDICATOR", ""),
+          			row.get("UNIT", ""),
+          			row.get("FREQUENCY", ""),
+          		)
+          		for row in rows
+          	})
+          	print("series count:", len(series))
+          	for item in series[:100]:
+          		print(" ", item)
+          	print("sample observations:")
+          	for row in rows[-10:]:
+          		print(
+          			" ",
+          			row.get("COUNTRY"),
+          			row.get("BOP_ACCOUNTING_ENTRY"),
+          			row.get("INDICATOR"),
+          			row.get("TIME_PERIOD"),
+          			row.get("OBS_VALUE"),
+          			"IFS_FLAG=", row.get("IFS_FLAG"),
+          			"DERIVATION_TYPE=", row.get("DERIVATION_TYPE"),
+          		)
           PY
