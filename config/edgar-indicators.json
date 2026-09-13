@@ -5,7 +5,7 @@
 	"datasetUrl": "https://edgar.jrc.ec.europa.eu/dataset_ghg2026",
 	"provider": {
 		"id": "edgar",
-		"name": "EDGAR Community GHG Database",
+		"name": "EDGAR (EU/JRC) – Treibhausgasemissionen",
 		"dataset": "EDGAR_2026_GHG",
 		"license": "CC BY 4.0",
 		"licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
@@ -44,7 +44,7 @@
 		"apiBase": "https://api.worldbank.org/v2",
 		"sourceId": 2,
 		"providerId": "world-bank",
-		"providerName": "World Bank WDI",
+		"providerName": "Weltbank (WDI) – Entwicklung, Wirtschaft & Gesellschaft",
 		"maximumYear": 2024
 	},
 	"indicators": [
