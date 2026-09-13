@@ -1,0 +1,52 @@
+name: Apply IMF CPI cleanup
+
+on:
+  push:
+    branches:
+      - audit/imf-cpi-inflation
+    paths:
+      - ".github/workflows/apply-imf-cpi-cleanup.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/imf-cpi-inflation
+
+      - name: Remove WDI inflation duplicate
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("config/world-bank-indicators.json")
+          lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+          needle = '"sourceIndicator":"FP.CPI.TOTL.ZG"'
+          matches = [index for index, line in enumerate(lines) if needle in line]
+          if len(matches) != 1:
+          	raise SystemExit(f"Expected exactly one WDI inflation row, found {len(matches)}")
+          del lines[matches[0]]
+          path.write_text("".join(lines), encoding="utf-8")
+          PY
+
+          if git diff --quiet -- config/world-bank-indicators.json; then
+          	echo "Expected WDI config change is missing" >&2
+          	exit 1
+          fi
+          test "$(git diff --numstat -- config/world-bank-indicators.json | awk '{print $1}')" = "0"
+          test "$(git diff --numstat -- config/world-bank-indicators.json | awk '{print $2}')" = "1"
+          ! grep -q 'FP.CPI.TOTL.ZG' config/world-bank-indicators.json
+
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/world-bank-indicators.json
+          git commit -m "Remove WDI inflation duplicate"
+          git push origin HEAD:audit/imf-cpi-inflation
