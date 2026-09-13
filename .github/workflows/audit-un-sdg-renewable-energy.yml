@@ -1,0 +1,231 @@
+name: Audit UN SDG renewable energy source
+
+on:
+  push:
+    branches:
+      - audit/un-sdg-renewable-energy
+    paths:
+      - ".github/workflows/audit-un-sdg-renewable-energy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compare UN SDG 7.2.1 with WDI
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import math
+          import os
+          import statistics
+          import time
+          from collections import Counter, defaultdict
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+
+          REGISTRY_URL = (
+          	"https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+          	+ f"?build={os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}-renewable-audit"
+          )
+          UN_URL = "https://unstats.un.org/SDGAPI/v1/sdg/Series/Data?seriesCode=EG_FEC_RNEW&pageSize=50000"
+          WDI_API = "https://api.worldbank.org/v2"
+          WDI_CODE = "EG.FEC.RNEW.ZS"
+
+          def fetch_json(url):
+          	last = None
+          	for attempt, delay in enumerate((0, 2, 5, 10, 20), start=1):
+          		if delay:
+          			time.sleep(delay)
+          		try:
+          			request = Request(url, headers={"User-Agent": "kartensammlung-area-statistics-audit/1"})
+          			with urlopen(request, timeout=120) as response:
+          				return json.load(response)
+          		except Exception as error:
+          			last = error
+          			print(f"request failed {attempt}/5: {url}: {error}")
+          	raise RuntimeError(f"request failed after retries: {url}") from last
+
+          registry = fetch_json(REGISTRY_URL)
+          if registry.get("schema") != "kartensammlung.area-registry/v1":
+          	raise RuntimeError("unexpected production registry schema")
+
+          iso3_by_m49 = {}
+          area_by_iso3 = {}
+          missing_m49 = []
+          for area in registry.get("areas", []):
+          	if area.get("level") != "country":
+          		continue
+          	codes = area.get("codes") or {}
+          	iso3 = str(codes.get("iso3") or "").strip().upper()
+          	m49_raw = str(codes.get("m49") or "").strip()
+          	if not iso3:
+          		continue
+          	area_by_iso3[iso3] = str(area.get("area_id") or "")
+          	if not m49_raw or not m49_raw.isdigit():
+          		missing_m49.append(iso3)
+          		continue
+          	m49 = str(int(m49_raw))
+          	if m49 in iso3_by_m49 and iso3_by_m49[m49] != iso3:
+          		raise RuntimeError(f"duplicate M49 {m49}: {iso3_by_m49[m49]} vs {iso3}")
+          	iso3_by_m49[m49] = iso3
+
+          if len(area_by_iso3) != 250:
+          	raise RuntimeError(f"expected 250 production countries, found {len(area_by_iso3)}")
+          print(f"production countries={len(area_by_iso3)} m49Mapped={len(iso3_by_m49)} missingM49={missing_m49}")
+
+          un_payload = fetch_json(UN_URL)
+          un_rows = un_payload.get("data") or []
+          if int(un_payload.get("totalPages", 0)) != 1:
+          	raise RuntimeError(f"UN SDG request unexpectedly paginated: {un_payload.get('totalPages')}")
+          if int(un_payload.get("totalElements", 0)) != len(un_rows):
+          	raise RuntimeError(
+          		f"UN SDG row count mismatch: totalElements={un_payload.get('totalElements')} rows={len(un_rows)}"
+          	)
+          print(f"UN SDG raw rows={len(un_rows)}")
+
+          un_values = {}
+          un_sources = Counter()
+          un_natures = Counter()
+          un_reporting = Counter()
+          un_ignored_geo = Counter()
+          un_duplicates = []
+          un_year_coverage = Counter()
+          for row in un_rows:
+          	if str(row.get("series") or "") != "EG_FEC_RNEW":
+          		raise RuntimeError(f"unexpected UN SDG series: {row.get('series')!r}")
+          	dimensions = row.get("dimensions") or {}
+          	reporting_type = str(dimensions.get("Reporting Type") or "")
+          	un_reporting[reporting_type] += 1
+          	if reporting_type != "G":
+          		continue
+          	m49 = str(row.get("geoAreaCode") or "").strip()
+          	iso3 = iso3_by_m49.get(m49)
+          	if not iso3:
+          		un_ignored_geo[m49] += 1
+          		continue
+          	year_raw = row.get("timePeriodStart")
+          	try:
+          		year = int(float(year_raw))
+          	except (TypeError, ValueError):
+          		continue
+          	value_raw = str(row.get("value") or "").strip()
+          	try:
+          		value = float(value_raw)
+          	except ValueError:
+          		continue
+          	if not math.isfinite(value):
+          		continue
+          	key = (iso3, year)
+          	if key in un_values:
+          		un_duplicates.append((key, un_values[key], value))
+          		if abs(un_values[key] - value) > 1e-12:
+          			raise RuntimeError(f"conflicting UN SDG duplicate {key}: {un_values[key]} vs {value}")
+          		continue
+          	un_values[key] = value
+          	un_year_coverage[year] += 1
+          	un_sources[str(row.get("source") or "").strip()] += 1
+          	un_natures[str((row.get("attributes") or {}).get("Nature") or "")] += 1
+
+          print(f"UN SDG mapped observations={len(un_values)} countries={len({key[0] for key in un_values})}")
+          print(f"UN SDG years={min(y for _, y in un_values)}-{max(y for _, y in un_values)}")
+          print(f"UN SDG reporting types={dict(un_reporting)}")
+          print(f"UN SDG natures={dict(un_natures)}")
+          print(f"UN SDG sources={dict(un_sources)}")
+          print(f"UN SDG duplicates={len(un_duplicates)} ignoredGeoCodes={len(un_ignored_geo)}")
+          print("UN SDG latest coverage:")
+          for year in sorted(un_year_coverage)[-6:]:
+          	print(year, un_year_coverage[year])
+
+          def fetch_wdi():
+          	query = {
+          		"format": "json",
+          		"source": "2",
+          		"per_page": "20000",
+          		"page": "1",
+          	}
+          	url = f"{WDI_API}/country/all/indicator/{WDI_CODE}?{urlencode(query)}"
+          	payload = fetch_json(url)
+          	if not isinstance(payload, list) or len(payload) != 2:
+          		raise RuntimeError("unexpected WDI response")
+          	meta, rows = payload
+          	all_rows = list(rows or [])
+          	for page in range(2, int(meta.get("pages", 1)) + 1):
+          		query["page"] = str(page)
+          		page_payload = fetch_json(f"{WDI_API}/country/all/indicator/{WDI_CODE}?{urlencode(query)}")
+          		all_rows.extend(page_payload[1] or [])
+          	values = {}
+          	coverage = Counter()
+          	for row in all_rows:
+          		iso3 = str(row.get("countryiso3code") or "").strip().upper()
+          		if iso3 not in area_by_iso3:
+          			continue
+          		year_raw = str(row.get("date") or "")
+          		value_raw = row.get("value")
+          		if not year_raw.isdigit() or value_raw is None:
+          			continue
+          		try:
+          			value = float(value_raw)
+          		except (TypeError, ValueError):
+          			continue
+          		if not math.isfinite(value):
+          			continue
+          		year = int(year_raw)
+          		values[(iso3, year)] = value
+          		coverage[year] += 1
+          	return values, coverage
+
+          wdi_values, wdi_year_coverage = fetch_wdi()
+          print(f"WDI mapped observations={len(wdi_values)} countries={len({key[0] for key in wdi_values})}")
+          print(f"WDI years={min(y for _, y in wdi_values)}-{max(y for _, y in wdi_values)}")
+          print("WDI latest coverage:")
+          for year in sorted(wdi_year_coverage)[-6:]:
+          	print(year, wdi_year_coverage[year])
+
+          overlap = sorted(set(un_values) & set(wdi_values))
+          diffs = []
+          rows = []
+          signed = []
+          for key in overlap:
+          	delta = un_values[key] - wdi_values[key]
+          	diff = abs(delta)
+          	diffs.append(diff)
+          	signed.append(delta)
+          	rows.append((diff, key, un_values[key], wdi_values[key], delta))
+
+          print("\n=== UN SDG vs WDI ===")
+          print(f"overlap={len(overlap)} countries={len({key[0] for key in overlap})}")
+          print(f"medianAbsDiff={statistics.median(diffs)}")
+          print(f"meanAbsDiff={statistics.fmean(diffs)}")
+          print(f"medianSignedDiff={statistics.median(signed)}")
+          print(f"maxAbsDiff={max(diffs)}")
+          for tolerance in (1e-12, 0.005001, 0.010001, 0.050001, 0.100001, 0.500001, 1.000001):
+          	count = sum(diff <= tolerance for diff in diffs)
+          	print(f"within_{tolerance:g}={count} ({100 * count / len(diffs):.3f}%)")
+
+          print("largest differences:")
+          for diff, key, un_value, wdi_value, delta in sorted(rows, reverse=True)[:25]:
+          	print(
+          		key[0], key[1],
+          		"UN=", un_value,
+          		"WDI=", wdi_value,
+          		"delta=", delta,
+          		"absDiff=", diff,
+          	)
+
+          for iso3 in ("AUT", "DEU", "USA", "IND", "BRA", "CHN"):
+          	print(f"\n{iso3} recent:")
+          	years = sorted({year for country, year in set(un_values) | set(wdi_values) if country == iso3})[-6:]
+          	for year in years:
+          		print(year, "UN=", un_values.get((iso3, year)), "WDI=", wdi_values.get((iso3, year)))
+          PY
