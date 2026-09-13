@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Inspect public IEA stats API
+      - name: Inspect IEA SDG72 time series
         shell: bash
         run: |
           set -euo pipefail
@@ -27,43 +27,47 @@ jobs:
           import urllib.request
 
           def fetch(url):
-          	request = urllib.request.Request(url, headers={'User-Agent': 'kartensammlung-area-statistics-builds/1', 'Accept': 'application/json'})
-          	with urllib.request.urlopen(request, timeout=60) as response:
+          	request = urllib.request.Request(url, headers={
+          		'User-Agent': 'kartensammlung-area-statistics-builds/1',
+          		'Accept': 'application/json',
+          	})
+          	with urllib.request.urlopen(request, timeout=90) as response:
           		body = response.read()
           		print('URL', url, 'status', response.status, 'bytes', len(body), 'content-type', response.headers.get('Content-Type'))
           		return json.loads(body)
 
           urls = (
-          	'https://api.iea.org/stats/indicators/?countries=USA',
-          	'https://api.iea.org/stats/indicators?countries=USA',
-          	'https://api.iea.org/stats/indicators/?countries=AUSTRIA',
-          	'https://api.iea.org/stats/indicators/?countries=WORLD',
+          	'https://api.iea.org/stats/indicator/SDG72',
+          	'https://api.iea.org/stats/indicator/SDG72?countries=USA',
+          	'https://api.iea.org/stats/indicator/SDG72?countries=AUSTRIA',
+          	'https://api.iea.org/stats/indicator/SDG72?countries=WORLD',
+          	'https://api.iea.org/stats/indicator/SDG72?countries=USA&startYear=1990',
           )
+
           for url in urls:
           	try:
           		payload = fetch(url)
           	except Exception as exc:
           		print('ERROR', url, repr(exc))
           		continue
+
           	print('type=', type(payload).__name__)
           	if isinstance(payload, dict):
           		print('keys=', list(payload)[:30])
-          		for key, value in payload.items():
-          			if isinstance(value, list):
-          				print('list-key', key, 'items', len(value))
-          		items = payload.get('indicators') or payload.get('data') or payload.get('rows') or payload.get('results') or []
+          		items = payload.get('data') or payload.get('rows') or payload.get('results') or payload.get('values') or []
           	else:
           		items = payload
+
           	print('items=', len(items) if hasattr(items, '__len__') else 'unknown')
-          	if isinstance(items, list):
-          		for item in items[:8]:
-          			print('sample=', item)
-          		matches = []
-          		for item in items:
-          			text = json.dumps(item, ensure_ascii=False).lower()
-          			if 'renew' in text or 'final energy' in text or 'tfec' in text or 'sdg 7.2' in text or '7.2.1' in text:
-          				matches.append(item)
-          		print('MATCHES', len(matches))
-          		for item in matches[:100]:
-          			print(json.dumps(item, ensure_ascii=False, sort_keys=True))
+          	if isinstance(items, list) and items:
+          		for item in items[:5]:
+          			print('first=', json.dumps(item, ensure_ascii=False, sort_keys=True))
+          		if len(items) > 5:
+          			for item in items[-3:]:
+          				print('last=', json.dumps(item, ensure_ascii=False, sort_keys=True))
+          		years = sorted({int(item['year']) for item in items if isinstance(item, dict) and str(item.get('year', '')).isdigit()})
+          		if years:
+          			print('years=', years[0], years[-1], 'yearCount=', len(years))
+          		countries = sorted({str(item.get('country')) for item in items if isinstance(item, dict) and item.get('country') is not None})
+          		print('countries=', len(countries), countries[:20])
           PY
