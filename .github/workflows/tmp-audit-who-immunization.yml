@@ -14,34 +14,95 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - name: Query WHO GHO indicator catalogue
+      - name: Audit WHO immunization catalogue and coverage
         shell: bash
         run: |
           python3 - <<'PY'
           import json
+          from collections import Counter
+          from urllib.parse import urlencode
           from urllib.request import Request, urlopen
 
-          url = "https://ghoapi.azureedge.net/api/Indicator"
-          request = Request(url, headers={"Accept": "application/json", "User-Agent": "kartensammlung-area-statistics-builds/1"})
-          with urlopen(request, timeout=90) as response:
-          	payload = json.load(response)
+          USER_AGENT = "kartensammlung-area-statistics-builds/1"
 
+          def get_json(url):
+          	request = Request(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT})
+          	with urlopen(request, timeout=90) as response:
+          		return json.load(response)
+
+          catalogue = get_json("https://ghoapi.azureedge.net/api/Indicator")
           needles = (
           	"immunization coverage",
           	"vaccination coverage",
           	"protected at birth",
+          	"birth dose",
+          	"rubella",
           	"hpv",
           	"pneumococcal",
           	"rotavirus",
           	"yellow fever",
           	"polio vaccine",
           )
-          rows = []
-          for row in payload.get("value", []):
+          matches = []
+          for row in catalogue.get("value", []):
           	name = str(row.get("IndicatorName") or "")
           	if any(needle in name.lower() for needle in needles):
-          		rows.append((str(row.get("IndicatorCode") or ""), name))
-          for code, name in sorted(rows, key=lambda item: (item[1].lower(), item[0])):
+          		matches.append((str(row.get("IndicatorCode") or ""), name))
+          print("=== CATALOGUE ===")
+          for code, name in sorted(matches, key=lambda item: (item[1].lower(), item[0])):
           	print(f"{code}\t{name}")
-          print(f"MATCHES={len(rows)}")
+
+          candidates = [
+          	"WHS4_543",
+          	"VACCINECOVERAGE_DTP1",
+          	"WHS4_100",
+          	"WHS4_117",
+          	"WHS4_129",
+          	"SDGHPVRECEIVED",
+          	"WHS8_110",
+          	"MCV2",
+          	"VACCINECOVERAGE_MENA_C",
+          	"WHS4_128",
+          	"PCV3",
+          	"VACCINECOVERAGE_IPV1",
+          	"WHS4_544",
+          	"ROTAC",
+          	"VACCINECOVERAGE_YFV",
+          ]
+
+          names = {str(row.get("IndicatorCode") or ""): str(row.get("IndicatorName") or "") for row in catalogue.get("value", [])}
+          print("=== COVERAGE ===")
+          for code in candidates:
+          	rows = []
+          	for skip in range(0, 50000, 1000):
+          		params = urlencode({
+          			"$select": "SpatialDim,SpatialDimType,TimeDim,NumericValue",
+          			"$filter": "SpatialDimType eq 'COUNTRY'",
+          			"$top": 1000,
+          			"$skip": skip,
+          		})
+          		page = get_json(f"https://ghoapi.azureedge.net/api/{code}?{params}").get("value", [])
+          		rows.extend(page)
+          		if len(page) < 1000:
+          			break
+          	years = Counter()
+          	values = {}
+          	for row in rows:
+          		year = row.get("TimeDim")
+          		iso3 = str(row.get("SpatialDim") or "")
+          		value = row.get("NumericValue")
+          		if isinstance(year, int) and iso3 and value is not None:
+          			years[year] += 1
+          			values[(iso3, year)] = value
+          	if not years:
+          		print(f"{code}\tNO_DATA\t{names.get(code, '')}")
+          		continue
+          	latest = max(years)
+          	first = min(years)
+          	max_year, max_coverage = max(years.items(), key=lambda item: (item[1], item[0]))
+          	samples = ",".join(f"{iso3}={values.get((iso3, latest), '-')}" for iso3 in ("AUT", "DEU", "USA", "IND"))
+          	print(
+          		f"{code}\t{first}-{latest}\trows={len(rows)}\tlatest={years[latest]}\t"
+          		f"max={max_coverage}@{max_year}\t{samples}\t{names.get(code, '')}"
+          	)
           PY
