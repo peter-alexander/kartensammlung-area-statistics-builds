@@ -1,0 +1,71 @@
+name: Audit WHO health workforce CSV
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/who-health-workforce
+    paths:
+      - ".github/workflows/audit-who-health-workforce-csv.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Inspect WHO Data Hub downloads
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import time
+          from urllib.error import HTTPError, URLError
+          from urllib.request import Request, urlopen
+
+          USER_AGENT = "kartensammlung-area-statistics-builds/1"
+          DATASETS = {
+          	"physicians": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/217795A_ALL_LATEST.csv",
+          	"nurses-midwives": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/5C8435F_ALL_LATEST.csv",
+          }
+
+          def fetch(url):
+          	delays = (0, 5, 15)
+          	last = None
+          	for attempt, delay in enumerate(delays, 1):
+          		if delay:
+          			time.sleep(delay)
+          		request = Request(url, headers={"Accept": "text/csv,*/*", "User-Agent": USER_AGENT})
+          		try:
+          			with urlopen(request, timeout=90) as response:
+          				return response.read(), response.headers
+          		except (HTTPError, URLError, TimeoutError) as error:
+          			last = error
+          			print(f"request failed {attempt}/{len(delays)}: {url}: {error}")
+          	raise RuntimeError(url) from last
+
+          for name, url in DATASETS.items():
+          	print("=" * 80)
+          	print(name, url)
+          	data, headers = fetch(url)
+          	text = data.decode("utf-8-sig")
+          	reader = csv.DictReader(io.StringIO(text))
+          	rows = list(reader)
+          	print(f"bytes={len(data)} rows={len(rows)} content-type={headers.get('Content-Type')}")
+          	print("fields:")
+          	for field in reader.fieldnames or []:
+          		print(f"  {field}")
+          	print("sample rows:")
+          	for row in rows[:3]:
+          		print(row)
+          	print("year range:", min((row.get("DIM_TIME") for row in rows if str(row.get("DIM_TIME", "")).isdigit()), default=None), max((row.get("DIM_TIME") for row in rows if str(row.get("DIM_TIME", "")).isdigit()), default=None))
+          PY
