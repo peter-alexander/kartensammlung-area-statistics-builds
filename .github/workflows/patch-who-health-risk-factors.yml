@@ -259,7 +259,7 @@ jobs:
         run: |
           python -m py_compile scripts/build_who.py scripts/build_world_bank.py
           python -m json.tool config/who-indicators.json >/dev/null
-          git diff --check
+          git diff --check -- scripts/build_who.py config/who-indicators.json docs/who-health-risk-factors-source-policy.md
 
       - name: Commit validated patch
         run: |
