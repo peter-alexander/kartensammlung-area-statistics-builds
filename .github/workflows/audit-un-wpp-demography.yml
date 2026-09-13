@@ -1,0 +1,191 @@
+name: Audit UN WPP demography
+
+on:
+  push:
+    branches:
+      - audit/un-wpp-demography
+    paths:
+      - .github/workflows/audit-un-wpp-demography.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compare UN WPP 2024 with WDI
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv
+          import gzip
+          import io
+          import json
+          import math
+          import statistics
+          import urllib.parse
+          import urllib.request
+
+          WPP_URL = "https://population.un.org/wpp/assets/Excel%20Files/1_Indicator%20(Standard)/CSV_FILES/WPP2024_Demographic_Indicators_Medium.csv.gz"
+          REGISTRY_URL = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+          WDI_API = "https://api.worldbank.org/v2/country/all/indicator/{indicator}?format=json&per_page=20000"
+
+          def fetch(url, accept="application/json, */*"):
+              request = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1", "Accept": accept})
+              with urllib.request.urlopen(request, timeout=120) as response:
+                  return response.read()
+
+          registry = json.loads(fetch(REGISTRY_URL + "?audit=un-wpp-demography").decode("utf-8"))
+          entries = registry.get("areas") or registry.get("countries") or registry.get("features") or []
+          area_by_iso3 = {}
+          if isinstance(entries, dict):
+              entries = list(entries.values())
+          for item in entries:
+              if not isinstance(item, dict):
+                  continue
+              area_id = item.get("id") or item.get("areaId")
+              iso3 = item.get("iso3") or item.get("ISO3") or item.get("properties", {}).get("iso3")
+              if area_id and iso3:
+                  area_by_iso3[str(iso3).upper()] = str(area_id)
+          if not area_by_iso3:
+              raise RuntimeError("Could not derive ISO3 mapping from country registry")
+          print(f"registry ISO3 areas={len(area_by_iso3)}")
+
+          raw = fetch(WPP_URL, "application/gzip, application/octet-stream, */*")
+          print(f"WPP bytes={len(raw)}")
+          if len(raw) < 1_000_000:
+              raise RuntimeError("WPP download unexpectedly small")
+
+          with gzip.GzipFile(fileobj=io.BytesIO(raw), mode="rb") as compressed:
+              text = io.TextIOWrapper(compressed, encoding="utf-8-sig", newline="")
+              reader = csv.DictReader(text)
+              fields = reader.fieldnames or []
+              print("WPP fields=" + json.dumps(fields, ensure_ascii=False))
+
+              def field(*candidates):
+                  for candidate in candidates:
+                      if candidate in fields:
+                          return candidate
+                  raise RuntimeError(f"Missing WPP field; expected one of {candidates}")
+
+              iso_field = field("ISO3_code", "ISO3_Code", "ISO3")
+              year_field = field("Time", "Year")
+              type_field = field("LocTypeName", "LocationType", "Type")
+              population_field = field("TPopulation1July", "Pop", "Population")
+              fertility_field = field("TFR")
+              life_field = field("LEx")
+
+              specs = {
+                  "population.total": ("SP.POP.TOTL", population_field, 1000.0),
+                  "life-expectancy.at-birth-years": ("SP.DYN.LE00.IN", life_field, 1.0),
+                  "fertility.total-births-per-woman": ("SP.DYN.TFRT.IN", fertility_field, 1.0),
+              }
+              wpp = {key: {} for key in specs}
+              source_iso3 = set()
+              source_years = set()
+              ignored_iso3 = set()
+              source_rows = 0
+              estimate_rows = 0
+              projection_rows = 0
+
+              for row in reader:
+                  source_rows += 1
+                  if str(row.get(type_field, "")).strip() != "Country/Area":
+                      continue
+                  iso3 = str(row.get(iso_field, "")).strip().upper()
+                  if not iso3:
+                      continue
+                  source_iso3.add(iso3)
+                  raw_year = str(row.get(year_field, "")).strip()
+                  try:
+                      year = int(float(raw_year))
+                  except ValueError:
+                      continue
+                  source_years.add(year)
+                  if year > 2023:
+                      projection_rows += 1
+                      continue
+                  estimate_rows += 1
+                  area_id = area_by_iso3.get(iso3)
+                  if area_id is None:
+                      ignored_iso3.add(iso3)
+                      continue
+                  for key, (_, value_field, multiplier) in specs.items():
+                      raw_value = str(row.get(value_field, "")).strip()
+                      if not raw_value or raw_value in {"...", "..", "."}:
+                          continue
+                      value = float(raw_value) * multiplier
+                      if not math.isfinite(value):
+                          continue
+                      if key == "population.total":
+                          value = round(value)
+                      else:
+                          value = round(value, 12)
+                      wpp[key][(area_id, year)] = value
+
+          print(f"WPP source rows={source_rows} countryAreas={len(source_iso3)} years={min(source_years)}-{max(source_years)} estimates={estimate_rows} projectionsSkipped={projection_rows}")
+          print("WPP ignored ISO3=" + ",".join(sorted(ignored_iso3)))
+
+          def fetch_wdi(indicator):
+              payload = json.loads(fetch(WDI_API.format(indicator=urllib.parse.quote(indicator))).decode("utf-8"))
+              rows = payload[1]
+              out = {}
+              for row in rows:
+                  iso3 = str(row.get("countryiso3code") or "").upper()
+                  area_id = area_by_iso3.get(iso3)
+                  if area_id is None:
+                      continue
+                  value = row.get("value")
+                  if value is None:
+                      continue
+                  year = int(row["date"])
+                  out[(area_id, year)] = float(value)
+              return out
+
+          for key, (wdi_indicator, _, _) in specs.items():
+              direct = wpp[key]
+              wdi = fetch_wdi(wdi_indicator)
+              overlap_keys = sorted(set(direct) & set(wdi))
+              direct_only = set(direct) - set(wdi)
+              wdi_only = set(wdi) - set(direct)
+              diffs = [abs(float(direct[k]) - float(wdi[k])) for k in overlap_keys]
+              exact = sum(diff == 0 for diff in diffs)
+              within_001 = sum(diff <= 0.01 for diff in diffs)
+              within_01 = sum(diff <= 0.1 for diff in diffs)
+              within_1 = sum(diff <= 1 for diff in diffs)
+              direct_areas = {area for area, _ in direct}
+              wdi_areas = {area for area, _ in wdi}
+              direct_years = sorted({year for _, year in direct})
+              wdi_years = sorted({year for _, year in wdi})
+              combined = dict(direct)
+              for observation, value in wdi.items():
+                  combined.setdefault(observation, value)
+              coverage_by_year = {}
+              for area_id, year in combined:
+                  coverage_by_year[year] = coverage_by_year.get(year, 0) + 1
+              latest_150 = max((year for year, count in coverage_by_year.items() if count >= 150), default=None)
+              latest_180 = max((year for year, count in coverage_by_year.items() if count >= 180), default=None)
+              print("---")
+              print(key)
+              print(f"direct observations={len(direct)} areas={len(direct_areas)} years={direct_years[0]}-{direct_years[-1]}")
+              print(f"WDI observations={len(wdi)} areas={len(wdi_areas)} years={wdi_years[0]}-{wdi_years[-1]}")
+              print(f"overlap={len(overlap_keys)} exact={exact} <=0.01={within_001} <=0.1={within_01} <=1={within_1}")
+              print(f"directOnly={len(direct_only)} wdiOnly={len(wdi_only)}")
+              if diffs:
+                  print(f"maxAbsDiff={max(diffs):.12g} meanAbsDiff={statistics.fmean(diffs):.12g}")
+                  largest = sorted(((abs(float(direct[k]) - float(wdi[k])), k, direct[k], wdi[k]) for k in overlap_keys), reverse=True)[:20]
+                  for diff, (area_id, year), direct_value, wdi_value in largest:
+                      print(f"diff {area_id} {year}: WPP={direct_value} WDI={wdi_value} abs={diff:.12g}")
+              print(f"combined latest >=150 areas: {latest_150}; >=180 areas: {latest_180}")
+              for year in range(2020, 2026):
+                  if year in coverage_by_year:
+                      print(f"combined coverage {year}={coverage_by_year[year]}")
+          PY
