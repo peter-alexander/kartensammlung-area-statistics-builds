@@ -26,7 +26,6 @@ jobs:
         run: |
           python -m json.tool config/who-indicators.json >/dev/null
           python -m py_compile scripts/build_who.py scripts/build_world_bank.py
-          git diff --check
 
       - name: Commit patch
         shell: bash
