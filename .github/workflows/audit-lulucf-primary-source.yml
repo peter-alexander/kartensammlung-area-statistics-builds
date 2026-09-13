@@ -22,13 +22,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Inspect current JRC LULUCF Data Hub releases
+      - name: Compare JRC LULUCF Data Hub releases with WDI
         shell: bash
         run: |
           python - <<'PY'
           import csv
           import io
           import json
+          import math
+          import statistics
           from urllib.parse import quote
           from urllib.request import Request, urlopen
 
@@ -44,45 +46,125 @@ jobs:
           	},
           	"v3.1.1": {
           		"record": "18352395",
-          		"file": "timeseries_NGHGI_3.1.csv",
+          		"file": "timeseries_NGHGI_v3.1.csv",
           	},
           }
+          SPECS = {
+          	"lulucf-net": ("EN.GHG.CO2.LU.MT.CE.AR5", "LULUCF"),
+          	"deforestation": ("EN.GHG.CO2.LU.DF.MT.CE.AR5", "DEFORESTATION"),
+          	"forest-land": ("EN.GHG.CO2.LU.FL.MT.CE.AR5", "FOREST"),
+          }
+          WDI_URL = "https://api.worldbank.org/v2/country/all/indicator/{indicator}?format=json&per_page=20000&date=1990:2025"
 
           def fetch(url, accept="application/json, text/csv, */*"):
           	request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
           	with urlopen(request, timeout=120) as response:
           		return response.read()
 
-          for label, release in RELEASES.items():
+          def load_release(label, release):
           	record = release["record"]
           	filename = release["file"]
-          	metadata_url = f"https://zenodo.org/api/records/{record}"
-          	metadata = json.loads(fetch(metadata_url, "application/json").decode("utf-8"))
-          	rights = metadata.get("metadata", {}).get("rights")
-          	license_info = metadata.get("metadata", {}).get("license")
-          	print(f"=== {label} record={record}")
-          	print("title=" + str(metadata.get("metadata", {}).get("title")))
-          	print("publication_date=" + str(metadata.get("metadata", {}).get("publication_date")))
-          	print("license=" + json.dumps(license_info, ensure_ascii=False, sort_keys=True))
-          	print("rights=" + json.dumps(rights, ensure_ascii=False, sort_keys=True))
-          	files = metadata.get("files") or []
-          	match = next((item for item in files if item.get("key") == filename), None)
-          	if match is None:
-          		print("available_files=" + repr([item.get("key") for item in files]))
-          		raise RuntimeError(f"Missing expected file {filename!r} in Zenodo record {record}")
-          	file_url = f"https://zenodo.org/records/{record}/files/{quote(filename)}?download=1"
-          	raw = fetch(file_url, "text/csv, application/octet-stream, */*")
-          	print(f"file={filename} bytes={len(raw)} checksum={match.get('checksum')} url={file_url}")
-          	text = raw.decode("utf-8-sig")
-          	reader = csv.DictReader(io.StringIO(text))
+          	metadata = json.loads(fetch(f"https://zenodo.org/api/records/{record}", "application/json").decode("utf-8"))
+          	license_id = (metadata.get("metadata", {}).get("license") or {}).get("id")
+          	if license_id != "cc-by-4.0":
+          		raise RuntimeError(f"Unexpected {label} license: {license_id!r}")
+          	available_files = {item.get("key"): item for item in metadata.get("files") or []}
+          	if filename not in available_files:
+          		raise RuntimeError(f"Missing {filename!r} in {label}: {sorted(available_files)}")
+          	url = f"https://zenodo.org/records/{record}/files/{quote(filename)}?download=1"
+          	raw = fetch(url, "text/csv, application/octet-stream, */*")
+          	reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
           	fields = reader.fieldnames or []
-          	print("fields=" + repr(fields))
-          	rows = []
-          	for index, row in enumerate(reader):
-          		if index < 8:
-          			rows.append(row)
-          		else:
-          			break
-          	for index, row in enumerate(rows, start=1):
-          		print(f"row{index}=" + json.dumps(row, ensure_ascii=False, sort_keys=True))
+          	required = {"ISO3", "Gas", "Year", "Category", "CFluxes_yr"}
+          	if not required.issubset(fields):
+          		raise RuntimeError(f"Unexpected {label} fields: {fields}")
+          	values = {}
+          	categories = set()
+          	sources = set()
+          	for row in reader:
+          		if str(row.get("Gas") or "").strip().upper() != "CO2":
+          			continue
+          		iso3 = str(row.get("ISO3") or "").strip().upper()
+          		category = str(row.get("Category") or "").strip().upper()
+          		if len(iso3) != 3 or not category:
+          			continue
+          		try:
+          			year = int(row["Year"])
+          			value = float(row["CFluxes_yr"])
+          		except (TypeError, ValueError):
+          			continue
+          		if not math.isfinite(value):
+          			continue
+          		values[(iso3, year, category)] = value
+          		categories.add(category)
+          		source = str(row.get("Source") or "").strip()
+          		if source:
+          			sources.add(source)
+          	years = sorted({year for _, year, _ in values})
+          	iso3s = {iso3 for iso3, _, _ in values if iso3 not in {"WRD", "WLD"}}
+          	print(f"=== release {label}")
+          	print(f"record={record} file={filename} bytes={len(raw)} license={license_id}")
+          	print(f"years={years[0]}-{years[-1]} countries={len(iso3s)} categories={sorted(categories)}")
+          	if sources:
+          		print("sources=" + repr(sorted(sources)))
+          	return values
+
+          def fetch_wdi(indicator):
+          	payload = json.loads(fetch(WDI_URL.format(indicator=quote(indicator)), "application/json").decode("utf-8"))
+          	if not isinstance(payload, list) or len(payload) < 2 or not isinstance(payload[1], list):
+          		raise RuntimeError(f"Unexpected WDI response for {indicator}")
+          	out = {}
+          	for row in payload[1]:
+          		iso3 = str(row.get("countryiso3code") or "").strip().upper()
+          		if len(iso3) != 3 or row.get("value") is None:
+          			continue
+          		try:
+          			year = int(row["date"])
+          			value = float(row["value"])
+          		except (TypeError, ValueError):
+          			continue
+          		if math.isfinite(value):
+          			out[(iso3, year)] = value
+          	return out
+
+          releases = {label: load_release(label, release) for label, release in RELEASES.items()}
+          wdi_series = {label: fetch_wdi(indicator) for label, (indicator, _) in SPECS.items()}
+
+          for series_label, (indicator, category) in SPECS.items():
+          	wdi = wdi_series[series_label]
+          	print(f"\n##### {series_label} WDI={indicator} category={category}")
+          	for release_label, all_values in releases.items():
+          		direct = {
+          			(iso3, year): value
+          			for (iso3, year, row_category), value in all_values.items()
+          			if row_category == category
+          		}
+          		overlap = sorted(set(direct) & set(wdi))
+          		diffs = [abs(direct[key] - wdi[key]) for key in overlap]
+          		direct_years = sorted({year for _, year in direct})
+          		direct_iso3 = {iso3 for iso3, _ in direct if iso3 not in {"WRD", "WLD"}}
+          		print(f"--- {release_label}")
+          		print(
+          			f"direct={len(direct)} countries={len(direct_iso3)} years={direct_years[0]}-{direct_years[-1]} "
+          			f"overlap={len(overlap)} directOnly={len(set(direct)-set(wdi))} wdiOnly={len(set(wdi)-set(direct))}"
+          		)
+          		if diffs:
+          			print(
+          				f"exact={sum(diff == 0 for diff in diffs)} "
+          				f"<=1e-9={sum(diff <= 1e-9 for diff in diffs)} "
+          				f"<=1e-6={sum(diff <= 1e-6 for diff in diffs)} "
+          				f"<=0.001={sum(diff <= 0.001 for diff in diffs)} "
+          				f"<=0.1={sum(diff <= 0.1 for diff in diffs)} "
+          				f"meanAbsDiff={statistics.fmean(diffs):.12g} maxAbsDiff={max(diffs):.12g}"
+          			)
+          		largest = sorted(
+          			((abs(direct[key] - wdi[key]), key, direct[key], wdi[key]) for key in overlap),
+          			reverse=True,
+          		)[:5]
+          		for diff, (iso3, year), direct_value, wdi_value in largest:
+          			print(f"diff {iso3} {year}: direct={direct_value:.12g} WDI={wdi_value:.12g} abs={diff:.12g}")
+          		for year in range(2020, 2024):
+          			direct_count = sum(1 for _, y in direct if y == year)
+          			wdi_count = sum(1 for _, y in wdi if y == year)
+          			print(f"coverage {year}: direct={direct_count} WDI={wdi_count}")
           PY
