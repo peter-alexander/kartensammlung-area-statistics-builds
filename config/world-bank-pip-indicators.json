@@ -207,6 +207,22 @@
 			"minAreasWithAnyValue": 160,
 			"minAreasInDefaultYear": 160,
 			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "income-inequality.gini",
+			"slug": "income-inequality-gini",
+			"queryMode": "survey-latest-through-year",
+			"frequency": "latest-observation-through-year",
+			"povertyLine": 3.0,
+			"field": "gini",
+			"scale": 100,
+			"title": "Gini-Koeffizient",
+			"description": "Gini-Koeffizient der von PIP kanonisch verwendeten Einkommens- bzw. Konsumverteilung. 0 bedeutet vollständige Gleichheit, 100 maximale Ungleichheit. Für jeden angezeigten Datenstand wird je Land der letzte bis einschließlich dieses Jahres verfügbare PIP-Survey-Wert unverändert verwendet; PIP-Werte werden weder interpoliert noch extrapoliert. Das zugrunde liegende Datenjahr wird je Land ausgewiesen.",
+			"unit": {"id": "gini-0-100", "label": "Gini (0–100)"},
+			"classification": {"type": "fixed", "breaks": [20, 25, 30, 35, 40, 45]},
+			"minAreasWithAnyValue": 160,
+			"minAreasInDefaultYear": 160,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		}
 	]
 }

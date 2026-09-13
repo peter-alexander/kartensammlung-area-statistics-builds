@@ -100,7 +100,15 @@ def validate_config(payload: Any) -> dict[str, Any]:
 			raise ValueError(f"World Bank PIP indicator {indicator_id} must define exactly one of field or derive.")
 		if derive and derive != "poor-population-millions":
 			raise ValueError(f"Unsupported World Bank PIP derivation for {indicator_id}: {derive}")
-		if field and field not in {"headcount", "poverty_gap", "mean", "median", "spr", "spl", "pg"}:
+		query_mode = str(indicator.get("queryMode", "")).strip()
+		if query_mode not in {"", "survey-latest-through-year"}:
+			raise ValueError(f"Unsupported World Bank PIP queryMode for {indicator_id}: {query_mode}")
+		if query_mode == "survey-latest-through-year":
+			if field != "gini":
+				raise ValueError(f"World Bank PIP survey-latest-through-year requires gini for {indicator_id}.")
+			if str(indicator.get("frequency", "")).strip() != "latest-observation-through-year":
+				raise ValueError(f"World Bank PIP Gini frequency is invalid for {indicator_id}.")
+		if field and field not in {"headcount", "poverty_gap", "mean", "median", "gini", "spr", "spl", "pg"}:
 			raise ValueError(f"Unsupported World Bank PIP field for {indicator_id}: {field}")
 		scale = indicator.get("scale", 1)
 		if not isinstance(scale, (int, float)) or not math.isfinite(float(scale)):
@@ -190,12 +198,12 @@ def poverty_line_text(value: float) -> str:
 	return f"{value:g}"
 
 
-def pip_url(config: dict[str, Any], version: str, poverty_line: float) -> str:
+def pip_url(config: dict[str, Any], version: str, poverty_line: float, fill_gaps: bool = True) -> str:
 	params = urllib.parse.urlencode({
 		"country": "all",
 		"year": "all",
 		"ppp_version": str(config["pppVersion"]),
-		"fill_gaps": "true",
+		"fill_gaps": "true" if fill_gaps else "false",
 		"reporting_level": "national",
 		"version": version,
 		"povline": poverty_line_text(poverty_line),
@@ -204,7 +212,12 @@ def pip_url(config: dict[str, Any], version: str, poverty_line: float) -> str:
 	return f"{str(config['apiBase']).rstrip('/')}/pip?{params}"
 
 
-def read_arrow_rows(data: bytes, source: str) -> list[dict[str, Any]]:
+def read_arrow_rows(
+	data: bytes,
+	source: str,
+	minimum_rows: int = 5000,
+	required_extra: set[str] | None = None,
+) -> list[dict[str, Any]]:
 	try:
 		table = feather.read_table(pa.BufferReader(data))
 	except Exception as exc:
@@ -228,12 +241,16 @@ def read_arrow_rows(data: bytes, source: str) -> list[dict[str, Any]]:
 		"pg",
 		"estimate_type",
 	}
+	required.update(required_extra or set())
 	missing = required - set(table.column_names)
 	if missing:
 		raise RuntimeError(f"World Bank PIP Arrow response is missing columns: {sorted(missing)}")
 	rows = table.to_pylist()
-	if len(rows) < 5000:
-		raise RuntimeError(f"World Bank PIP Arrow response unexpectedly small: {len(rows)} rows")
+	if len(rows) < minimum_rows:
+		raise RuntimeError(
+			f"World Bank PIP Arrow response unexpectedly small: {len(rows)} rows; "
+			f"expected at least {minimum_rows}."
+		)
 	return rows
 
 
@@ -359,7 +376,7 @@ def indicator_value(indicator: dict[str, Any], row: dict[str, Any]) -> int | flo
 	value = finite_number(row.get(field))
 	if value is None:
 		return None
-	if field in {"headcount", "poverty_gap", "spr"} and not 0 <= value <= 1:
+	if field in {"headcount", "poverty_gap", "gini", "spr"} and not 0 <= value <= 1:
 		raise RuntimeError(f"World Bank PIP ratio outside 0..1 for {field}: {value}")
 	scale = float(indicator.get("scale", 1))
 	return normalize_number(value * scale)
@@ -471,6 +488,227 @@ def build_indicator_payload(
 	return payload
 
 
+
+def collect_gini_survey_rows(
+	rows: list[dict[str, Any]],
+	canonical_rows: dict[tuple[int, str], dict[str, Any]],
+	area_by_iso3: dict[str, str],
+	aliases: dict[str, str],
+	current_year: int,
+) -> tuple[dict[tuple[int, str], dict[str, Any]], set[str]]:
+	grouped: dict[tuple[int, str], list[dict[str, Any]]] = defaultdict(list)
+	unresolved: set[str] = set()
+	for row in rows:
+		if str(row.get("reporting_level", "")).strip().lower() != "national":
+			continue
+		gini = finite_number(row.get("gini"))
+		if gini is None:
+			continue
+		if not 0 <= gini <= 1:
+			raise RuntimeError(f"World Bank PIP Gini outside 0..1: {gini}")
+		source_code = str(row.get("country_code", "")).strip().upper()
+		if not source_code or source_code in IGNORED_SOURCE_AREAS:
+			continue
+		iso3 = mapped_iso3(source_code, aliases)
+		area_id = area_by_iso3.get(iso3)
+		if not area_id:
+			unresolved.add(source_code)
+			continue
+		try:
+			year = int(row.get("reporting_year"))
+		except (TypeError, ValueError):
+			continue
+		if year < 1900 or year > current_year:
+			continue
+		grouped[(year, area_id)].append(row)
+
+	selected: dict[tuple[int, str], dict[str, Any]] = {}
+	duplicate_groups = 0
+	for key, candidates in grouped.items():
+		canonical = canonical_rows.get(key)
+		if len(candidates) == 1:
+			row = candidates[0]
+			if canonical is not None and row.get("welfare_type") != canonical.get("welfare_type"):
+				raise RuntimeError(
+					f"World Bank PIP Gini welfare type differs from canonical annual series for {key}: "
+					f"{row.get('welfare_type')} != {canonical.get('welfare_type')}"
+				)
+			selected[key] = row
+			continue
+
+		duplicate_groups += 1
+		if canonical is None:
+			raise RuntimeError(f"World Bank PIP Gini duplicate has no canonical annual row: {key}")
+		canonical_welfare = canonical.get("welfare_type")
+		matches = [row for row in candidates if row.get("welfare_type") == canonical_welfare]
+		if len(matches) != 1:
+			raise RuntimeError(
+				f"World Bank PIP Gini duplicate cannot be resolved by canonical welfare type for {key}: "
+				f"welfare={canonical_welfare!r} matches={len(matches)} candidates={len(candidates)}"
+			)
+		selected[key] = matches[0]
+
+	print(
+		f"PIP Gini canonical surveys: observations={len(selected)} "
+		f"countries={len({area_id for _year, area_id in selected})} duplicateGroups={duplicate_groups}"
+	)
+	return selected, unresolved
+
+
+def gini_metadata_for_row(row: dict[str, Any], source_year: int, target_year: int) -> dict[str, Any]:
+	metadata = metadata_for_row(row)
+	metadata["sourceYear"] = source_year
+	metadata["dataAgeYears"] = target_year - source_year
+	metadata["carriedForward"] = target_year != source_year
+	for source_key, target_key in (
+		("survey_acronym", "surveyAcronym"),
+		("survey_comparability", "surveyComparability"),
+		("comparable_spell", "comparableSpell"),
+	):
+		value = str(row.get(source_key, "")).strip()
+		if value:
+			metadata[target_key] = value
+	survey_year = finite_number(row.get("survey_year"))
+	if survey_year is not None:
+		metadata["surveyYear"] = normalize_number(survey_year, 4)
+	if target_year == source_year:
+		metadata["sourceNote"] = f"PIP-Datenjahr {source_year}; Originalwert aus Haushaltserhebung, nicht interpoliert."
+	else:
+		metadata["sourceNote"] = (
+			f"PIP-Datenjahr {source_year}; letzter bis einschließlich {target_year} verfügbarer "
+			"Survey-Wert, unverändert fortgeführt und nicht interpoliert."
+		)
+	return metadata
+
+
+def build_gini_payload(
+	config: dict[str, Any],
+	indicator: dict[str, Any],
+	survey_rows: dict[tuple[int, str], dict[str, Any]],
+	area_by_iso3: dict[str, str],
+	version_info: dict[str, str],
+) -> dict[str, Any]:
+	by_area: dict[str, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
+	for (source_year, area_id), row in survey_rows.items():
+		by_area[area_id].append((source_year, row))
+	for observations in by_area.values():
+		observations.sort(key=lambda item: item[0])
+
+	if len(by_area) < int(indicator["minAreasWithAnyValue"]):
+		raise RuntimeError(
+			f"World Bank PIP indicator {indicator['id']} maps only {len(by_area)} areas; "
+			f"expected at least {indicator['minAreasWithAnyValue']}."
+		)
+	if not survey_rows:
+		raise RuntimeError("World Bank PIP Gini has no canonical survey observations.")
+
+	first_source_year = min(year for year, _area_id in survey_rows)
+	last_source_year = max(year for year, _area_id in survey_rows)
+	release_year = int(version_info["releaseVersion"][:4])
+	if release_year < last_source_year:
+		raise RuntimeError(
+			f"World Bank PIP Gini release year {release_year} precedes latest source year {last_source_year}."
+		)
+	available_years = list(range(first_source_year, release_year + 1))
+	values_by_year: dict[int, dict[str, int | float]] = defaultdict(dict)
+	metadata_by_year: dict[int, dict[str, dict[str, Any]]] = defaultdict(dict)
+
+	for target_year in available_years:
+		for area_id, observations in by_area.items():
+			latest: tuple[int, dict[str, Any]] | None = None
+			for source_year, row in observations:
+				if source_year > target_year:
+					break
+				latest = (source_year, row)
+			if latest is None:
+				continue
+			source_year, row = latest
+			gini = finite_number(row.get("gini"))
+			if gini is None or not 0 <= gini <= 1:
+				raise RuntimeError(f"Invalid World Bank PIP Gini for {area_id} {source_year}: {gini}")
+			values_by_year[target_year][area_id] = normalize_number(gini * float(indicator.get("scale", 1)))
+			metadata_by_year[target_year][area_id] = gini_metadata_for_row(row, source_year, target_year)
+
+	required_areas = [str(area_id) for area_id in indicator["requiredAreas"]]
+	missing_required_any = [area_id for area_id in required_areas if area_id not in by_area]
+	if missing_required_any:
+		raise RuntimeError(f"World Bank PIP indicator {indicator['id']} is missing required areas: {missing_required_any}")
+
+	default_year = available_years[-1]
+	default_values = values_by_year[default_year]
+	min_default = int(indicator["minAreasInDefaultYear"])
+	if len(default_values) < min_default or not all(area_id in default_values for area_id in required_areas):
+		raise RuntimeError(
+			f"World Bank PIP Gini default cutoff {default_year} has {len(default_values)} areas; "
+			f"expected at least {min_default} and all required areas."
+		)
+
+	available_years = [year for year in available_years if values_by_year[year]]
+	sorted_values = {
+		str(year): {area_id: values_by_year[year][area_id] for area_id in sorted(values_by_year[year])}
+		for year in available_years
+	}
+	sorted_metadata = {
+		str(year): {area_id: metadata_by_year[year][area_id] for area_id in sorted(metadata_by_year[year])}
+		for year in available_years
+	}
+	provider = config["provider"]
+	source = {
+		"providerId": provider["id"],
+		"providerName": provider["name"],
+		"dataset": provider["dataset"],
+		"version": version_info["version"],
+		"releaseVersion": version_info["releaseVersion"],
+		"pppVersion": config["pppVersion"],
+		"canonicalWelfareQueryPovertyLine": 3.0,
+		"fillGaps": False,
+		"reportingLevel": "national",
+		"selectionPolicy": (
+			"Canonical PIP welfare type is used when multiple income/consumption survey distributions "
+			"exist for the same country-year."
+		),
+		"temporalDisplayPolicy": (
+			"Each cutoff year shows the latest canonical survey observation with reporting year less "
+			"than or equal to that cutoff; values are carried forward unchanged, never interpolated."
+		),
+		"sourceYearRange": [first_source_year, last_source_year],
+		"license": provider["license"],
+		"licenseUrl": provider["licenseUrl"],
+		"attribution": provider["attribution"],
+		"url": config["sourcePage"],
+	}
+	payload = {
+		"schema": "kartensammlung.statistics-indicator/v1",
+		"areaLevel": "country",
+		"frequency": str(indicator.get("frequency", "latest-observation-through-year")),
+		"indicator": {
+			"id": indicator["id"],
+			"title": indicator["title"],
+			"description": indicator["description"],
+			"unit": indicator["unit"],
+			"classification": indicator["classification"],
+		},
+		"source": source,
+		"availableYears": available_years,
+		"defaultYear": default_year,
+		"coverage": {
+			"registryAreas": len(area_by_iso3),
+			"areasWithAnyValue": len(by_area),
+			"latestYear": available_years[-1],
+			"areasInLatestYear": len(values_by_year[available_years[-1]]),
+			"areasInDefaultYear": len(default_values),
+		},
+		"values": sorted_values,
+		"observationMetadata": sorted_metadata,
+	}
+	print(
+		f"{indicator['id']}: mapped={len(by_area)} sourceYears={first_source_year}-{last_source_year} "
+		f"cutoffs={available_years[0]}-{available_years[-1]} defaultYear={default_year} "
+		f"defaultCoverage={len(default_values)}"
+	)
+	return payload
+
+
 def release_date_iso(release_version: str) -> str:
 	try:
 		return datetime.strptime(release_version, "%Y%m%d").date().isoformat()
@@ -555,16 +793,50 @@ def main() -> None:
 		raise RuntimeError("World Bank PIP mapped country coverage is unexpectedly low.")
 
 	metadata_by_key = {key: metadata_for_row(row) for key, row in base_rows.items()}
+	gini_survey_rows: dict[tuple[int, str], dict[str, Any]] | None = None
+	if any(str(indicator.get("queryMode", "")) == "survey-latest-through-year" for indicator in config["indicators"]):
+		gini_url = pip_url(config, version_info["version"], 3.0, fill_gaps=False)
+		started = time.monotonic()
+		data, content_type = fetch_bytes(gini_url, args.timeout, "application/vnd.apache.arrow.file")
+		elapsed = time.monotonic() - started
+		if content_type != "application/vnd.apache.arrow.file":
+			raise RuntimeError(f"Unexpected World Bank PIP Gini Arrow content type: {content_type}")
+		survey_rows = read_arrow_rows(data, gini_url, minimum_rows=2000, required_extra={"gini"})
+		gini_survey_rows, unresolved = collect_gini_survey_rows(
+			survey_rows,
+			base_rows,
+			area_by_iso3,
+			aliases,
+			now.year,
+		)
+		if unresolved:
+			raise RuntimeError(f"Unexpected unmapped World Bank PIP Gini source country codes: {sorted(unresolved)}")
+		print(
+			f"PIP Gini surveys: downloaded={len(data)} bytes rows={len(survey_rows)} "
+			f"canonicalCountryYears={len(gini_survey_rows)} seconds={elapsed:.2f}"
+		)
+
 	indicator_payloads: list[tuple[dict[str, Any], dict[str, Any]]] = []
 	for indicator in config["indicators"]:
-		payload = build_indicator_payload(
-			config,
-			indicator,
-			rows_by_line,
-			metadata_by_key,
-			area_by_iso3,
-			version_info,
-		)
+		if str(indicator.get("queryMode", "")) == "survey-latest-through-year":
+			if gini_survey_rows is None:
+				raise RuntimeError("World Bank PIP Gini survey rows were not loaded.")
+			payload = build_gini_payload(
+				config,
+				indicator,
+				gini_survey_rows,
+				area_by_iso3,
+				version_info,
+			)
+		else:
+			payload = build_indicator_payload(
+				config,
+				indicator,
+				rows_by_line,
+				metadata_by_key,
+				area_by_iso3,
+				version_info,
+			)
 		indicator_payloads.append((indicator, payload))
 
 	hasher = hashlib.sha256()
@@ -587,7 +859,7 @@ def main() -> None:
 			"title": indicator["title"],
 			"description": indicator["description"],
 			"areaLevel": "country",
-			"frequency": "annual",
+			"frequency": payload["frequency"],
 			"unit": indicator["unit"],
 			"path": f"releases/{snapshot}/{filename}",
 			"availableYears": payload["availableYears"],
