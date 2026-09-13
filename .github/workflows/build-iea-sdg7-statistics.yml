@@ -1,0 +1,209 @@
+name: Build IEA SDG7 statistics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "53 6 18 * *"
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "config/iea-sdg7-indicators.json"
+      - "scripts/build_iea_sdg7.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-iea-sdg7-statistics.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "config/statistics-providers.json"
+      - "config/iea-sdg7-indicators.json"
+      - "scripts/build_iea_sdg7.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-iea-sdg7-statistics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-iea-sdg7-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate scripts
+        run: |
+          bash -n .github/scripts/deploy-world-bank-statistics.sh
+          python -m py_compile scripts/build_iea_sdg7.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/iea-sdg7-indicators.json >/dev/null
+
+      - name: Build IEA SDG7 statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_iea_sdg7.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/iea-sdg7.log
+
+      - name: Validate IEA SDG7 output
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path("config/iea-sdg7-indicators.json").read_text(encoding="utf-8"))
+          provider = json.loads(Path("dist/statistics/iea-sdg7/index.json").read_text(encoding="utf-8"))
+          global_index = json.loads(Path("dist/statistics/index.json").read_text(encoding="utf-8"))
+
+          assert provider["provider"]["id"] == "iea-sdg7"
+          assert provider["provider"]["license"] == "CC BY 4.0"
+          assert len(provider["indicators"]) == len(config["indicators"]) == 1
+          assert any(item["id"] == "iea-sdg7" for item in global_index["providers"])
+
+          dataset = provider["dataset"]
+          assert dataset["sourceIndicator"] == "SDG72"
+          assert dataset["flow"] == "MRENEW"
+          assert dataset["flowLabel"] == "Share of renewables"
+          assert dataset["unit"] == "%"
+          assert dataset["sourceStartYear"] == 1990
+          assert dataset["sourceLatestYear"] >= 2022
+          assert dataset["retainedStartYear"] == 1990
+          assert set(dataset["ignoredCodes"]).issubset(set(config["allowedIgnoredCodes"]))
+
+          item = provider["indicators"][0]
+          cfg = config["indicators"][0]
+          coverage = item["coverage"]
+          assert item["id"] == "energy.renewable-final-consumption-percent"
+          assert item["sourceIndicator"] == "SDG72"
+          assert item["availableYears"][0] == 1990
+          assert item["availableYears"][-1] >= 2022
+          assert coverage["areasWithAnyValue"] >= cfg["minAreasWithAnyValue"]
+          assert coverage["areasInDefaultYear"] >= cfg["minAreasInDefaultYear"]
+
+          payload = json.loads(Path("dist/statistics/iea-sdg7", item["path"]).read_text(encoding="utf-8"))
+          source = payload["source"]
+          assert source["providerId"] == "iea-sdg7"
+          assert source["indicator"] == "SDG72"
+          assert source["flow"] == "MRENEW"
+          assert source["sourceUnit"] == "%"
+          assert source["normalization"]["valueMultiplier"] == 1
+          assert "fallback" not in source
+
+          for required in cfg["requiredAreas"]:
+          	assert any(required in year_values for year_values in payload["values"].values())
+
+          print(
+          	f"{item['id']}: defaultYear={item['defaultYear']} "
+          	f"areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+          	f"latestYear={coverage['latestYear']} "
+          	f"latestAreas={coverage['areasInLatestYear']}"
+          )
+          print(f"sourceYears={dataset['sourceStartYear']}-{dataset['sourceLatestYear']}")
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"retrievedAt={provider['retrievedAt']}")
+          PY
+          du -h dist/statistics/iea-sdg7/index.json
+          du -h dist/statistics/iea-sdg7/releases/*/*.json
+
+      - name: Upload statistics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: iea-sdg7-statistics-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Deploy to tiles.radlobby.at
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          PROVIDER_ID: iea-sdg7
+        run: |
+          chmod +x .github/scripts/deploy-world-bank-statistics.sh
+          .github/scripts/deploy-world-bank-statistics.sh dist/statistics
+
+      - name: Verify public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          check_file() {
+          	local url="$1"
+          	local local_file="$2"
+          	local output="$3"
+          	local headers
+          	local allow_origin
+          	headers="$(mktemp)"
+          	curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          		--header "Origin: ${BROWSER_ORIGIN}" --dump-header "$headers" \
+          		--output "$output" "${url}?${CACHE_BUST}"
+          	cmp "$local_file" "$output"
+          	allow_origin="$(awk '
+          		BEGIN { IGNORECASE = 1 }
+          		tolower($1) == "access-control-allow-origin:" {
+          			value = $0
+          			sub(/^[^:]+:[[:space:]]*/, "", value)
+          			gsub(/\r/, "", value)
+          			print value
+          		}
+          	' "$headers" | tail -n 1)"
+          	rm -f "$headers"
+          	if [ "$allow_origin" != "*" ] && [ "$allow_origin" != "$BROWSER_ORIGIN" ]; then
+          		echo "CORS check failed for ${url}: Access-Control-Allow-Origin='${allow_origin:-<missing>}'" >&2
+          		exit 1
+          	fi
+          }
+
+          check_file "${PUBLIC_BASE}/index.json" "dist/statistics/index.json" /tmp/public-statistics-index.json
+          check_file "${PUBLIC_BASE}/iea-sdg7/index.json" "dist/statistics/iea-sdg7/index.json" /tmp/public-iea-sdg7-index.json
+          while IFS= read -r path; do
+          	mkdir -p "/tmp/public-iea-sdg7/$(dirname "$path")"
+          	check_file \
+          		"${PUBLIC_BASE}/iea-sdg7/${path}" \
+          		"dist/statistics/iea-sdg7/${path}" \
+          		"/tmp/public-iea-sdg7/${path}"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/iea-sdg7/index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
+          PY
+          )
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iea-sdg7-statistics-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
