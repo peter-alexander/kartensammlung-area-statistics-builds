@@ -1,0 +1,56 @@
+{
+	"schema": "kartensammlung.imf-cpi-statistics/v1",
+	"sourceUrl": "https://data.imf.org/en/Datasets/CPI",
+	"apiUrl": "https://api.imf.org/external/sdmx/3.0/data/dataflow/IMF.STA/CPI/~/*.CPI._T.YOY_PCH_PA_PT.A",
+	"dataflow": "IMF.STA:CPI",
+	"indexType": "CPI",
+	"coicop": "_T",
+	"transformation": "YOY_PCH_PA_PT",
+	"frequency": "A",
+	"minYear": 1960,
+	"countryAliases": {
+		"KOS": "XKX",
+		"WBG": "PSE"
+	},
+	"provider": {
+		"id": "imf-cpi",
+		"name": "International Monetary Fund (IMF)",
+		"dataset": "Consumer Price Index (CPI)",
+		"license": "IMF Data Usage Terms",
+		"licenseUrl": "https://www.imf.org/en/about/copyright-and-terms",
+		"attribution": "International Monetary Fund (IMF), Consumer Price Index (CPI)"
+	},
+	"indicators": [
+		{
+			"id": "inflation.cpi-annual-percent",
+			"slug": "inflation-cpi-annual-percent",
+			"sourceIndicator": "CPI._T.YOY_PCH_PA_PT.A",
+			"title": "Inflation",
+			"description": "Jährliche Veränderung des Verbraucherpreisindex",
+			"unit": {
+				"id": "percent",
+				"label": "Prozent",
+				"symbol": "%"
+			},
+			"classification": {
+				"type": "fixed",
+				"breaks": [
+					-2,
+					0,
+					2,
+					5,
+					10,
+					25
+				]
+			},
+			"minAreasWithAnyValue": 190,
+			"minAreasInDefaultYear": 165,
+			"requiredAreas": [
+				"country:AUT",
+				"country:DEU",
+				"country:USA",
+				"country:IND"
+			]
+		}
+	]
+}
