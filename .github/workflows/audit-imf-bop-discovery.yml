@@ -1,4 +1,4 @@
-name: Audit IMF BOP target series
+name: Audit IMF BOP against WDI
 
 on:
   push:
@@ -12,9 +12,9 @@ permissions:
   contents: read
 
 jobs:
-  discover:
+  compare:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Probe target IMF BOP series
+      - name: Compare IMF BOP USD flows with WDI percent-of-GDP series
         shell: bash
         run: |
           python - <<'PY'
@@ -30,129 +30,213 @@ jobs:
 
           import csv
           import io
-          from collections import Counter, defaultdict
+          import math
+          import statistics
+          import sys
+          import time
+          from collections import Counter
+          from pathlib import Path
           from urllib.error import HTTPError, URLError
           from urllib.request import Request, urlopen
 
-          BASE = "https://api.imf.org/external/sdmx/3.0/data/dataflow/IMF.STA/BOP/21.0.0"
+          ROOT = Path.cwd()
+          sys.path.insert(0, str(ROOT / "scripts"))
+          import build_world_bank as common
+
+          IMF_BASE = "https://api.imf.org/external/sdmx/3.0/data/dataflow/IMF.STA/BOP/21.0.0"
+          REGISTRY = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+          WB_API = "https://api.worldbank.org/v2"
+          WB_SOURCE = 2
           USER_AGENT = "kartensammlung-area-statistics-builds/1"
+          TIMEOUT = 120
 
-          def fetch_csv(key: str) -> tuple[list[dict[str, str]], int]:
-          	url = f"{BASE}/{key}"
-          	request = Request(
-          		url,
-          		headers={"User-Agent": USER_AGENT, "Accept": "text/csv"},
-          	)
-          	with urlopen(request, timeout=120) as response:
-          		raw = response.read()
-          	reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
-          	rows = [row for row in reader if row.get("TIME_PERIOD") and row.get("OBS_VALUE")]
-          	return rows, len(raw)
-
-          rows, byte_count = fetch_csv("AUT")
-          print(f"AUT raw bytes={byte_count:,} observations={len(rows):,}")
-
-          print("\n=== ACTUAL TARGET COMBINATIONS FOR AUT ===")
-          for indicator in ("CAB", "D_F"):
-          	target = [row for row in rows if row.get("INDICATOR") == indicator]
-          	combos = Counter(
-          		(
-          			row.get("BOP_ACCOUNTING_ENTRY", ""),
-          			row.get("UNIT", ""),
-          			row.get("FREQUENCY", ""),
-          		)
-          		for row in target
-          	)
-          	print(f"\nINDICATOR={indicator} observations={len(target)} combinations={len(combos)}")
-          	for combo, count in sorted(combos.items()):
-          		print(combo, "count=", count)
-
-          candidates = {
-          	"current-account-usd": "AUT.NETCD_T.CAB.USD.A",
-          	"current-account-percent": "AUT.NETCD_T.CAB.PT.A",
-          	"fdi-inflow-usd": "AUT.L_NIL_T.D_F.USD.A",
-          	"fdi-inflow-percent": "AUT.L_NIL_T.D_F.PT.A",
-          	"fdi-outflow-usd": "AUT.A_NFA_T.D_F.USD.A",
-          	"fdi-outflow-percent": "AUT.A_NFA_T.D_F.PT.A",
+          SERIES = {
+          	"current-account": {
+          		"imfKey": "*.NETCD_T.CAB.USD.A",
+          		"wdiCode": "BN.CAB.XOKA.GD.ZS",
+          	},
+          	"fdi-inflow": {
+          		"imfKey": "*.L_NIL_T.D_F.USD.A",
+          		"wdiCode": "BX.KLT.DINV.WD.GD.ZS",
+          	},
+          	"fdi-outflow": {
+          		"imfKey": "*.A_NFA_T.D_F.USD.A",
+          		"wdiCode": "BM.KLT.DINV.WD.GD.ZS",
+          	},
           }
+          GDP_CODE = "NY.GDP.MKTP.CD"
 
-          print("\n=== EXACT CANDIDATE QUERIES ===")
-          successful = {}
-          for label, key in candidates.items():
-          	try:
-          		candidate_rows, candidate_bytes = fetch_csv(key)
-          	except (HTTPError, URLError, TimeoutError, OSError) as error:
-          		print(label, key, "ERROR", repr(error))
-          		continue
-          	print(label, key, f"bytes={candidate_bytes:,} observations={len(candidate_rows)}")
-          	if candidate_rows:
-          		years = [int(row["TIME_PERIOD"]) for row in candidate_rows if row["TIME_PERIOD"].isdigit()]
-          		print("  years=", min(years), max(years), "rows=", len(years))
-          		for row in candidate_rows[-5:]:
-          			print(
-          				" ",
-          				row.get("TIME_PERIOD"),
-          				row.get("OBS_VALUE"),
-          				"DERIVATION_TYPE=", row.get("DERIVATION_TYPE"),
-          				"IFS_FLAG=", row.get("IFS_FLAG"),
-          				"BOP_TYPE=", row.get("BOP_TYPE"),
-          				"OVERLAP=", row.get("OVERLAP"),
-          				"BPM6_START=", row.get("BPM6_BASIS_START_DATE"),
-          				"STATUS=", row.get("STATUS"),
-          			)
-          		successful[label] = key
+          def fetch_imf(key: str) -> list[dict[str, str]]:
+          	url = f"{IMF_BASE}/{key}"
+          	delays = (0, 3, 10, 20, 40)
+          	last_error: Exception | None = None
+          	for attempt, delay in enumerate(delays, start=1):
+          		if delay:
+          			time.sleep(delay)
+          		request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/csv"})
+          		try:
+          			with urlopen(request, timeout=TIMEOUT) as response:
+          				raw = response.read()
+          			reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+          			return [
+          				row
+          				for row in reader
+          				if row.get("COUNTRY") and row.get("TIME_PERIOD") and row.get("OBS_VALUE")
+          			]
+          		except (HTTPError, URLError, TimeoutError, OSError, UnicodeDecodeError) as error:
+          			last_error = error
+          			print(f"IMF request failed ({attempt}/{len(delays)}): {url}: {error}")
+          	if last_error is None:
+          		raise RuntimeError(f"IMF request failed without exception: {url}")
+          	raise RuntimeError(f"IMF request failed after {len(delays)} attempts: {url}") from last_error
 
-          print("\n=== FOUR-COUNTRY QUERIES ===")
-          for label, suffix in (
-          	("current-account-usd", "NETCD_T.CAB.USD.A"),
-          	("fdi-inflow-usd", "L_NIL_T.D_F.USD.A"),
-          	("fdi-outflow-usd", "A_NFA_T.D_F.USD.A"),
-          ):
-          	key = f"AUT+DEU+USA+IND.{suffix}"
-          	try:
-          		group_rows, group_bytes = fetch_csv(key)
-          	except (HTTPError, URLError, TimeoutError, OSError) as error:
-          		print(label, key, "ERROR", repr(error))
-          		continue
-          	by_country: dict[str, list[dict[str, str]]] = defaultdict(list)
-          	for row in group_rows:
-          		by_country[row["COUNTRY"]].append(row)
-          	print(label, key, f"bytes={group_bytes:,} observations={len(group_rows)} countries={sorted(by_country)}")
-          	for country in sorted(by_country):
-          		country_rows = by_country[country]
-          		years = [int(row["TIME_PERIOD"]) for row in country_rows if row["TIME_PERIOD"].isdigit()]
-          		latest = country_rows[-1]
-          		print(
-          			country,
-          			f"years={min(years)}-{max(years)} n={len(years)}",
-          			f"latest={latest['TIME_PERIOD']}:{latest['OBS_VALUE']}",
-          		)
-
-          print("\n=== ALL-COUNTRY NARROW QUERIES ===")
-          for label, suffix in (
-          	("current-account-usd", "NETCD_T.CAB.USD.A"),
-          	("fdi-inflow-usd", "L_NIL_T.D_F.USD.A"),
-          	("fdi-outflow-usd", "A_NFA_T.D_F.USD.A"),
-          ):
-          	key = f"*.{suffix}"
-          	try:
-          		all_rows, all_bytes = fetch_csv(key)
-          	except (HTTPError, URLError, TimeoutError, OSError) as error:
-          		print(label, key, "ERROR", repr(error))
-          		continue
-          	countries = {row["COUNTRY"] for row in all_rows}
-          	years = [int(row["TIME_PERIOD"]) for row in all_rows if row["TIME_PERIOD"].isdigit()]
-          	latest_year = max(years) if years else None
-          	latest_countries = {
-          		row["COUNTRY"] for row in all_rows if row["TIME_PERIOD"] == str(latest_year)
-          	}
-          	print(
-          		label,
-          		key,
-          		f"bytes={all_bytes:,}",
-          		f"observations={len(all_rows):,}",
-          		f"countries={len(countries)}",
-          		f"years={min(years)}-{max(years)}",
-          		f"latestCountries={len(latest_countries)}",
+          def fetch_wdi(code: str) -> list[dict]:
+          	return common.fetch_world_bank_records(
+          		WB_API,
+          		f"country/all/indicator/{code}",
+          		WB_SOURCE,
+          		TIMEOUT,
           	)
+
+          def map_imf(rows: list[dict[str, str]], area_by_iso3: dict[str, str]) -> tuple[dict[tuple[str, int], float], set[str]]:
+          	values: dict[tuple[str, int], float] = {}
+          	ignored: set[str] = set()
+          	duplicates: list[tuple[str, int]] = []
+          	for row in rows:
+          		iso3 = row["COUNTRY"].strip().upper()
+          		area_id = area_by_iso3.get(iso3)
+          		if not area_id:
+          			ignored.add(iso3)
+          			continue
+          		period = row["TIME_PERIOD"].strip()
+          		if not period.isdigit() or len(period) != 4:
+          			continue
+          		year = int(period)
+          		value = float(row["OBS_VALUE"])
+          		if not math.isfinite(value):
+          			continue
+          		key = (area_id, year)
+          		if key in values:
+          			duplicates.append(key)
+          		values[key] = value
+          	if duplicates:
+          		raise RuntimeError(f"IMF series has duplicate country-years: {duplicates[:20]}")
+          	return values, ignored
+
+          def map_wdi(rows: list[dict], area_by_iso3: dict[str, str]) -> tuple[dict[tuple[str, int], float], set[str]]:
+          	values: dict[tuple[str, int], float] = {}
+          	ignored: set[str] = set()
+          	duplicates: list[tuple[str, int]] = []
+          	for row in rows:
+          		value = row.get("value")
+          		if value is None:
+          			continue
+          		iso3 = str(row.get("countryiso3code", "")).strip().upper()
+          		area_id = area_by_iso3.get(iso3)
+          		if not area_id:
+          			if iso3:
+          				ignored.add(iso3)
+          			continue
+          		period = str(row.get("date", "")).strip()
+          		if not period.isdigit() or len(period) != 4:
+          			continue
+          		if str(row.get("obs_status", "")).strip().upper() == "F":
+          			continue
+          		year = int(period)
+          		number = float(value)
+          		if not math.isfinite(number):
+          			continue
+          		key = (area_id, year)
+          		if key in values:
+          			duplicates.append(key)
+          		values[key] = number
+          	if duplicates:
+          		raise RuntimeError(f"WDI series has duplicate country-years: {duplicates[:20]}")
+          	return values, ignored
+
+          def describe(label: str, values: dict[tuple[str, int], float]) -> None:
+          	areas = {area for area, _year in values}
+          	years = [year for _area, year in values]
+          	by_year = Counter(year for _area, year in values)
+          	print(
+          		f"{label}: observations={len(values):,} areas={len(areas)} "
+          		f"years={min(years)}-{max(years)} latestCoverage={by_year[max(years)]}"
+          	)
+          	for year in (2021, 2022, 2023, 2024, 2025):
+          		print(f"  {year}: {by_year.get(year, 0)}")
+
+          def comparison_stats(
+          	name: str,
+          	direct_percent: dict[tuple[str, int], float],
+          	wdi_percent: dict[tuple[str, int], float],
+          ) -> None:
+          	overlap = sorted(set(direct_percent) & set(wdi_percent))
+          	diffs = [abs(direct_percent[key] - wdi_percent[key]) for key in overlap]
+          	print(f"\n=== {name} COMPARISON ===")
+          	describe("derived IMF/WB-GDP", direct_percent)
+          	describe("WDI", wdi_percent)
+          	print(f"overlap={len(overlap):,}")
+          	for tolerance in (1e-9, 1e-6, 0.0001, 0.001, 0.01, 0.1, 0.5, 1.0):
+          		count = sum(diff <= tolerance for diff in diffs)
+          		print(f"  <= {tolerance:g} pp: {count:,}/{len(diffs):,} ({count / len(diffs) * 100:.2f}%)")
+          	print(f"meanAbsDiff={statistics.fmean(diffs):.9f} pp")
+          	print(f"medianAbsDiff={statistics.median(diffs):.9f} pp")
+          	print(f"maxAbsDiff={max(diffs):.9f} pp")
+
+          	biggest = sorted(
+          		(
+          			(abs(direct_percent[key] - wdi_percent[key]), key, direct_percent[key], wdi_percent[key])
+          			for key in overlap
+          		),
+          		reverse=True,
+          	)[:20]
+          	print("largest differences:")
+          	for diff, (area_id, year), direct, wdi in biggest:
+          		print(f"  {area_id} {year}: derived={direct:.9f} WDI={wdi:.9f} diff={diff:.9f}")
+
+          	direct_only = set(direct_percent) - set(wdi_percent)
+          	wdi_only = set(wdi_percent) - set(direct_percent)
+          	print(f"direct-only country-years={len(direct_only):,}; WDI-only={len(wdi_only):,}")
+          	print(f"direct-only areas={len({area for area, _year in direct_only})}; WDI-only areas={len({area for area, _year in wdi_only})}")
+
+          area_by_iso3, _registry = common.load_registry(
+          	f"{REGISTRY}?build=imf-bop-audit",
+          	TIMEOUT,
+          )
+          print(f"Registry countries: {len(area_by_iso3)}")
+
+          print("Fetching World Bank GDP denominator...")
+          gdp, gdp_ignored = map_wdi(fetch_wdi(GDP_CODE), area_by_iso3)
+          describe("WDI GDP USD", gdp)
+          print("WDI GDP ignored codes:", sorted(gdp_ignored))
+
+          for name, metadata in SERIES.items():
+          	print(f"\n\n######## {name} ########")
+          	imf_rows = fetch_imf(metadata["imfKey"])
+          	imf_usd, imf_ignored = map_imf(imf_rows, area_by_iso3)
+          	wdi_percent, wdi_ignored = map_wdi(fetch_wdi(metadata["wdiCode"]), area_by_iso3)
+
+          	describe("IMF BOP USD", imf_usd)
+          	print("IMF ignored codes:", sorted(imf_ignored))
+          	print("WDI ignored codes:", sorted(wdi_ignored))
+
+          	direct_percent = {
+          		key: flow / gdp[key] * 100.0
+          		for key, flow in imf_usd.items()
+          		if key in gdp and gdp[key] != 0
+          	}
+          	comparison_stats(name, direct_percent, wdi_percent)
+
+          	print("required-country recent values:")
+          	for iso3 in ("AUT", "DEU", "USA", "IND"):
+          		area_id = area_by_iso3[iso3]
+          		for year in (2021, 2022, 2023, 2024, 2025):
+          			key = (area_id, year)
+          			if key not in direct_percent and key not in wdi_percent:
+          				continue
+          			print(
+          				f"  {iso3} {year}: "
+          				f"IMFUSD={imf_usd.get(key)} GDP={gdp.get(key)} "
+          				f"derived={direct_percent.get(key)} WDI={wdi_percent.get(key)}"
+          			)
           PY
