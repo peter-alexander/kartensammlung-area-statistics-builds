@@ -1,0 +1,57 @@
+name: Audit IMF Fiscal Monitor catalog
+
+on:
+  push:
+    branches:
+      - audit/imf-weo-fiscal-expansion
+    paths:
+      - ".github/workflows/audit-imf-fiscal-monitor-catalog.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Inspect all Fiscal Monitor indicators and coverage
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.request
+
+          BASE = "https://www.imf.org/external/datamapper/api/v2"
+
+          def get_json(url):
+          	req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-audit/1", "Accept": "application/json"})
+          	with urllib.request.urlopen(req, timeout=60) as response:
+          		return json.load(response)
+
+          countries = set(get_json(f"{BASE}/countries").get("countries", {}))
+          indicators = get_json(f"{BASE}/indicators").get("indicators", {})
+          fm = [(code, meta) for code, meta in indicators.items() if isinstance(meta, dict) and meta.get("dataset") == "FM"]
+          print("Fiscal Monitor indicators:", len(fm))
+          for code, meta in fm:
+          	print("\n", code, meta)
+          	payload = get_json(f"{BASE}/{code}")
+          	values = payload.get("values", {}).get(code, {})
+          	rows = []
+          	for country, yearly in values.items():
+          		if country not in countries or not isinstance(yearly, dict):
+          			continue
+          		for year, value in yearly.items():
+          			if value is not None and str(year).isdigit():
+          				rows.append((country, int(year), value))
+          	years = sorted({year for _country, year, _value in rows})
+          	areas = {country for country, _year, _value in rows}
+          	print("coverage any", len(areas), "observations", len(rows), "years", (years[0], years[-1]) if years else None)
+          	print("2024", sum(year == 2024 for _c, year, _v in rows), "2025", sum(year == 2025 for _c, year, _v in rows), "2026", sum(year == 2026 for _c, year, _v in rows), "2031", sum(year == 2031 for _c, year, _v in rows))
+          	for country in ("AUT", "DEU", "USA", "IND"):
+          		print(country, any(c == country for c, _y, _v in rows))
+          PY
