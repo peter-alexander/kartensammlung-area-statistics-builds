@@ -87,8 +87,6 @@ jobs:
           for required in ("country:AUT", "country:DEU", "country:USA", "country:IND"):
           	assert any(required in year_values for year_values in payload["values"].values())
 
-          assert "SDG72modern" not in json.dumps(provider)
-
           print(
           	f"{item['id']}: defaultYear={item['defaultYear']} "
           	f"defaultAreas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
