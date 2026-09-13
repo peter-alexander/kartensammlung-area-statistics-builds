@@ -1,0 +1,47 @@
+name: Temporary WHO immunization audit
+
+on:
+  push:
+    branches:
+      - feature/who-immunization-expansion
+    paths:
+      - .github/workflows/tmp-audit-who-immunization.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query WHO GHO indicator catalogue
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from urllib.request import Request, urlopen
+
+          url = "https://ghoapi.azureedge.net/api/Indicator"
+          request = Request(url, headers={"Accept": "application/json", "User-Agent": "kartensammlung-area-statistics-builds/1"})
+          with urlopen(request, timeout=90) as response:
+          	payload = json.load(response)
+
+          needles = (
+          	"immunization coverage",
+          	"vaccination coverage",
+          	"protected at birth",
+          	"hpv",
+          	"pneumococcal",
+          	"rotavirus",
+          	"yellow fever",
+          	"polio vaccine",
+          )
+          rows = []
+          for row in payload.get("value", []):
+          	name = str(row.get("IndicatorName") or "")
+          	if any(needle in name.lower() for needle in needles):
+          		rows.append((str(row.get("IndicatorCode") or ""), name))
+          for code, name in sorted(rows, key=lambda item: (item[1].lower(), item[0])):
+          	print(f"{code}\t{name}")
+          print(f"MATCHES={len(rows)}")
+          PY
