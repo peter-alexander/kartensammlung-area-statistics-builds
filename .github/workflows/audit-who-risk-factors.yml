@@ -13,52 +13,95 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python dependency
+        run: python -m pip install --disable-pip-version-check pycountry
+
       - name: Inspect WHO CSV datasets
         run: |
           python - <<'PY'
           import csv
           import io
           import json
+          import sys
           import urllib.request
           from collections import Counter, defaultdict
 
+          sys.path.insert(0, "scripts")
+          import build_who as who
+
+          registry_url = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?audit=who-risk-factors"
+          area_by_m49, registry = who.load_registry_by_m49(registry_url, 90)
+          print(f"registryMappedM49={len(area_by_m49)}")
+
           datasets = {
-          	"obesity": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/BEFA58B_ALL_LATEST.csv",
-          	"tobacco": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/75DDA77_ALL_LATEST.csv",
-          	"alcohol": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/EE6F72A_ALL_LATEST.csv",
+          	"obesity": {
+          		"url": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/BEFA58B_ALL_LATEST.csv",
+          		"value": "RATE_PER_100_N",
+          		"end_year": 2022,
+          	},
+          	"tobacco": {
+          		"url": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/75DDA77_ALL_LATEST.csv",
+          		"value": "PERCENT_POP_N",
+          		"end_year": 2022,
+          	},
+          	"alcohol": {
+          		"url": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/EE6F72A_ALL_LATEST.csv",
+          		"value": "RATE_PER_CAPITA_N",
+          		"end_year": 2022,
+          	},
           }
 
-          for name, url in datasets.items():
+          for name, spec in datasets.items():
           	print(f"\n=== {name} ===")
-          	with urllib.request.urlopen(url, timeout=90) as response:
+          	with urllib.request.urlopen(spec["url"], timeout=90) as response:
           		data = response.read().decode("utf-8-sig")
-          	reader = csv.DictReader(io.StringIO(data))
-          	rows = list(reader)
-          	print(f"url={url}")
+          	rows = list(csv.DictReader(io.StringIO(data)))
           	print(f"rows={len(rows)}")
-          	print("columns=" + json.dumps(reader.fieldnames, ensure_ascii=False))
-          	if not rows:
-          		continue
-          	print("sample=" + json.dumps(rows[0], ensure_ascii=False, sort_keys=True))
+          	print(f"columns={list(rows[0])}")
 
-          	for key in ("IND_ID", "IND_CODE", "IND_NAME", "DIM_SEX", "DIM_AGE", "DIM_TIME_TYPE", "DIM_TIME"):
-          		if key in rows[0]:
-          			values = Counter(str(row.get(key, "")).strip() for row in rows)
-          			print(f"{key}={values.most_common(20)}")
+          	by_sex_year = defaultdict(dict)
+          	ignored_m49 = set()
+          	for row in rows:
+          		if str(row.get("DIM_GEO_CODE_TYPE", "")).strip() != "COUNTRY":
+          			continue
+          		year_text = str(row.get("DIM_TIME", "")).strip()
+          		if not year_text.isdigit():
+          			continue
+          		year = int(year_text)
+          		if year > int(spec["end_year"]):
+          			continue
+          		m49 = who.normalize_m49(row.get("DIM_GEO_CODE_M49"))
+          		area_id = area_by_m49.get(m49)
+          		if area_id is None:
+          			if m49:
+          				ignored_m49.add(m49)
+          			continue
+          		value_text = str(row.get(spec["value"], "")).strip()
+          		if not value_text:
+          			continue
+          		sex = str(row.get("DIM_SEX", "TOTAL")).strip() or "TOTAL"
+          		key = (sex, year)
+          		if area_id in by_sex_year[key]:
+          			raise RuntimeError(f"duplicate {name} {sex} {year} {area_id}")
+          		by_sex_year[key][area_id] = float(value_text)
 
-          	geo_key = next((key for key in ("GEO_CODE_M49", "GEO_CODE_TYPE", "GEO_NAME_SHORT", "DIM_GEO_CODE_M49") if key in rows[0]), None)
-          	if geo_key:
-          		print(f"distinct_{geo_key}={len({str(row.get(geo_key, '')).strip() for row in rows if str(row.get(geo_key, '')).strip()})}")
-
-          	year_key = "DIM_TIME" if "DIM_TIME" in rows[0] else None
-          	if year_key:
-          		years = sorted({int(str(row[year_key])[:4]) for row in rows if str(row.get(year_key, ""))[:4].isdigit()})
-          		print(f"years={years[0]}-{years[-1]} count={len(years)}")
-          		for year in years[-8:]:
-          			year_rows = [row for row in rows if str(row.get(year_key, "")).startswith(str(year))]
-          			sex_counts = Counter(str(row.get("DIM_SEX", "<none>")).strip() or "<blank>" for row in year_rows)
-          			print(f"year={year} rows={len(year_rows)} sex={dict(sex_counts)}")
-
-          	value_columns = [key for key in rows[0] if key.endswith("_N") or key.endswith("_NL") or key.endswith("_NU") or key in ("RATE_PER_100_N", "RATE_PER_100000_N")]
-          	print("value_columns=" + json.dumps(value_columns, ensure_ascii=False))
+          	sexes = sorted({sex for sex, _year in by_sex_year})
+          	print(f"sexes={sexes}")
+          	print(f"ignoredM49={sorted(ignored_m49)}")
+          	for sex in sexes:
+          		years = sorted(year for candidate_sex, year in by_sex_year if candidate_sex == sex)
+          		areas_any = set().union(*(set(by_sex_year[(sex, year)]) for year in years))
+          		latest = years[-1]
+          		latest_values = by_sex_year[(sex, latest)]
+          		all_values = [value for year in years for value in by_sex_year[(sex, year)].values()]
+          		missing_required = [area for area in ("country:AUT", "country:DEU", "country:USA", "country:IND") if area not in latest_values]
+          		print(
+          			f"sex={sex} years={years[0]}-{latest} areasAny={len(areas_any)} "
+          			f"latestCoverage={len(latest_values)} min={min(all_values):.6g} max={max(all_values):.6g} "
+          			f"missingRequired={missing_required}"
+          		)
+          		print("recentCoverage=" + json.dumps({year: len(by_sex_year[(sex, year)]) for year in years[-8:]}, sort_keys=True))
           PY
