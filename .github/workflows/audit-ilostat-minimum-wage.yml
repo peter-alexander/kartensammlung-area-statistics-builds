@@ -1,0 +1,141 @@
+name: Audit ILOSTAT minimum wage
+
+on:
+  push:
+    branches:
+      - audit/ilostat-minimum-wage
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Audit current ILOSTAT minimum-wage datasets
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import json
+          import urllib.parse
+          import urllib.request
+          from collections import Counter, defaultdict
+
+          UA = {'User-Agent': 'kartensammlung-area-statistics-builds/1'}
+
+          def fetch(url):
+              req = urllib.request.Request(url, headers=UA)
+              with urllib.request.urlopen(req, timeout=120) as response:
+                  data = response.read()
+              print('FETCH', len(data), url)
+              return data
+
+          def rows_csv(url):
+              data = fetch(url)
+              return list(csv.DictReader(io.StringIO(data.decode('utf-8-sig'))))
+
+          toc_url = 'https://rplumber.ilo.org/metadata/toc/indicator/?lang=en'
+          toc = rows_csv(toc_url)
+          matches = []
+          for row in toc:
+              label = str(row.get('indicator.label', ''))
+              if 'minimum wage' in label.lower():
+                  matches.append(row)
+
+          print('\n=== TOC minimum-wage matches ===')
+          print('count', len(matches))
+          for row in matches:
+              print({k: row.get(k) for k in row if k in {'id', 'indicator.label', 'freq', 'collection', 'subject', 'note'}})
+
+          ids = [str(row.get('id', '')).strip() for row in matches if str(row.get('id', '')).strip()]
+          for candidate in ('EAR_4MMN_CUR_NB_A', 'EAR_INEE_CUR_NB_A', 'EAR_INEE_CUR_NB'):
+              if candidate not in ids:
+                  ids.append(candidate)
+
+          registry_url = 'https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?audit=ilostat-minimum-wage'
+          registry = json.loads(fetch(registry_url))
+          area_by_iso3 = {}
+          entries = registry.get('areas') if isinstance(registry, dict) else None
+          if isinstance(entries, list):
+              for area in entries:
+                  if not isinstance(area, dict):
+                      continue
+                  iso3 = str(area.get('iso3', '')).strip().upper()
+                  area_id = str(area.get('id', '')).strip()
+                  if iso3 and area_id:
+                      area_by_iso3[iso3] = area_id
+          elif isinstance(registry, dict):
+              for area_id, area in registry.items():
+                  if not isinstance(area, dict):
+                      continue
+                  iso3 = str(area.get('iso3', '')).strip().upper()
+                  if iso3:
+                      area_by_iso3[iso3] = str(area_id)
+          print('registry ISO3', len(area_by_iso3))
+
+          for dataset_id in ids:
+              if not dataset_id:
+                  continue
+              params = urllib.parse.urlencode({
+                  'id': dataset_id,
+                  'type': 'code',
+                  'format': '.csv',
+                  'channel': 'ilostat',
+              })
+              url = f'https://rplumber.ilo.org/data/indicator/?{params}'
+              print(f'\n=== DATASET {dataset_id} ===')
+              try:
+                  rows = rows_csv(url)
+              except Exception as exc:
+                  print('ERROR', repr(exc))
+                  continue
+              if not rows:
+                  print('EMPTY')
+                  continue
+              print('rows', len(rows))
+              print('fields', list(rows[0]))
+              print('indicators', Counter(str(r.get('indicator', '')).strip() for r in rows).most_common(10))
+              for field in list(rows[0]):
+                  if field.startswith('classif') or field in {'sex', 'currency', 'unit_measure', 'source'}:
+                      vals = Counter(str(r.get(field, '')).strip() for r in rows)
+                      print(field, 'unique', len(vals), 'top', vals.most_common(20))
+              years = sorted({int(str(r.get('time', '')).strip()) for r in rows if str(r.get('time', '')).strip().isdigit()})
+              refs = {str(r.get('ref_area', '')).strip().upper() for r in rows if str(r.get('ref_area', '')).strip()}
+              mapped = refs & set(area_by_iso3)
+              print('years', (years[0], years[-1]) if years else None, 'ref_areas', len(refs), 'mapped_registry', len(mapped))
+              print('required present', {code: code in refs for code in ('AUT', 'DEU', 'USA', 'IND')})
+
+              dim_fields = [f for f in rows[0] if f.startswith('classif') or f in {'currency', 'unit_measure'}]
+              for dim in dim_fields:
+                  values = sorted({str(r.get(dim, '')).strip() for r in rows if str(r.get(dim, '')).strip()})
+                  if len(values) <= 20:
+                      for value in values:
+                          subset = [r for r in rows if str(r.get(dim, '')).strip() == value]
+                          subset_refs = {str(r.get('ref_area', '')).strip().upper() for r in subset if str(r.get('ref_area', '')).strip()}
+                          subset_years = sorted({int(str(r.get('time', '')).strip()) for r in subset if str(r.get('time', '')).strip().isdigit()})
+                          by_year = defaultdict(set)
+                          for r in subset:
+                              y = str(r.get('time', '')).strip()
+                              ref = str(r.get('ref_area', '')).strip().upper()
+                              val = str(r.get('obs_value', '')).strip()
+                              if y.isdigit() and ref in area_by_iso3 and val:
+                                  by_year[int(y)].add(ref)
+                          latest_broad = None
+                          if by_year:
+                              latest_broad = max(by_year, key=lambda y: (len(by_year[y]), y))
+                          print('DIM', dim, value, 'rows', len(subset), 'refs', len(subset_refs), 'years', (subset_years[0], subset_years[-1]) if subset_years else None, 'bestYear', latest_broad, 'bestCoverage', len(by_year.get(latest_broad, set())) if latest_broad else 0)
+
+              print('sample')
+              for row in rows[:8]:
+                  print(row)
+          PY
