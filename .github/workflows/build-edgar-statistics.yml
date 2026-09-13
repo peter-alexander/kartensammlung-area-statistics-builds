@@ -1,3 +1,4 @@
+# workflow_dispatch is retained for targeted retries after GitHub Actions startup failures.
 name: Build EDGAR statistics
 
 on:
