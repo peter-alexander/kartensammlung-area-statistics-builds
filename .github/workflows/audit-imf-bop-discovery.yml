@@ -1,0 +1,111 @@
+name: Audit IMF BOP data structure
+
+on:
+  push:
+    branches:
+      - audit/imf-bop-external-sector
+    paths:
+      - ".github/workflows/audit-imf-bop-discovery.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Discover IMF BOP SDMX structure
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import csv
+          import io
+          import re
+          import xml.etree.ElementTree as ET
+          from urllib.error import HTTPError, URLError
+          from urllib.request import Request, urlopen
+
+          BASE = "https://api.imf.org/external/sdmx/3.0"
+          USER_AGENT = "kartensammlung-area-statistics-builds/1"
+
+          def fetch(url: str, accept: str) -> tuple[bytes, str]:
+          	request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
+          	with urlopen(request, timeout=120) as response:
+          		return response.read(), response.headers.get("Content-Type", "")
+
+          def try_fetch(label: str, url: str, accepts: list[str]) -> bytes | None:
+          	print(f"\n=== {label} ===")
+          	print(url)
+          	for accept in accepts:
+          		try:
+          			data, content_type = fetch(url, accept)
+          		except (HTTPError, URLError, TimeoutError, OSError) as error:
+          			print(f"accept={accept!r} ERROR {error}")
+          			continue
+          		print(f"accept={accept!r} bytes={len(data)} content-type={content_type!r}")
+          		text = data.decode("utf-8-sig", errors="replace")
+          		print(text[:12000])
+          		return data
+          	return None
+
+          accepts = [
+          	"application/vnd.sdmx.structure+csv;version=2.0",
+          	"text/csv",
+          	"application/xml",
+          	"application/vnd.sdmx.structure+xml;version=3.0",
+          	"*/*",
+          ]
+
+          dataflow_url = f"{BASE}/structure/dataflow/IMF.STA/BOP/~?references=all"
+          raw = try_fetch("BOP dataflow with references", dataflow_url, accepts)
+
+          if raw:
+          	text = raw.decode("utf-8-sig", errors="replace")
+          	print("\n=== candidate identifiers ===")
+          	for pattern in (
+          		r"DataStructure[^>]{0,300}",
+          		r"datastructure[^\"'<> ]*",
+          		r"dimension[^\"'<> ]*",
+          		r"BOP[^\"'<> ]{0,80}",
+          	):
+          		matches = []
+          		for match in re.finditer(pattern, text, flags=re.I):
+          			value = match.group(0)
+          			if value not in matches:
+          				matches.append(value)
+          			if len(matches) >= 40:
+          				break
+          		print(pattern, matches)
+
+          # Test whether a narrow country query can be made with an unconstrained key.
+          # This intentionally does not assume the dimension order yet.
+          for key in ("AUT", "AUT.*", "AUT.*.*.*.*.*.*.*.*.*.*.*", "AUT..........."):
+          	url = f"{BASE}/data/dataflow/IMF.STA/BOP/~/{key}?startPeriod=2023&endPeriod=2024"
+          	try:
+          		data, content_type = fetch(url, "text/csv")
+          	except (HTTPError, URLError, TimeoutError, OSError) as error:
+          		print(f"\nDATA key={key!r} ERROR {error}")
+          		continue
+          	text = data.decode("utf-8-sig", errors="replace")
+          	print(f"\nDATA key={key!r} bytes={len(data)} content-type={content_type!r}")
+          	print(text[:8000])
+          	if len(data) > 200:
+          		reader = csv.DictReader(io.StringIO(text))
+          		print("fields:", reader.fieldnames)
+          		rows = []
+          		for row in reader:
+          			rows.append(row)
+          			if len(rows) >= 5:
+          				break
+          		print("sample rows:", rows)
+          PY
