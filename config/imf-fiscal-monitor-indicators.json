@@ -4,6 +4,7 @@
 	"sourcePage": "https://www.imf.org/external/datamapper/datasets/FM",
 	"datasetCode": "FM",
 	"minimumProjectionYear": 2026,
+	"minimumLatestYear": 2030,
 	"provider": {
 		"id": "imf-fiscal-monitor",
 		"name": "IMF Fiscal Monitor",
