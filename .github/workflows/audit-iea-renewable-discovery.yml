@@ -1,0 +1,99 @@
+name: Discover direct IEA renewable indicator
+
+on:
+  push:
+    branches:
+      - audit/un-sdg-renewable-energy
+    paths:
+      - ".github/workflows/audit-iea-renewable-discovery.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Inspect IEA statistics API
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          import time
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+
+          BASE = "https://api.iea.org/stats"
+
+          def fetch(url):
+          	last = None
+          	for attempt, delay in enumerate((0, 2, 5, 10, 20), start=1):
+          		if delay:
+          			time.sleep(delay)
+          		try:
+          			request = Request(url, headers={"User-Agent": "kartensammlung-area-statistics-audit/1"})
+          			with urlopen(request, timeout=120) as response:
+          				return json.load(response)
+          		except Exception as error:
+          			last = error
+          			print(f"request failed {attempt}/5: {url}: {error}")
+          	return {"_error": repr(last)}
+
+          def describe(label, payload):
+          	print(f"\n=== {label} ===")
+          	print("type=", type(payload).__name__)
+          	if isinstance(payload, dict):
+          		print("keys=", sorted(payload.keys()))
+          		for key, value in payload.items():
+          			if isinstance(value, list):
+          				print(f"list {key}: {len(value)} rows")
+          				if value:
+          					print("sample=", json.dumps(value[0], ensure_ascii=False)[:1500])
+          	elif isinstance(payload, list):
+          		print("rows=", len(payload))
+          		if payload:
+          			print("sample=", json.dumps(payload[0], ensure_ascii=False)[:1500])
+
+          def walk(obj, path=""):
+          	if isinstance(obj, dict):
+          		for key, value in obj.items():
+          			yield from walk(value, f"{path}.{key}" if path else str(key))
+          	elif isinstance(obj, list):
+          		for index, value in enumerate(obj):
+          			yield from walk(value, f"{path}[{index}]")
+          	elif isinstance(obj, (str, int, float)):
+          		yield path, str(obj)
+
+          endpoints = [
+          	("countries", f"{BASE}/countries"),
+          	("indicators-no-filter", f"{BASE}/indicators"),
+          	("indicators-USA", f"{BASE}/indicators/?{urlencode({'countries': 'USA'})}"),
+          	("CO2Intensity-known", f"{BASE}/indicators/CO2Intensity"),
+          ]
+
+          payloads = {}
+          for label, url in endpoints:
+          	payload = fetch(url)
+          	payloads[label] = payload
+          	describe(label, payload)
+
+          pattern = re.compile(r"renew|sdg|final energy|final consumption|tfec|modern", re.I)
+          for label in ("indicators-no-filter", "indicators-USA"):
+          	payload = payloads[label]
+          	print(f"\n=== keyword matches in {label} ===")
+          	matches = []
+          	for path, value in walk(payload):
+          		if pattern.search(value):
+          			matches.append((path, value))
+          	for path, value in matches[:300]:
+          		print(path, "=", value[:500])
+          	print("match_count=", len(matches))
+          PY
