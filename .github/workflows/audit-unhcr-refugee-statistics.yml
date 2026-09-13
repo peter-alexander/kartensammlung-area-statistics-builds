@@ -1,0 +1,64 @@
+name: Audit UNHCR Refugee Data Finder
+
+on:
+  push:
+    branches:
+      - audit/unhcr-refugee-statistics
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Inspect live API response shape
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+
+          BASE = "https://api.unhcr.org/population/v1"
+
+          def fetch(path, params):
+          	url = f"{BASE}/{path}/?{urlencode(params)}"
+          	request = Request(
+          		url,
+          		headers={
+          			"Accept": "application/json",
+          			"User-Agent": "kartensammlung-area-statistics-audit/1",
+          		},
+          	)
+          	with urlopen(request, timeout=90) as response:
+          		payload = json.load(response)
+          	print("URL", url)
+          	print("TYPE", type(payload).__name__)
+          	if isinstance(payload, dict):
+          		print("KEYS", sorted(payload))
+          		for key in ("page", "short-url", "maxPages", "total", "items", "data", "results"):
+          			if key in payload:
+          				value = payload[key]
+          				if isinstance(value, list):
+          					print(key, "list", len(value))
+          					if value:
+          						print("FIRST", json.dumps(value[0], ensure_ascii=False, sort_keys=True))
+          				else:
+          					print(key, repr(value))
+          	elif isinstance(payload, list):
+          		print("LEN", len(payload))
+          		if payload:
+          			print("FIRST", json.dumps(payload[0], ensure_ascii=False, sort_keys=True))
+          	print()
+
+          queries = [
+          	("population", {"year": 2025, "coa_all": "true", "cf_type": "ISO", "limit": 3, "page": 1}),
+          	("population", {"year": 2025, "coo_all": "true", "cf_type": "ISO", "limit": 3, "page": 1}),
+          	("population", {"year": 2025, "coa_all": "true", "coo_all": "true", "cf_type": "ISO", "limit": 3, "page": 1}),
+          	("idmc", {"year": 2025, "coa_all": "true", "cf_type": "ISO", "limit": 3, "page": 1}),
+          ]
+          for path, params in queries:
+          	fetch(path, params)
+          PY
