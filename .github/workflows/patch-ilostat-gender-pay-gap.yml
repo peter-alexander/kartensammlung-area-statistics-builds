@@ -1,0 +1,96 @@
+name: Patch ILOSTAT gender pay gap integration
+
+on:
+  push:
+    branches:
+      - feature/ilostat-gender-pay-gap
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/ilostat-gender-pay-gap
+
+      - name: Patch production integration
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          builder = Path('scripts/build_ilostat_wages.py')
+          text = builder.read_text()
+
+          old = "import build_ilostat as ilo_common\nimport build_world_bank as common\n"
+          new = "import build_ilostat as ilo_common\nimport build_ilostat_gender_pay_gap as gender_pay_gap\nimport build_world_bank as common\n"
+          if text.count(old) != 1:
+          	raise SystemExit(f'Expected one import anchor, found {text.count(old)}')
+          text = text.replace(old, new)
+
+          old = "\tconfig = validate_config(common.read_json_path(args.config))\n\tprovider_catalog = common.validate_provider_catalog(common.read_json_path(args.providers))\n"
+          new = "\tconfig = validate_config(common.read_json_path(args.config))\n\tgender_pay_gap.validate_config(config)\n\tprovider_catalog = common.validate_provider_catalog(common.read_json_path(args.providers))\n"
+          if text.count(old) != 1:
+          	raise SystemExit(f'Expected one main validation anchor, found {text.count(old)}')
+          text = text.replace(old, new)
+
+          old = '''\tfor indicator in config["indicators"]:\n\t\tpayload = normalize_indicator(\n\t\t\tconfig,\n\t\t\tindicator,\n\t\t\trows,\n\t\t\tarea_by_iso3,\n\t\t\tnow.year,\n\t\t\tsource_url,\n\t\t\tsource_metadata,\n\t\t)\n\t\tindicator_payloads.append((indicator, payload))\n\n\thasher = hashlib.sha256()\n'''
+          new = '''\tfor indicator in config["indicators"]:\n\t\tpayload = normalize_indicator(\n\t\t\tconfig,\n\t\t\tindicator,\n\t\t\trows,\n\t\t\tarea_by_iso3,\n\t\t\tnow.year,\n\t\t\tsource_url,\n\t\t\tsource_metadata,\n\t\t)\n\t\tindicator_payloads.append((indicator, payload))\n\n\tgender_indicator, gender_payload, gender_source_metadata = gender_pay_gap.build_payload(\n\t\tconfig,\n\t\tarea_by_iso3,\n\t\tnow.year,\n\t\targs.timeout,\n\t)\n\tindicator_payloads.append((gender_indicator, gender_payload))\n\n\thasher = hashlib.sha256()\n'''
+          if text.count(old) != 1:
+          	raise SystemExit(f'Expected one indicator-loop anchor, found {text.count(old)}')
+          text = text.replace(old, new)
+
+          old = '''\tindex_indicators = []\n\tlatest_source_year = 0\n\tfor indicator, payload in indicator_payloads:\n\t\tfilename = f"{indicator['slug']}.json"\n\t\tcommon.write_json(release_dir / filename, payload)\n\t\tlatest_source_year = max(latest_source_year, int(payload["coverage"]["latestYear"]))\n\t\tindex_indicators.append({\n\t\t\t"id": indicator["id"],\n\t\t\t"title": indicator["title"],\n\t\t\t"description": indicator["description"],\n\t\t\t"areaLevel": "country",\n\t\t\t"frequency": "annual",\n\t\t\t"unit": indicator["unit"],\n\t\t\t"classification": indicator["classification"],\n\t\t\t"sourceIndicator": config["sourceIndicator"],\n\t\t\t"sourceDataset": config["sourceDataset"],\n\t\t\t"filters": {"classif1": indicator["filterClassif1"]},\n\t\t\t"path": f"releases/{snapshot}/{filename}",\n\t\t\t"availableYears": payload["availableYears"],\n\t\t\t"defaultYear": payload["defaultYear"],\n\t\t\t"coverage": payload["coverage"],\n\t\t})\n'''
+          new = '''\tindex_indicators = []\n\tlatest_source_year = 0\n\tfor indicator, payload in indicator_payloads:\n\t\tfilename = f"{indicator['slug']}.json"\n\t\tcommon.write_json(release_dir / filename, payload)\n\t\tfrequency = str(payload.get("frequency") or payload["indicator"].get("frequency") or "annual")\n\t\tpayload_source = payload["source"]\n\t\tif str(payload_source.get("sourceDataset", "")) == str(config["sourceDataset"]):\n\t\t\tlatest_source_year = max(latest_source_year, int(payload["coverage"]["latestYear"]))\n\t\tindex_indicators.append({\n\t\t\t"id": indicator["id"],\n\t\t\t"title": indicator["title"],\n\t\t\t"description": indicator["description"],\n\t\t\t"areaLevel": "country",\n\t\t\t"frequency": frequency,\n\t\t\t"unit": indicator["unit"],\n\t\t\t"classification": indicator["classification"],\n\t\t\t"sourceIndicator": payload_source["indicator"],\n\t\t\t"sourceDataset": payload_source["sourceDataset"],\n\t\t\t"filters": payload_source.get("filters", {}),\n\t\t\t"path": f"releases/{snapshot}/{filename}",\n\t\t\t"availableYears": payload["availableYears"],\n\t\t\t"defaultYear": payload["defaultYear"],\n\t\t\t"coverage": payload["coverage"],\n\t\t})\n'''
+          if text.count(old) != 1:
+          	raise SystemExit(f'Expected one provider-index loop anchor, found {text.count(old)}')
+          text = text.replace(old, new)
+
+          old = '''\t\t"dataset": {\n\t\t\t"sourceDataset": config["sourceDataset"],\n\t\t\t"sourceIndicator": config["sourceIndicator"],\n\t\t\t"tableLabel": str(source_metadata.get("indicator.label", "")).strip(),\n\t\t\t"latestSourceYear": latest_source_year,\n\t\t\t"defaultYearPolicy": "latest-year-meeting-indicator-coverage-and-required-area-checks",\n\t\t},\n\t\t"indicators": index_indicators,\n'''
+          new = '''\t\t"dataset": {\n\t\t\t"sourceDataset": config["sourceDataset"],\n\t\t\t"sourceIndicator": config["sourceIndicator"],\n\t\t\t"tableLabel": str(source_metadata.get("indicator.label", "")).strip(),\n\t\t\t"latestSourceYear": latest_source_year,\n\t\t\t"defaultYearPolicy": "latest-year-meeting-indicator-coverage-and-required-area-checks",\n\t\t},\n\t\t"additionalDatasets": [\n\t\t\t{\n\t\t\t\t"sourceDataset": gender_indicator["sourceDataset"],\n\t\t\t\t"sourceIndicator": gender_indicator["sourceIndicator"],\n\t\t\t\t"tableLabel": str(gender_source_metadata.get("indicator.label", "")).strip(),\n\t\t\t\t"latestSourceYear": gender_payload["coverage"]["latestSourceYear"],\n\t\t\t\t"defaultYearPolicy": "latest-observation-through-year; source year retained per observation",\n\t\t\t}\n\t\t],\n\t\t"indicators": index_indicators,\n'''
+          if text.count(old) != 1:
+          	raise SystemExit(f'Expected one dataset metadata anchor, found {text.count(old)}')
+          text = text.replace(old, new)
+          builder.write_text(text)
+
+          workflow = Path('.github/workflows/build-ilostat-wages-statistics.yml')
+          text = workflow.read_text()
+          path_anchor = '      - "scripts/build_ilostat_wages.py"\n'
+          path_replacement = path_anchor + '      - "scripts/build_ilostat_gender_pay_gap.py"\n'
+          if text.count(path_anchor) != 2:
+          	raise SystemExit(f'Expected two workflow path anchors, found {text.count(path_anchor)}')
+          text = text.replace(path_anchor, path_replacement)
+          compile_anchor = '          python -m py_compile scripts/build_ilostat_wages.py scripts/build_ilostat.py scripts/build_world_bank.py\n'
+          compile_replacement = '          python -m py_compile scripts/build_ilostat_wages.py scripts/build_ilostat_gender_pay_gap.py scripts/build_ilostat.py scripts/build_world_bank.py\n'
+          if text.count(compile_anchor) != 1:
+          	raise SystemExit(f'Expected one workflow compile anchor, found {text.count(compile_anchor)}')
+          workflow.write_text(text.replace(compile_anchor, compile_replacement))
+
+          providers = Path('config/statistics-providers.json')
+          text = providers.read_text()
+          old = '"name": "ILOSTAT (ILO) – Löhne & Mindestlöhne"'
+          new = '"name": "ILOSTAT (ILO) – Löhne, Mindestlöhne & Gender Pay Gap"'
+          if text.count(old) != 1:
+          	raise SystemExit(f'Expected one provider-name anchor, found {text.count(old)}')
+          providers.write_text(text.replace(old, new))
+          PY
+          rm .github/workflows/patch-ilostat-gender-pay-gap.yml
+
+      - name: Validate patched production files
+        run: |
+          python -m py_compile scripts/build_ilostat_wages.py scripts/build_ilostat_gender_pay_gap.py scripts/build_ilostat.py scripts/build_world_bank.py
+          python -m json.tool config/ilostat-wages-indicators.json >/dev/null
+          python -m json.tool config/statistics-providers.json >/dev/null
+          git diff --check
+
+      - name: Commit patch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/build_ilostat_wages.py .github/workflows/build-ilostat-wages-statistics.yml config/statistics-providers.json .github/workflows/patch-ilostat-gender-pay-gap.yml
+          git commit -m "Integrate official ILOSTAT gender pay gap"
+          git push origin HEAD:feature/ilostat-gender-pay-gap
