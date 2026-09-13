@@ -1,0 +1,233 @@
+name: Apply WHO health workforce migration
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/who-health-workforce
+    paths:
+      - ".github/workflows/apply-who-health-workforce-migration.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Guard branch
+        run: |
+          test "${GITHUB_REF_NAME}" = "audit/who-health-workforce"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: audit/who-health-workforce
+          fetch-depth: 0
+
+      - name: Apply migration
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+          	count = text.count(old)
+          	if count != 1:
+          		raise RuntimeError(f"{label}: expected exactly one match, found {count}")
+          	return text.replace(old, new, 1)
+
+          who_path = Path("config/who-indicators.json")
+          who = json.loads(who_path.read_text(encoding="utf-8"))
+          existing_ids = {item["id"] for item in who["indicators"]}
+          workforce = [
+          	{
+          		"id": "health-workforce.physicians-per-1000",
+          		"slug": "health-workforce-physicians-per-1000",
+          		"sourceIndicator": "HWF_0001",
+          		"sourceUuid": "217795A",
+          		"sourceUrl": "https://data.who.int/indicators/i/CCCEBB2/217795A",
+          		"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/217795A_ALL_LATEST.csv",
+          		"valueField": "RATE_PER_10000_N",
+          		"valueMultiplier": 0.1,
+          		"sourceUnit": {"id": "per-10000-population", "label": "je 10.000 Einwohner"},
+          		"confidenceIntervals": False,
+          		"startYear": 1960,
+          		"endYear": 2023,
+          		"fallbackWdiIndicator": "SH.MED.PHYS.ZS",
+          		"fallbackProviderName": "Weltbank (WDI) – Entwicklung, Wirtschaft & Gesellschaft",
+          		"fallbackUsage": "Only country-year observations missing from the direct WHO dataset",
+          		"fallbackProvenance": "World Bank WDI series combining WHO Global Health Workforce Statistics, OECD and country data",
+          		"title": "Ärztinnen und Ärzte",
+          		"description": "Ärztinnen und Ärzte je 1.000 Einwohner nach dem WHO-Indikator SDG 3.c.1. Die WHO-Quelldaten je 10.000 Einwohner werden auf je 1.000 Einwohner normiert. Direkte WHO-Werte sind kanonisch; World Bank WDI ergänzt ausschließlich fehlende Länder-/Jahreswerte und kann WHO-, OECD- und nationale Daten enthalten. Wegen unterschiedlicher nationaler Quellen und Abgrenzungen, etwa praktizierender gegenüber registrierter Ärztinnen und Ärzte, sind historische Brüche möglich.",
+          		"unit": {"id": "per-1000-population", "label": "je 1.000 Einwohner"},
+          		"classification": {"type": "fixed", "breaks": [0.2, 0.5, 1, 2, 4, 6]},
+          		"valueRange": [0, 100],
+          		"minAreasWithAnyValue": 160,
+          		"minAreasInDefaultYear": 150,
+          		"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"],
+          	},
+          	{
+          		"id": "health-workforce.nurses-midwives-per-1000",
+          		"slug": "health-workforce-nurses-midwives-per-1000",
+          		"sourceIndicator": "HWF_0006",
+          		"sourceUuid": "5C8435F",
+          		"sourceUrl": "https://data.who.int/indicators/i/B54EB15/5C8435F",
+          		"downloadUrl": "https://srhdpeuwpubsa.blob.core.windows.net/whdh/DATADOT/INDICATOR/5C8435F_ALL_LATEST.csv",
+          		"valueField": "RATE_PER_10000_N",
+          		"valueMultiplier": 0.1,
+          		"sourceUnit": {"id": "per-10000-population", "label": "je 10.000 Einwohner"},
+          		"confidenceIntervals": False,
+          		"startYear": 1990,
+          		"endYear": 2023,
+          		"fallbackWdiIndicator": "SH.MED.NUMW.P3",
+          		"fallbackProviderName": "Weltbank (WDI) – Entwicklung, Wirtschaft & Gesellschaft",
+          		"fallbackUsage": "Only country-year observations missing from the direct WHO dataset",
+          		"fallbackProvenance": "World Bank WDI series combining WHO Global Health Workforce Statistics, OECD and country data",
+          		"title": "Pflegepersonal und Hebammen",
+          		"description": "Pflege- und Hebammenpersonal je 1.000 Einwohner nach dem WHO-Indikator SDG 3.c.1. Die WHO-Quelldaten je 10.000 Einwohner werden auf je 1.000 Einwohner normiert. Direkte WHO-Werte sind kanonisch; World Bank WDI ergänzt ausschließlich fehlende Länder-/Jahreswerte und kann WHO-, OECD- und nationale Daten enthalten. Wegen unterschiedlicher nationaler Quellen und Abgrenzungen, etwa aktivem gegenüber registriertem Personal, sind historische Brüche möglich.",
+          		"unit": {"id": "per-1000-population", "label": "je 1.000 Einwohner"},
+          		"classification": {"type": "fixed", "breaks": [0.5, 1, 2, 5, 10, 15]},
+          		"valueRange": [0, 1000],
+          		"minAreasWithAnyValue": 160,
+          		"minAreasInDefaultYear": 160,
+          		"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"],
+          	},
+          ]
+          if existing_ids & {item["id"] for item in workforce}:
+          	raise RuntimeError("WHO workforce indicators already exist")
+          maternal_index = next(
+          	index for index, item in enumerate(who["indicators"])
+          	if item["id"] == "mortality.maternal-per-100000-live-births"
+          )
+          who["indicators"][maternal_index:maternal_index] = workforce
+          who_path.write_text(json.dumps(who, ensure_ascii=False, indent="\t") + "\n", encoding="utf-8")
+
+          wdi_path = Path("config/world-bank-indicators.json")
+          wdi = json.loads(wdi_path.read_text(encoding="utf-8"))
+          remove_ids = {
+          	"health-workforce.physicians-per-1000",
+          	"health-workforce.nurses-midwives-per-1000",
+          }
+          before = len(wdi["indicators"])
+          wdi["indicators"] = [item for item in wdi["indicators"] if item["id"] not in remove_ids]
+          if before - len(wdi["indicators"]) != 2:
+          	raise RuntimeError("Expected to remove exactly two visible WDI workforce indicators")
+          wdi_path.write_text(json.dumps(wdi, ensure_ascii=False, indent="\t", separators=(",", ":")) + "\n", encoding="utf-8")
+
+          builder_path = Path("scripts/build_who.py")
+          builder = builder_path.read_text(encoding="utf-8")
+          builder = replace_once(
+          	builder,
+          	'''\t\tconfidence_intervals = indicator.get("confidenceIntervals", True)\n\t\tif not isinstance(confidence_intervals, bool):\n\t\t\traise ValueError(f"WHO indicator {indicator_id} has invalid confidenceIntervals flag.")\n\t\tfor field_name in ("valueField", "lowerField", "upperField", "fallbackWdiIndicator"):\n''',
+          	'''\t\tconfidence_intervals = indicator.get("confidenceIntervals", True)\n\t\tif not isinstance(confidence_intervals, bool):\n\t\t\traise ValueError(f"WHO indicator {indicator_id} has invalid confidenceIntervals flag.")\n\t\tvalue_multiplier = indicator.get("valueMultiplier", 1)\n\t\tif isinstance(value_multiplier, bool) or not isinstance(value_multiplier, (int, float)) or not math.isfinite(float(value_multiplier)) or float(value_multiplier) <= 0:\n\t\t\traise ValueError(f"WHO indicator {indicator_id} has invalid valueMultiplier.")\n\t\tmin_default = indicator.get("minAreasInDefaultYear", indicator["minAreasWithAnyValue"])\n\t\tif not isinstance(min_default, int) or min_default <= 0:\n\t\t\traise ValueError(f"WHO indicator {indicator_id} has invalid minAreasInDefaultYear.")\n\t\tsource_unit = indicator.get("sourceUnit")\n\t\tif source_unit is not None and (not isinstance(source_unit, dict) or not str(source_unit.get("id", "")).strip() or not str(source_unit.get("label", "")).strip()):\n\t\t\traise ValueError(f"WHO indicator {indicator_id} has invalid sourceUnit metadata.")\n\t\tfor field_name in ("valueField", "lowerField", "upperField", "fallbackWdiIndicator", "fallbackProviderName", "fallbackProvenance", "fallbackUsage"):\n''',
+          	"validate new WHO fields",
+          )
+          builder = replace_once(
+          	builder,
+          	'''\tdimension_filters = {str(key): str(value) for key, value in indicator.get("dimensionFilters", {}).items()}\n\trequired_fields = {\n''',
+          	'''\tdimension_filters = {str(key): str(value) for key, value in indicator.get("dimensionFilters", {}).items()}\n\tvalue_multiplier = float(indicator.get("valueMultiplier", 1.0))\n\trequired_fields = {\n''',
+          	"load value multiplier",
+          )
+          builder = replace_once(
+          	builder,
+          	'''\t\tvalue = parse_number(row.get(value_field))\n\t\tvalidate_value_range(indicator, area_id, year, value, "value")\n''',
+          	'''\t\tvalue = parse_number(round(float(parse_number(row.get(value_field))) * value_multiplier, 12))\n\t\tvalidate_value_range(indicator, area_id, year, value, "value")\n''',
+          	"scale direct value",
+          )
+          builder = replace_once(
+          	builder,
+          	'''\t\t\tlower = parse_number(row.get(str(lower_field)))\n\t\t\tupper = parse_number(row.get(str(upper_field)))\n''',
+          	'''\t\t\tlower = parse_number(round(float(parse_number(row.get(str(lower_field)))) * value_multiplier, 12))\n\t\t\tupper = parse_number(round(float(parse_number(row.get(str(upper_field)))) * value_multiplier, 12))\n''',
+          	"scale confidence interval",
+          )
+          builder = replace_once(
+          	builder,
+          	'''\tfallback_code = str(indicator.get("fallbackWdiIndicator", "")).strip()\n\tif fallback_code:\n''',
+          	'''\tfallback_code = str(indicator.get("fallbackWdiIndicator", "")).strip()\n\tfallback_provider_name = str(indicator.get("fallbackProviderName", "World Bank WDI")).strip()\n\tfallback_provenance = str(indicator.get("fallbackProvenance", "WHO-origin series distributed by World Bank WDI")).strip()\n\tfallback_usage = str(indicator.get("fallbackUsage", "Only country-year observations missing from the direct WHO dataset")).strip()\n\tif fallback_code:\n''',
+          	"configure fallback provenance",
+          )
+          builder = replace_once(
+          	builder,
+          	'''\t\t\t\t"sourceProviderName": "World Bank WDI",\n\t\t\t\t"sourceIndicator": fallback_code,\n\t\t\t\t"provenance": "WHO-origin value distributed by World Bank WDI",\n''',
+          	'''\t\t\t\t"sourceProviderName": fallback_provider_name,\n\t\t\t\t"sourceIndicator": fallback_code,\n\t\t\t\t"provenance": fallback_provenance,\n''',
+          	"observation fallback provenance",
+          )
+          builder = replace_once(
+          	builder,
+          	'''\tminimum = int(indicator["minAreasWithAnyValue"])\n\tareas_with_any_value = set().union(*(set(values_by_year[year]) for year in available_years))\n''',
+          	'''\tminimum = int(indicator["minAreasWithAnyValue"])\n\tminimum_default = int(indicator.get("minAreasInDefaultYear", minimum))\n\tareas_with_any_value = set().union(*(set(values_by_year[year]) for year in available_years))\n''',
+          	"default coverage threshold",
+          )
+          builder = replace_once(
+          	builder,
+          	'''\tbroad_years = [year for year in available_years if len(values_by_year[year]) >= minimum]\n''',
+          	'''\tbroad_years = [year for year in available_years if len(values_by_year[year]) >= minimum_default]\n''',
+          	"use default coverage threshold",
+          )
+          builder = replace_once(
+          	builder,
+          	'''\t\t"sourceFormat": source_format,\n\t}\n\tif source_uuid:\n''',
+          	'''\t\t"sourceFormat": source_format,\n\t}\n\tif value_multiplier != 1.0:\n\t\tsource["normalization"] = {\n\t\t\t"valueMultiplier": value_multiplier,\n\t\t\t"sourceUnit": indicator.get("sourceUnit"),\n\t\t\t"targetUnit": indicator["unit"],\n\t\t}\n\tif source_uuid:\n''',
+          	"record normalization",
+          )
+          builder = replace_once(
+          	builder,
+          	'''\t\t\t"providerName": "World Bank WDI",\n\t\t\t"indicator": fallback_code,\n\t\t\t"usage": "Only country-year observations missing from the direct WHO dataset",\n\t\t\t"provenance": "WHO-origin series distributed by World Bank WDI",\n''',
+          	'''\t\t\t"providerName": fallback_provider_name,\n\t\t\t"indicator": fallback_code,\n\t\t\t"usage": fallback_usage,\n\t\t\t"provenance": fallback_provenance,\n''',
+          	"source fallback provenance",
+          )
+          builder = replace_once(
+          	builder,
+          	'''\t\t\t"Configured World Bank WDI fallbacks are used only for country-year gaps in WHO-origin series and are marked in observationMetadata.",\n''',
+          	'''\t\t\t"Configured World Bank WDI fallbacks are used only for country-year gaps and carry indicator-specific provenance in observationMetadata.",\n''',
+          	"provider notes",
+          )
+          builder_path.write_text(builder, encoding="utf-8")
+
+          workflow_path = Path(".github/workflows/build-who-statistics.yml")
+          workflow = workflow_path.read_text(encoding="utf-8")
+          workflow = replace_once(
+          	workflow,
+          	'''          assert len(provider["indicators"]) == 9, len(provider["indicators"])\n''',
+          	'''          assert len(provider["indicators"]) == 11, len(provider["indicators"])\n''',
+          	"WHO indicator count",
+          )
+          workforce_checks = '''          for indicator_id, expected in {\n          \t"health-workforce.physicians-per-1000": {\n          \t\t"source": "HWF_0001", "uuid": "217795A", "fallback": "SH.MED.PHYS.ZS",\n          \t\t"start": 1960, "end": 2023, "default": 2018, "minDefault": 150,\n          \t\t"minDirect": 3300, "minFallback": 1900,\n          \t},\n          \t"health-workforce.nurses-midwives-per-1000": {\n          \t\t"source": "HWF_0006", "uuid": "5C8435F", "fallback": "SH.MED.NUMW.P3",\n          \t\t"start": 1990, "end": 2023, "default": 2018, "minDefault": 170,\n          \t\t"minDirect": 3300, "minFallback": 40,\n          \t},\n          }.items():\n          \titem = by_id[indicator_id]\n          \tassert item["frequency"] == "annual", (indicator_id, item["frequency"])\n          \tassert item["availableYears"][0] == expected["start"], (indicator_id, item["availableYears"][0])\n          \tassert item["availableYears"][-1] == expected["end"], (indicator_id, item["availableYears"][-1])\n          \tassert item["defaultYear"] == expected["default"], (indicator_id, item["defaultYear"])\n          \tassert item["coverage"]["areasInDefaultYear"] >= expected["minDefault"], (indicator_id, item["coverage"])\n          \tassert item["coverage"]["directObservations"] >= expected["minDirect"], (indicator_id, item["coverage"])\n          \tassert item["coverage"]["fallbackObservations"] >= expected["minFallback"], (indicator_id, item["coverage"])\n          \tassert item["confidenceIntervals"] is False\n          \tpayload = json.loads(Path("dist/statistics/who", item["path"]).read_text(encoding="utf-8"))\n          \tassert payload["source"]["providerId"] == "who"\n          \tassert payload["source"]["indicator"] == expected["source"]\n          \tassert payload["source"]["indicatorUuid"] == expected["uuid"]\n          \tassert payload["source"]["sourceFormat"] == "data-hub-csv"\n          \tassert payload["source"]["normalization"]["valueMultiplier"] == 0.1\n          \tassert payload["source"]["normalization"]["sourceUnit"]["id"] == "per-10000-population"\n          \tassert payload["source"]["normalization"]["targetUnit"]["id"] == "per-1000-population"\n          \tassert payload["source"]["fallback"]["indicator"] == expected["fallback"]\n          \tassert "OECD" in payload["source"]["fallback"]["provenance"]\n          \tassert payload["source"]["timeCoverage"] == {"startYear": 1990, "endYear": 2023}\n          \tassert payload["indicator"]["confidenceIntervals"] == {"available": False}\n          \tassert payload.get("observationMetadata")\n\n'''
+          workflow = replace_once(
+          	workflow,
+          	'''          maternal = by_id["mortality.maternal-per-100000-live-births"]\n''',
+          	workforce_checks + '''          maternal = by_id["mortality.maternal-per-100000-live-births"]\n''',
+          	"WHO workforce validation",
+          )
+          workflow_path.write_text(workflow, encoding="utf-8")
+
+          doc = '''# WHO health-workforce source policy\n\n## Canonical direct source\n\nThe country-statistics build uses the WHO World Health Data Hub as the canonical source for the two SDG 3.c.1 health-workforce indicators:\n\n- `HWF_0001` / UUID `217795A`: density of physicians.\n- `HWF_0006` / UUID `5C8435F`: density of nursing and midwifery personnel.\n\nWHO publishes both source datasets as rates per 10,000 population. The Kartensammlung keeps the existing user-facing unit per 1,000 population, so direct WHO values are multiplied by `0.1`. The transformation is recorded in each generated indicator payload.\n\n## World Bank WDI fallback\n\nThe former visible WDI indicators `SH.MED.PHYS.ZS` and `SH.MED.NUMW.P3` are no longer separate visible statistics. They remain explicit fallbacks inside the WHO build and are used only for country-year observations missing from the direct WHO dataset.\n\nUnlike the immunization and some mortality fallbacks, these WDI workforce series must not be described as an identical WHO redistribution: World Bank metadata lists WHO Global Health Workforce Statistics, OECD and country data as sources. Generated fallback metadata therefore records this mixed provenance explicitly.\n\n## Audit results, 13 September 2026\n\nDirect WHO CSV versus WDI after normalizing WHO from per 10,000 to per 1,000:\n\n- Physicians: 3,396 direct WHO observations across 194 ISO countries, 1990–2023. Of 3,383 overlapping country-years, 3,368 differ by at most 0.1 per 1,000. WDI contributes 1,972 non-overlapping observations, mainly older history and gaps.\n- Nursing and midwifery personnel: 3,374 direct WHO observations across 194 ISO countries, 1990–2023. Of 3,356 overlapping country-years, 3,347 differ by at most 0.1 per 1,000. WDI contributes 54 non-overlapping observations.\n\nThe few large historical differences are retained in favour of the current direct WHO dataset rather than silently substituting WDI. WHO metadata explicitly notes that original national sources and coverage differ and may include practising personnel or all registered personnel; historical comparability is therefore not guaranteed. Known large audit differences were concentrated in Austria and Denmark for older physician observations and the Russian Federation for older nursing/midwifery observations.\n\n## Measles\n\nThe measles MCV1 statistic was already canonical direct WHO/UNICEF WUENIC (`WHS8_110`) before this audit, with World Bank WDI `SH.IMM.MEAS` only as a marked fallback. No source migration is required for measles.\n'''
+          Path("docs/who-health-workforce-source-policy.md").write_text(doc, encoding="utf-8")
+          PY
+
+      - name: Validate migration files
+        run: |
+          python -m py_compile scripts/build_who.py scripts/build_world_bank.py
+          python -m json.tool config/who-indicators.json >/dev/null
+          python -m json.tool config/world-bank-indicators.json >/dev/null
+          test "$(python - <<'PY'
+          import json
+          from pathlib import Path
+          who = json.loads(Path('config/who-indicators.json').read_text(encoding='utf-8'))
+          wdi = json.loads(Path('config/world-bank-indicators.json').read_text(encoding='utf-8'))
+          print(len(who['indicators']), len(wdi['indicators']))
+          PY
+          )" = "11 28"
+
+      - name: Commit migration
+        run: |
+          git config user.name "peter-alexander"
+          git config user.email "15900922+peter-alexander@users.noreply.github.com"
+          git add config/who-indicators.json config/world-bank-indicators.json scripts/build_who.py .github/workflows/build-who-statistics.yml docs/who-health-workforce-source-policy.md
+          git diff --cached --check
+          git commit -m "Move health workforce statistics to direct WHO"
+          git push origin HEAD:audit/who-health-workforce
