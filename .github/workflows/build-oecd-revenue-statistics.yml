@@ -68,39 +68,78 @@ jobs:
           import json
           from pathlib import Path
 
-          provider = json.loads(Path("dist/statistics/oecd-revenue-statistics/index.json").read_text(encoding="utf-8"))
+          provider_dir = Path("dist/statistics/oecd-revenue-statistics")
+          provider = json.loads((provider_dir / "index.json").read_text(encoding="utf-8"))
           assert provider["provider"]["id"] == "oecd-revenue-statistics"
-          assert len(provider["indicators"]) == 1
-          item = provider["indicators"][0]
-          assert item["id"] == "fiscal.tax-and-social-contributions-percent-gdp"
-          assert item["unit"]["id"] == "percent-of-gdp"
-          assert item["availableYears"][0] == 1990
-          assert item["availableYears"][-1] >= 2024
-          assert item["coverage"]["areasWithAnyValue"] >= 140
-          assert item["coverage"]["areasInDefaultYear"] >= 120
-          payload = json.loads(Path("dist/statistics/oecd-revenue-statistics", item["path"]).read_text(encoding="utf-8"))
-          assert payload["source"]["dataflow"] == "OECD.CTP.TPS:DSD_REV_COMP_GLOBAL@DF_RSGLOBAL(2.1)"
-          assert payload["source"]["dimensionFilters"] == {
-          	"MEASURE": "TAX_REV",
-          	"SECTOR": "S13",
-          	"STANDARD_REVENUE": "_T",
-          	"CTRY_SPECIFIC_REVENUE": "_T",
-          	"UNIT_MEASURE": "PT_B1GQ",
-          	"FREQ": "A",
-          	"REVENUE_CODE": "TOTALTAX",
+          assert len(provider["indicators"]) == 6, len(provider["indicators"])
+          assert provider["dataset"]["observationStatuses"] == ["A"], provider["dataset"]["observationStatuses"]
+          assert provider["dataset"]["ignoredAreaCodes"] == ["A9", "F", "OECD_REP", "SO"], provider["dataset"]["ignoredAreaCodes"]
+
+          expected = {
+          	"fiscal.tax-and-social-contributions-percent-gdp": {
+          		"standard": "_T", "code": "TOTALTAX", "minAreas": 140, "minDefault": 120, "minObservations": 3900,
+          	},
+          	"fiscal.personal-income-taxes-percent-gdp": {
+          		"standard": "T_1100", "code": "1100", "minAreas": 130, "minDefault": 120, "minObservations": 3707,
+          	},
+          	"fiscal.corporate-income-taxes-percent-gdp": {
+          		"standard": "T_1200", "code": "1200", "minAreas": 130, "minDefault": 120, "minObservations": 3733,
+          	},
+          	"fiscal.social-security-contributions-percent-gdp": {
+          		"standard": "T_2000", "code": "2000", "minAreas": 120, "minDefault": 110, "minObservations": 3446,
+          	},
+          	"fiscal.property-taxes-percent-gdp": {
+          		"standard": "T_4000", "code": "4000", "minAreas": 130, "minDefault": 120, "minObservations": 3783,
+          	},
+          	"fiscal.vat-percent-gdp": {
+          		"standard": "T_5111", "code": "5111", "minAreas": 130, "minDefault": 120, "minObservations": 3829,
+          	},
           }
-          assert "fallback" not in payload["source"]
-          for area_id in ("country:AUT", "country:DEU", "country:USA", "country:BRA"):
-          	assert area_id in payload["values"][str(payload["defaultYear"])]
+          by_id = {item["id"]: item for item in provider["indicators"]}
+          assert set(by_id) == set(expected), set(by_id)
+
+          for indicator_id, rules in expected.items():
+          	item = by_id[indicator_id]
+          	assert item["unit"]["id"] == "percent-of-gdp"
+          	assert item["availableYears"][0] == 1990
+          	assert item["availableYears"][-1] >= 2024
+          	assert item["defaultYear"] >= 2024
+          	assert item["coverage"]["areasWithAnyValue"] >= rules["minAreas"], (indicator_id, item["coverage"])
+          	assert item["coverage"]["areasInDefaultYear"] >= rules["minDefault"], (indicator_id, item["coverage"])
+          	assert item["coverage"]["observations"] >= rules["minObservations"], (indicator_id, item["coverage"])
+          	payload = json.loads((provider_dir / item["path"]).read_text(encoding="utf-8"))
+          	assert payload["source"]["dataflow"] == "OECD.CTP.TPS:DSD_REV_COMP_GLOBAL@DF_RSGLOBAL(2.1)"
+          	assert payload["source"]["dimensionFilters"] == {
+          		"MEASURE": "TAX_REV",
+          		"SECTOR": "S13",
+          		"CTRY_SPECIFIC_REVENUE": "_T",
+          		"UNIT_MEASURE": "PT_B1GQ",
+          		"FREQ": "A",
+          		"STANDARD_REVENUE": rules["standard"],
+          		"REVENUE_CODE": rules["code"],
+          	}
+          	assert payload["source"]["observationStatuses"] == ["A"]
+          	assert payload["source"]["ignoredAreaCodes"] == ["A9", "F", "OECD_REP", "SO"]
+          	assert "fallback" not in payload["source"]
+          	for area_id in ("country:AUT", "country:DEU", "country:USA", "country:BRA"):
+          		assert area_id in payload["values"][str(payload["defaultYear"])], (indicator_id, area_id)
+
+          vat = json.loads((provider_dir / by_id["fiscal.vat-percent-gdp"]["path"]).read_text(encoding="utf-8"))
+          assert vat["values"]["2024"]["country:USA"] == 0, vat["values"]["2024"]["country:USA"]
+          corporate = json.loads((provider_dir / by_id["fiscal.corporate-income-taxes-percent-gdp"]["path"]).read_text(encoding="utf-8"))
+          assert any(value < 0 for values in corporate["values"].values() for value in values.values())
+
           print(f"snapshot={provider['activeSnapshot']}")
           print(f"retrievedAt={provider['retrievedAt']}")
-          print(f"defaultYear={item['defaultYear']}")
-          print(f"defaultCoverage={item['coverage']['areasInDefaultYear']}")
-          print(f"areasWithAnyValue={item['coverage']['areasWithAnyValue']}")
-          print(f"latestYear={item['coverage']['latestYear']}")
-          print(f"latestCoverage={item['coverage']['areasInLatestYear']}")
-          print(f"observationStatuses={provider['dataset']['observationStatuses']}")
-          print(f"ignoredAreaCodes={provider['dataset']['ignoredAreaCodes']}")
+          print(f"indicators={len(provider['indicators'])}")
+          for item in provider["indicators"]:
+          	coverage = item["coverage"]
+          	print(
+          		f"{item['id']}: defaultYear={item['defaultYear']} "
+          		f"areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+          		f"latest={coverage['latestYear']}:{coverage['areasInLatestYear']} "
+          		f"observations={coverage['observations']}"
+          	)
           PY
           du -h dist/statistics/oecd-revenue-statistics/index.json
           du -ch dist/statistics/oecd-revenue-statistics/releases/*/*.json | tail -n 1
@@ -168,14 +207,17 @@ jobs:
 
           check_cors "${PUBLIC_BASE}/index.json" /tmp/browser-statistics-index.json
           check_cors "${PUBLIC_BASE}/oecd-revenue-statistics/index.json" /tmp/browser-oecd-revenue-index.json
-          INDICATOR_PATH="$(python - <<'PY'
+          while IFS= read -r path; do
+          	safe_name="$(printf '%s' "$path" | tr '/.' '__')"
+          	check_cors "${PUBLIC_BASE}/oecd-revenue-statistics/${path}" "/tmp/browser-oecd-revenue-${safe_name}.json"
+          done < <(python - <<'PY'
           import json
           from pathlib import Path
           payload = json.loads(Path("/tmp/browser-oecd-revenue-index.json").read_text(encoding="utf-8"))
-          print(payload["indicators"][0]["path"])
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
           PY
-          )"
-          check_cors "${PUBLIC_BASE}/oecd-revenue-statistics/${INDICATOR_PATH}" /tmp/browser-oecd-revenue-indicator.json
+          )
 
       - name: Verify public statistics
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -194,18 +236,20 @@ jobs:
           	"${PUBLIC_BASE}/oecd-revenue-statistics/index.json?${CACHE_BUST}" --output /tmp/public-oecd-revenue-index.json
           cmp dist/statistics/oecd-revenue-statistics/index.json /tmp/public-oecd-revenue-index.json
 
-          INDICATOR_PATH="$(python - <<'PY'
+          while IFS= read -r path; do
+          	mkdir -p "/tmp/public-oecd-revenue/$(dirname "$path")"
+          	curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          		"${PUBLIC_BASE}/oecd-revenue-statistics/${path}?${CACHE_BUST}" \
+          		--output "/tmp/public-oecd-revenue/${path}"
+          	cmp "dist/statistics/oecd-revenue-statistics/${path}" "/tmp/public-oecd-revenue/${path}"
+          done < <(python - <<'PY'
           import json
           from pathlib import Path
           payload = json.loads(Path("dist/statistics/oecd-revenue-statistics/index.json").read_text(encoding="utf-8"))
-          print(payload["indicators"][0]["path"])
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
           PY
-          )"
-          mkdir -p "/tmp/public-oecd-revenue/$(dirname "$INDICATOR_PATH")"
-          curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
-          	"${PUBLIC_BASE}/oecd-revenue-statistics/${INDICATOR_PATH}?${CACHE_BUST}" \
-          	--output "/tmp/public-oecd-revenue/${INDICATOR_PATH}"
-          cmp "dist/statistics/oecd-revenue-statistics/${INDICATOR_PATH}" "/tmp/public-oecd-revenue/${INDICATOR_PATH}"
+          )
 
       - name: Upload diagnostics on failure
         if: failure()
