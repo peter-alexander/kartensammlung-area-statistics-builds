@@ -1,0 +1,88 @@
+name: Audit IMF WEO fiscal expansion
+
+on:
+  push:
+    branches:
+      - audit/imf-weo-fiscal-expansion
+    paths:
+      - ".github/workflows/audit-imf-weo-fiscal-expansion.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Audit candidate WEO fiscal indicators
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.request
+
+          BASE = "https://www.imf.org/external/datamapper/api/v1"
+          CANDIDATES = {
+          	"GGXWDG_NGDP": "gross debt",
+          	"GGR_NGDP": "revenue",
+          	"GGX_NGDP": "total expenditure",
+          	"GGXONLB_NGDP": "primary balance",
+          	"GGXWDN_NGDP": "net debt",
+          }
+
+          def get_json(url):
+          	req = urllib.request.Request(url, headers={"User-Agent": "kartensammlung-area-statistics-audit/1", "Accept": "application/json"})
+          	with urllib.request.urlopen(req, timeout=60) as response:
+          		return json.load(response)
+
+          countries_payload = get_json(f"{BASE}/countries")
+          countries = set(countries_payload.get("countries", {}))
+          print(f"country catalog: {len(countries)}")
+
+          try:
+          	catalog = get_json(f"{BASE}/")
+          	print("root keys:", sorted(catalog.keys()))
+          	for key in ("api", "indicators"):
+          		obj = catalog.get(key)
+          		if isinstance(obj, dict):
+          			print(f"{key} entries: {len(obj)}")
+          			for code in CANDIDATES:
+          				if code in obj:
+          					print(f"catalog {code}: {obj[code]}")
+          except Exception as exc:
+          	print(f"root catalog unavailable: {exc}")
+
+          for code, label in CANDIDATES.items():
+          	print("\n===", code, label, "===")
+          	try:
+          		payload = get_json(f"{BASE}/{code}")
+          	except Exception as exc:
+          		print("ERROR", repr(exc))
+          		continue
+          	print("payload keys:", sorted(payload.keys()))
+          	values = payload.get("values", {}).get(code)
+          	if not isinstance(values, dict):
+          		print("missing values")
+          		continue
+          	series = {country: yearly for country, yearly in values.items() if country in countries and isinstance(yearly, dict)}
+          	years = sorted({int(year) for yearly in series.values() for year, value in yearly.items() if str(year).isdigit() and value is not None})
+          	nobs = sum(sum(value is not None for value in yearly.values()) for yearly in series.values())
+          	with_any = sum(any(value is not None for value in yearly.values()) for yearly in series.values())
+          	print(f"countriesWithAny={with_any} observations={nobs} years={years[0] if years else None}-{years[-1] if years else None}")
+          	for year in (2023, 2024, 2025, 2026, 2030, 2031):
+          		count = sum(yearly.get(str(year)) is not None for yearly in series.values())
+          		print(f"coverage {year}: {count}")
+          	for country in ("AUT", "DEU", "USA", "IND"):
+          		yearly = series.get(country, {})
+          		present = [(int(year), value) for year, value in yearly.items() if str(year).isdigit() and value is not None]
+          		present.sort()
+          		print(country, "latest", present[-3:] if present else [])
+          PY
