@@ -86,8 +86,8 @@ def validate_config(payload: Any) -> dict[str, Any]:
 		source_indicators.add(source_indicator)
 
 		unit = indicator.get("unit")
-		if not isinstance(unit, dict) or unit.get("id") != "percent-of-gdp":
-			raise ValueError(f"IMF Fiscal Monitor indicator {indicator_id} must use percent-of-gdp.")
+		if not isinstance(unit, dict) or unit.get("id") != "percent":
+			raise ValueError(f"IMF Fiscal Monitor indicator {indicator_id} must use percent.")
 		if not str(unit.get("label", "")).strip():
 			raise ValueError(f"IMF Fiscal Monitor indicator {indicator_id} has invalid unit metadata.")
 		common.validate_classification(indicator_id, indicator.get("classification"))
