@@ -43,26 +43,6 @@ jobs:
           REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?gini-asof=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           python scripts/build_world_bank_pip.py --registry "$REGISTRY_URL"
 
-      - name: Inspect Gini output
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          provider = Path("dist/statistics/world-bank-pip")
-          index = json.loads((provider / "index.json").read_text(encoding="utf-8"))
-          entry = next(item for item in index["indicators"] if item["id"] == "income-inequality.gini")
-          payload = json.loads((provider / entry["path"]).read_text(encoding="utf-8"))
-          print(f"frequency={payload['frequency']}")
-          print(f"years={payload['availableYears'][0]}-{payload['availableYears'][-1]}")
-          print(f"defaultYear={payload['defaultYear']}")
-          print(f"coverage={payload['coverage']}")
-          year = str(payload["defaultYear"])
-          for area in ("country:AUT", "country:DEU", "country:USA", "country:IND"):
-          	print(area, payload["values"][year][area], payload["observationMetadata"][year][area])
-          PY
-
       - name: Commit production files
         shell: bash
         run: |
