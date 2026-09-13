@@ -1,0 +1,77 @@
+name: Audit World Bank electrification build
+
+on:
+  push:
+    branches:
+      - audit/electricity-access
+    paths:
+      - "config/world-bank-electrification-indicators.json"
+      - "config/statistics-providers.json"
+      - "scripts/build_world_bank_electrification.py"
+      - ".github/workflows/audit-electricity-access-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependency
+        run: python -m pip install --quiet "openpyxl>=3.1,<4"
+      - name: Validate files
+        run: |
+          python -m py_compile scripts/build_world_bank_electrification.py scripts/build_world_bank.py
+          python -m json.tool config/world-bank-electrification-indicators.json >/dev/null
+          python -m json.tool config/statistics-providers.json >/dev/null
+      - name: Build provider
+        shell: bash
+        run: |
+          set -o pipefail
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_world_bank_electrification.py --registry "$REGISTRY_URL"
+      - name: Validate output
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          provider = json.loads(Path('dist/statistics/world-bank-electrification/index.json').read_text(encoding='utf-8'))
+          global_index = json.loads(Path('dist/statistics/index.json').read_text(encoding='utf-8'))
+          assert provider['provider']['id'] == 'world-bank-electrification'
+          assert any(item['id'] == 'world-bank-electrification' for item in global_index['providers'])
+          assert len(provider['indicators']) == 1
+          item = provider['indicators'][0]
+          coverage = item['coverage']
+          assert item['id'] == 'energy.electricity-access-percent'
+          assert item['availableYears'][0] == 1990
+          assert item['availableYears'][-1] == 2024
+          assert item['defaultYear'] == 2024
+          assert coverage['directObservations'] == 5400
+          assert coverage['fallbackObservations'] == 1387
+          assert coverage['observations'] == 6787
+          assert coverage['areasWithAnyValue'] == 217
+          assert coverage['areasInDefaultYear'] == 217
+          assert coverage['directNatureCounts'] == {'C': 1280, 'E': 1534, 'M': 2586}
+          assert provider['dataset']['ignoredIso3Codes'] == ['CHI']
+          payload = json.loads(Path('dist/statistics/world-bank-electrification', item['path']).read_text(encoding='utf-8'))
+          metadata = payload['observationMetadata']
+          fallback = [obs for year in metadata.values() for obs in year.values() if obs.get('fallback') is True]
+          direct = [obs for year in metadata.values() for obs in year.values() if obs.get('fallback') is not True]
+          assert len(fallback) == 1387
+          assert len(direct) == 5400
+          fallback_years = {int(year) for year, values in metadata.items() if any(obs.get('fallback') is True for obs in values.values())}
+          assert fallback_years == set(range(1990, 2000))
+          assert payload['values']['2024']['country:COK'] == 100
+          assert payload['values']['2024']['country:NIU'] == 100
+          assert 'country:AIA' in payload['values']['2024']
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"coverage={coverage}")
+          print(f"dataset={provider['dataset']}")
+          PY
