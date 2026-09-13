@@ -1,0 +1,126 @@
+name: Audit official ILOSTAT gender pay gap distribution
+
+on:
+  push:
+    branches:
+      - audit/ilostat-gender-gap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Audit published total series
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          import math
+          import sys
+          import urllib.parse
+          import urllib.request
+          from collections import Counter
+
+          sys.path.insert(0, 'scripts')
+          import build_world_bank as common
+
+          params = urllib.parse.urlencode({
+          	'id': 'EAR_GGAP_OCU_RT_A',
+          	'type': 'code',
+          	'format': '.csv',
+          	'channel': 'ilostat',
+          })
+          url = f'https://rplumber.ilo.org/data/indicator/?{params}'
+          request = urllib.request.Request(url, headers={'User-Agent': 'kartensammlung-area-statistics-builds/1'})
+          with urllib.request.urlopen(request, timeout=120) as response:
+          	rows = list(csv.DictReader(io.StringIO(response.read().decode('utf-8-sig'))))
+
+          area_by_iso3, _ = common.load_registry(
+          	'https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?audit=ilostat-gender-pay-gap-published-distribution',
+          	120,
+          )
+
+          values = {}
+          sources = {}
+          statuses = {}
+          notes = {}
+          for row in rows:
+          	if str(row.get('classif1', '')).strip() != 'OCU_SKILL_TOTAL':
+          		continue
+          	iso3 = str(row.get('ref_area', '')).strip().upper()
+          	year_text = str(row.get('time', '')).strip()
+          	value_text = str(row.get('obs_value', '')).strip()
+          	if iso3 not in area_by_iso3 or not year_text.isdigit() or not value_text:
+          		continue
+          	key = (iso3, int(year_text))
+          	if key in values:
+          		raise RuntimeError(f'duplicate published GPG value: {key}')
+          	values[key] = float(value_text)
+          	sources[key] = str(row.get('source', '')).strip()
+          	statuses[key] = str(row.get('obs_status', '')).strip()
+          	notes[key] = (
+          		str(row.get('note_indicator', '')).strip(),
+          		str(row.get('note_source', '')).strip(),
+          	)
+
+          latest = {}
+          for (iso3, year), value in values.items():
+          	if iso3 not in latest or year > latest[iso3][0]:
+          		latest[iso3] = (year, value)
+
+          def percentile(data, p):
+          	data = sorted(data)
+          	pos = (len(data) - 1) * p
+          	lo = math.floor(pos)
+          	hi = math.ceil(pos)
+          	if lo == hi:
+          		return data[lo]
+          	return data[lo] * (hi - pos) + data[hi] * (pos - lo)
+
+          print('observations', len(values))
+          print('countries', len(latest))
+          print('years', min(year for _, year in values), max(year for _, year in values))
+          print('status counts', Counter(statuses.values()))
+          print('source count', len(set(sources.values())))
+          print('latest source years', sorted(Counter(year for year, _ in latest.values()).items(), reverse=True))
+
+          ages = Counter(2026 - year for year, _ in latest.values())
+          print('within3', sum(count for age, count in ages.items() if age <= 3))
+          print('within5', sum(count for age, count in ages.items() if age <= 5))
+          print('within10', sum(count for age, count in ages.items() if age <= 10))
+          print('oldest age', max(ages))
+          print('age distribution', sorted(ages.items()))
+
+          latest_values = [value for _, value in latest.values()]
+          print('latest min', min(latest_values), 'max', max(latest_values))
+          for p in (0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99):
+          	print(f'latest p{int(p*100):02d}', round(percentile(latest_values, p), 4))
+
+          ranked = [(value, iso3, year) for iso3, (year, value) in latest.items()]
+          print('latest lowest', sorted(ranked)[:25])
+          print('latest highest', sorted(ranked, reverse=True)[:25])
+
+          print('required/latest')
+          for iso3 in ('AUT', 'DEU', 'USA', 'IND', 'FRA', 'POL', 'BRA', 'MEX', 'JPN'):
+          	items = sorted((year, value) for (code, year), value in values.items() if code == iso3)
+          	print(iso3, items[-5:])
+
+          print('latest metadata samples')
+          for iso3 in ('AUT', 'USA', 'IND', 'FRA', 'BRA', 'MEX'):
+          	if iso3 not in latest:
+          		continue
+          	year, value = latest[iso3]
+          	key = (iso3, year)
+          	print(iso3, year, value, 'source', sources[key], 'status', statuses[key], 'notes', notes[key])
+          PY
