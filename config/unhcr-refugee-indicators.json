@@ -38,7 +38,7 @@
 			"slug": "refugees-origin",
 			"dimension": "origin",
 			"sourceField": "refugees",
-			"firstYear": 1951,
+			"firstYear": 1960,
 			"title": "Flüchtlinge nach Herkunftsland",
 			"description": "Flüchtlinge unter dem Mandat des UNHCR am Jahresende, zugeordnet nach Herkunftsland.",
 			"unit": {"id": "people", "label": "Personen", "symbol": "Personen"},
