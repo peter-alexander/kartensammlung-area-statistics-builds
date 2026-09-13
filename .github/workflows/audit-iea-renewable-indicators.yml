@@ -24,7 +24,6 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import json
-          import urllib.parse
           import urllib.request
 
           def fetch(url):
@@ -34,7 +33,13 @@ jobs:
           		print('URL', url, 'status', response.status, 'bytes', len(body), 'content-type', response.headers.get('Content-Type'))
           		return json.loads(body)
 
-          for url in ('https://api.iea.org/stats/indicators', 'https://api.iea.org/stats/countries'):
+          urls = (
+          	'https://api.iea.org/stats/indicators/?countries=USA',
+          	'https://api.iea.org/stats/indicators?countries=USA',
+          	'https://api.iea.org/stats/indicators/?countries=AUSTRIA',
+          	'https://api.iea.org/stats/indicators/?countries=WORLD',
+          )
+          for url in urls:
           	try:
           		payload = fetch(url)
           	except Exception as exc:
@@ -43,12 +48,15 @@ jobs:
           	print('type=', type(payload).__name__)
           	if isinstance(payload, dict):
           		print('keys=', list(payload)[:30])
+          		for key, value in payload.items():
+          			if isinstance(value, list):
+          				print('list-key', key, 'items', len(value))
           		items = payload.get('indicators') or payload.get('data') or payload.get('rows') or payload.get('results') or []
           	else:
           		items = payload
           	print('items=', len(items) if hasattr(items, '__len__') else 'unknown')
           	if isinstance(items, list):
-          		for item in items[:5]:
+          		for item in items[:8]:
           			print('sample=', item)
           		matches = []
           		for item in items:
