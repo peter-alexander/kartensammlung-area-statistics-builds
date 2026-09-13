@@ -56,7 +56,7 @@ jobs:
           assert coverage['directObservations'] == 5400
           assert coverage['fallbackObservations'] == 1387
           assert coverage['observations'] == 6787
-          assert coverage['areasWithAnyValue'] == 217
+          assert coverage['areasWithAnyValue'] == 218
           assert coverage['areasInDefaultYear'] == 217
           assert coverage['directNatureCounts'] == {'C': 1280, 'E': 1534, 'M': 2586}
           assert provider['dataset']['ignoredIso3Codes'] == ['CHI']
@@ -68,6 +68,10 @@ jobs:
           assert len(direct) == 5400
           fallback_years = {int(year) for year, values in metadata.items() if any(obs.get('fallback') is True for obs in values.values())}
           assert fallback_years == set(range(1990, 2000))
+          assert payload['values']['1990']['country:XKX'] == 100
+          assert payload['values']['1999']['country:XKX'] == 100
+          assert payload['observationMetadata']['1999']['country:XKX']['fallback'] is True
+          assert 'country:XKX' not in payload['values']['2024']
           assert payload['values']['2024']['country:COK'] == 100
           assert payload['values']['2024']['country:NIU'] == 100
           assert 'country:AIA' in payload['values']['2024']
