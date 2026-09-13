@@ -1,0 +1,84 @@
+{
+	"schema": "kartensammlung.edgar-statistics/v1",
+	"downloadUrl": "https://edgar.jrc.ec.europa.eu/booklet/EDGAR_2026_GHG_booklet_2026.xlsx",
+	"sourceUrl": "https://edgar.jrc.ec.europa.eu/report_2026",
+	"datasetUrl": "https://edgar.jrc.ec.europa.eu/dataset_ghg2026",
+	"provider": {
+		"id": "edgar",
+		"name": "EDGAR Community GHG Database",
+		"dataset": "EDGAR_2026_GHG",
+		"license": "CC BY 4.0",
+		"licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+		"attribution": "European Commission, Joint Research Centre (JRC), EDGAR"
+	},
+	"sheet": "GHG_by_sector_and_country",
+	"sourceInvariants": {
+		"startYear": 1970,
+		"endYear": 2025,
+		"unit": "Mt CO₂eq/yr",
+		"gwp": "IPCC AR5 GWP-100",
+		"sectors": [
+			"Agriculture",
+			"Buildings",
+			"Fuel Production",
+			"Industrial Combustion",
+			"Power Industry",
+			"Processes",
+			"Transport",
+			"Waste"
+		],
+		"allowedSubstances": [
+			"GWP_100_AR5_CH4",
+			"GWP_100_AR5_N2O"
+		]
+	},
+	"excludedCombinedAreas": {
+		"CHE": "Switzerland and Liechtenstein",
+		"ESP": "Spain and Andorra",
+		"FRA": "France and Monaco",
+		"ISR": "Israel and Palestine, State of",
+		"ITA": "Italy, San Marino and the Holy See",
+		"SDN": "Sudan and South Sudan"
+	},
+	"wdiFallback": {
+		"apiBase": "https://api.worldbank.org/v2",
+		"sourceId": 2,
+		"providerId": "world-bank",
+		"providerName": "World Bank WDI",
+		"maximumYear": 2024
+	},
+	"indicators": [
+		{
+			"id": "climate.methane-total-excluding-lulucf-mtco2e",
+			"slug": "climate-methane-total-excluding-lulucf-mtco2e",
+			"sourceIndicator": "GWP_100_AR5_CH4",
+			"fallbackWdiIndicator": "EN.GHG.CH4.MT.CE.AR5",
+			"title": "Methanemissionen gesamt",
+			"description": "Gesamte Methanemissionen ohne LULUCF, nach IPCC AR5 in Millionen Tonnen CO₂-Äquivalent.",
+			"unit": {"id": "mt-co2e", "label": "Mt CO₂e", "symbol": "Mt CO₂e"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.5, 2, 10, 50, 200, 1000]},
+			"minAreasWithAnyValue": 210,
+			"minAreasInDefaultYear": 195,
+			"minimumDirectObservations": 11000,
+			"minimumLatestYear": 2025,
+			"minimumDefaultYear": 2025,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "climate.n2o-total-excluding-lulucf-mtco2e",
+			"slug": "climate-n2o-total-excluding-lulucf-mtco2e",
+			"sourceIndicator": "GWP_100_AR5_N2O",
+			"fallbackWdiIndicator": "EN.GHG.N2O.MT.CE.AR5",
+			"title": "Lachgasemissionen gesamt",
+			"description": "Gesamte Lachgasemissionen (N₂O) ohne LULUCF, nach IPCC AR5 in Millionen Tonnen CO₂-Äquivalent.",
+			"unit": {"id": "mt-co2e", "label": "Mt CO₂e", "symbol": "Mt CO₂e"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [0.2, 1, 5, 20, 100, 500]},
+			"minAreasWithAnyValue": 210,
+			"minAreasInDefaultYear": 195,
+			"minimumDirectObservations": 11000,
+			"minimumLatestYear": 2025,
+			"minimumDefaultYear": 2025,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		}
+	]
+}
