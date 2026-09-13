@@ -21,7 +21,7 @@ EXPECTED_BREAKS = [100, 1000, 10000, 100000, 1000000, 5000000]
 EXPECTED_EXCLUDED_CODES = {"UNK", "TIB", "XXA"}
 EXPECTED_INDICATORS = {
 	"displacement.refugees-host": ("host", "refugees", 1951),
-	"displacement.refugees-origin": ("origin", "refugees", 1951),
+	"displacement.refugees-origin": ("origin", "refugees", 1960),
 	"displacement.asylum-seekers-host": ("host", "asylum_seekers", 2000),
 	"displacement.asylum-seekers-origin": ("origin", "asylum_seekers", 2000),
 	"displacement.other-international-protection-host": ("host", "oip", 2018),
