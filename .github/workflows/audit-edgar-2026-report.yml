@@ -1,0 +1,58 @@
+name: Audit EDGAR 2026 report workbook
+
+on:
+  push:
+    branches:
+      - audit/edgar-nonco2-ghg
+    paths:
+      - ".github/workflows/audit-edgar-2026-report.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install --quiet "openpyxl>=3.1,<4"
+      - name: Download EDGAR 2026 workbook
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl \
+            --fail \
+            --location \
+            --show-error \
+            --connect-timeout 20 \
+            --max-time 180 \
+            --retry 3 \
+            --retry-delay 4 \
+            --retry-all-errors \
+            --output /tmp/edgar-2026.xlsx \
+            "https://edgar.jrc.ec.europa.eu/booklet/EDGAR_2026_GHG_booklet_2026.xlsx"
+          ls -lh /tmp/edgar-2026.xlsx
+      - name: Inspect workbook structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import openpyxl
+
+          path = '/tmp/edgar-2026.xlsx'
+          wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+          print('SHEETS', wb.sheetnames)
+          for name in wb.sheetnames:
+          	ws = wb[name]
+          	print('SHEET', name, ws.max_row, ws.max_column)
+          	if name == 'GHG_by_sector_and_country':
+          		for idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+          			if idx <= 20:
+          				print('ROW', idx, row[:20])
+          			if idx > 20:
+          				break
+          PY
