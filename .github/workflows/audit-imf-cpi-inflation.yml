@@ -1,4 +1,4 @@
-name: Audit IMF CPI inflation source
+name: Test IMF CPI provider integration
 
 on:
   push:
@@ -11,9 +11,9 @@ permissions:
   contents: read
 
 jobs:
-  audit:
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v4
@@ -22,164 +22,72 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Compare direct IMF annual inflation transforms
+      - name: Validate permanent files
+        shell: bash
+        run: |
+          python -m py_compile scripts/build_imf_cpi.py scripts/build_world_bank.py
+          python -m json.tool config/imf-cpi-indicators.json >/dev/null
+          python -m json.tool config/world-bank-indicators.json >/dev/null
+          python -m json.tool config/statistics-providers.json >/dev/null
+          grep -q '"id": "imf-cpi"' config/statistics-providers.json
+          ! grep -q 'FP.CPI.TOTL.ZG' config/world-bank-indicators.json
+
+      - name: Build direct IMF CPI provider
+        shell: bash
+        run: |
+          set -o pipefail
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-imf"
+          python scripts/build_imf_cpi.py --registry "$REGISTRY_URL" 2>&1 | tee /tmp/imf-cpi.log
+
+      - name: Validate IMF CPI artifact
         shell: bash
         run: |
           python - <<'PY'
-          import csv
-          import io
           import json
-          import math
-          import statistics
-          import time
-          from urllib.request import Request, urlopen
+          from pathlib import Path
 
-          import scripts.build_world_bank as common
+          provider = json.loads(Path("dist/statistics/imf-cpi/index.json").read_text(encoding="utf-8"))
+          item = provider["indicators"][0]
+          assert provider["provider"]["id"] == "imf-cpi"
+          assert len(provider["indicators"]) == 1
+          assert item["id"] == "inflation.cpi-annual-percent"
+          assert item["sourceIndicator"] == "CPI._T.YOY_PCH_PA_PT.A"
+          assert item["availableYears"][0] == 1960
+          assert item["defaultYear"] == 2025
+          assert item["coverage"]["areasInDefaultYear"] >= 165
+          assert item["coverage"]["areasWithAnyValue"] >= 190
+          assert provider["dataset"]["structureId"].startswith("IMF.STA:CPI(")
+          assert provider["dataset"]["countryAliases"] == {"KOS": "XKX", "WBG": "PSE"}
+          payload = json.loads(Path("dist/statistics/imf-cpi", item["path"]).read_text(encoding="utf-8"))
+          assert payload["source"]["transformation"] == "YOY_PCH_PA_PT"
+          assert payload["source"]["normalization"]["valueMultiplier"] == 1
+          assert "fallback" not in payload["source"]
+          print(f"IMF snapshot={provider['activeSnapshot']}")
+          print(f"IMF structure={provider['dataset']['structureId']}")
+          print(f"IMF sourceYears={provider['dataset']['sourceStartYear']}-{provider['dataset']['sourceLatestYear']}")
+          print(f"IMF retainedYears={item['availableYears'][0]}-{item['availableYears'][-1]}")
+          print(f"IMF defaultYear={item['defaultYear']} areas={item['coverage']['areasInDefaultYear']}/{item['coverage']['registryAreas']}")
+          PY
 
-          IMF_BASE = "https://api.imf.org/external/sdmx/3.0/data/dataflow/IMF.STA/CPI/~/"
-          TRANSFORMS = ("POP_PCH_PA_PT", "YOY_PCH_PA_PT")
-          WDI_URL = "https://api.worldbank.org/v2/country/all/indicator/FP.CPI.TOTL.ZG?format=json&per_page=20000&date=1960:2026"
-          REGISTRY_URL = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
-          COUNTRY_ALIASES = {"KOS": "XKX", "WBG": "PSE"}
-          UA = "kartensammlung-area-statistics-builds/1"
+      - name: Build reduced WDI provider
+        shell: bash
+        run: |
+          set -o pipefail
+          rm -rf dist/statistics/world-bank
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-wdi"
+          python scripts/build_world_bank.py --registry "$REGISTRY_URL" 2>&1 | tee /tmp/world-bank.log
 
-          def fetch(url, accept="text/csv, application/json, */*"):
-          	delays = (0, 5, 15, 30, 60)
-          	last = None
-          	for attempt, delay in enumerate(delays, start=1):
-          		if delay:
-          			time.sleep(delay)
-          		try:
-          			req = Request(url, headers={"User-Agent": UA, "Accept": accept})
-          			with urlopen(req, timeout=120) as response:
-          				data = response.read()
-          				print(f"GET {url} -> {response.status} content-type={response.headers.get('Content-Type')} bytes={len(data)}")
-          				return data
-          		except Exception as exc:
-          			last = exc
-          			print(f"request failed ({attempt}/{len(delays)}): {url}: {exc!r}")
-          	raise RuntimeError(f"request failed: {url}") from last
+      - name: Validate reduced WDI artifact
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
 
-          def read_csv(raw):
-          	text = raw.decode("utf-8-sig")
-          	reader = csv.DictReader(io.StringIO(text))
-          	return reader.fieldnames or [], list(reader)
-
-          registry = common.load_json_source(REGISTRY_URL, 120)
-          if not isinstance(registry, dict) or registry.get("schema") != "kartensammlung.area-registry/v1":
-          	raise RuntimeError("Invalid production registry")
-          area_by_iso3 = {}
-          for area in registry.get("areas", []):
-          	if not isinstance(area, dict) or area.get("level") != "country":
-          		continue
-          	codes = area.get("codes")
-          	if not isinstance(codes, dict):
-          		continue
-          	iso3 = str(codes.get("iso3", "")).strip().upper()
-          	area_id = str(area.get("area_id", "")).strip()
-          	if iso3 and area_id:
-          		area_by_iso3[iso3] = area_id
-          if len(area_by_iso3) != 250:
-          	raise RuntimeError(f"Unexpected registry country count: {len(area_by_iso3)}")
-          print(f"registryCountries={len(area_by_iso3)}")
-
-          wdi_payload = json.loads(fetch(WDI_URL, "application/json").decode("utf-8"))
-          if not isinstance(wdi_payload, list) or len(wdi_payload) < 2 or not isinstance(wdi_payload[1], list):
-          	raise RuntimeError("Unexpected WDI response")
-          wdi = {}
-          for row in wdi_payload[1]:
-          	iso3 = str(row.get("countryiso3code", "")).strip().upper()
-          	value = row.get("value")
-          	year_raw = str(row.get("date", "")).strip()
-          	if iso3 not in area_by_iso3 or value is None or not year_raw:
-          		continue
-          	try:
-          		year = int(year_raw)
-          		value_float = float(value)
-          	except (TypeError, ValueError):
-          		continue
-          	if math.isfinite(value_float):
-          		wdi[(iso3, year)] = value_float
-          print(f"WDI observations={len(wdi)} areas={len({iso3 for iso3, _ in wdi})}")
-
-          series_by_transform = {}
-          for transform in TRANSFORMS:
-          	url = IMF_BASE + f"*.CPI._T.{transform}.A?startPeriod=1960"
-          	fields, rows = read_csv(fetch(url, "text/csv"))
-          	required = {"COUNTRY", "TYPE_OF_TRANSFORMATION", "FREQUENCY", "TIME_PERIOD", "OBS_VALUE", "IFS_FLAG"}
-          	missing = sorted(required - set(fields))
-          	if missing:
-          		raise RuntimeError(f"{transform} missing fields: {missing}")
-          	series = {}
-          	ignored_codes = set()
-          	aliases = {}
-          	non_ifs = 0
-          	duplicates = 0
-          	for row in rows:
-          		raw_iso3 = str(row.get("COUNTRY", "")).strip().upper()
-          		iso3 = COUNTRY_ALIASES.get(raw_iso3, raw_iso3)
-          		year_raw = str(row.get("TIME_PERIOD", "")).strip()
-          		value_raw = str(row.get("OBS_VALUE", "")).strip()
-          		if not raw_iso3 or not year_raw or not value_raw:
-          			continue
-          		if str(row.get("TYPE_OF_TRANSFORMATION", "")).strip() != transform or str(row.get("FREQUENCY", "")).strip() != "A":
-          			raise RuntimeError(f"Unexpected dimensions in {transform}")
-          		if str(row.get("IFS_FLAG", "")).strip().lower() != "true":
-          			non_ifs += 1
-          		if raw_iso3 != iso3:
-          			aliases[f"{raw_iso3}->{iso3}"] = aliases.get(f"{raw_iso3}->{iso3}", 0) + 1
-          		if iso3 not in area_by_iso3:
-          			ignored_codes.add(raw_iso3)
-          			continue
-          		try:
-          			year = int(year_raw)
-          			value = float(value_raw)
-          		except ValueError:
-          			continue
-          		if not math.isfinite(value):
-          			continue
-          		key = (iso3, year)
-          		if key in series:
-          			duplicates += 1
-          			if not math.isclose(series[key], value, rel_tol=0, abs_tol=1e-12):
-          				raise RuntimeError(f"Conflicting {transform} duplicate {key}")
-          		series[key] = value
-          	series_by_transform[transform] = series
-
-          	overlap = sorted(set(series) & set(wdi))
-          	direct_only = sorted(set(series) - set(wdi))
-          	wdi_only = sorted(set(wdi) - set(series))
-          	diffs = [(key, series[key], wdi[key], abs(series[key] - wdi[key])) for key in overlap]
-          	abs_diffs = [item[3] for item in diffs]
-
-          	def within(limit):
-          		return sum(1 for diff in abs_diffs if diff <= limit)
-
-          	years = sorted({year for _, year in series})
-          	areas = {iso3 for iso3, _ in series}
-          	print(f"=== {transform}")
-          	print(f"observations={len(series)} areas={len(areas)} years={years[0] if years else None}-{years[-1] if years else None}")
-          	print(f"aliases={dict(sorted(aliases.items()))} ignoredCodes={sorted(ignored_codes)} nonIFS={non_ifs} duplicates={duplicates}")
-          	print(f"overlap={len(overlap)} directOnly={len(direct_only)} wdiOnly={len(wdi_only)}")
-          	if abs_diffs:
-          		print(f"exact={within(1e-12)} within0.000001={within(0.000001)} within0.0001={within(0.0001)} within0.01={within(0.01)} within0.1={within(0.1)} within1={within(1.0)}")
-          		print(f"meanAbsDiff={statistics.fmean(abs_diffs)} medianAbsDiff={statistics.median(abs_diffs)} maxAbsDiff={max(abs_diffs)}")
-          		print("largestDifferences:")
-          		for (iso3, year), imf_value, wdi_value, diff in sorted(diffs, key=lambda item: item[3], reverse=True)[:15]:
-          			print(f"  {iso3} {year}: IMF={imf_value:.12g} WDI={wdi_value:.12g} absDiff={diff:.12g}")
-          	print("recentCoverage:")
-          	for year in range(2016, 2026):
-          		direct_count = sum(1 for iso3 in area_by_iso3 if (iso3, year) in series)
-          		wdi_count = sum(1 for iso3 in area_by_iso3 if (iso3, year) in wdi)
-          		union_count = sum(1 for iso3 in area_by_iso3 if (iso3, year) in series or (iso3, year) in wdi)
-          		print(f"  {year}: IMF={direct_count} WDI={wdi_count} union={union_count}")
-
-          first = series_by_transform[TRANSFORMS[0]]
-          second = series_by_transform[TRANSFORMS[1]]
-          common = sorted(set(first) & set(second))
-          transform_diffs = [(key, abs(first[key] - second[key])) for key in common]
-          print("=== Transform-to-transform comparison")
-          print(f"overlap={len(common)} exact={sum(1 for _, diff in transform_diffs if diff <= 1e-12)} maxAbsDiff={max((diff for _, diff in transform_diffs), default=0)}")
-          for (iso3, year), diff in sorted(transform_diffs, key=lambda item: item[1], reverse=True)[:10]:
-          	print(f"  {iso3} {year}: POP={first[(iso3, year)]:.12g} YOY={second[(iso3, year)]:.12g} absDiff={diff:.12g}")
+          provider = json.loads(Path("dist/statistics/world-bank/index.json").read_text(encoding="utf-8"))
+          ids = {item["id"] for item in provider["indicators"]}
+          assert len(provider["indicators"]) == 21
+          assert "inflation.cpi-annual-percent" not in ids
+          print(f"WDI snapshot={provider['activeSnapshot']}")
+          print(f"WDI indicators={len(provider['indicators'])}")
           PY
