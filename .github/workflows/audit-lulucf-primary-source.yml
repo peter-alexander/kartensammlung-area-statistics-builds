@@ -29,6 +29,7 @@ jobs:
           import csv
           import io
           import json
+          from urllib.parse import quote
           from urllib.request import Request, urlopen
 
           USER_AGENT = "kartensammlung-area-statistics-builds/1"
@@ -69,11 +70,9 @@ jobs:
           	if match is None:
           		print("available_files=" + repr([item.get("key") for item in files]))
           		raise RuntimeError(f"Missing expected file {filename!r} in Zenodo record {record}")
-          	file_url = str(match.get("links", {}).get("content") or "")
-          	if not file_url:
-          		raise RuntimeError(f"Missing content URL for {filename!r}")
+          	file_url = f"https://zenodo.org/records/{record}/files/{quote(filename)}?download=1"
           	raw = fetch(file_url, "text/csv, application/octet-stream, */*")
-          	print(f"file={filename} bytes={len(raw)} md5={match.get('checksum')}")
+          	print(f"file={filename} bytes={len(raw)} checksum={match.get('checksum')} url={file_url}")
           	text = raw.decode("utf-8-sig")
           	reader = csv.DictReader(io.StringIO(text))
           	fields = reader.fieldnames or []
