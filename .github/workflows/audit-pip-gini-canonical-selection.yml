@@ -108,14 +108,36 @@ jobs:
           print("unique selection counts=" + repr(dict(criteria_counts)))
           print(f"resolved_duplicates={len(resolved)} unresolved_duplicates={len(unresolved)}")
 
-          selected_rows = []
+          selected_by_key = {}
           for key, rows in survey_groups.items():
           	if len(rows) == 1:
-          		selected_rows.append(rows[0])
+          		selected_by_key[key] = rows[0]
           	elif key in resolved:
-          		selected_rows.append(resolved[key])
-          print(f"canonical_survey_rows={len(selected_rows)}")
-          print(f"canonical_countries={len({str(row['country_code']) for row in selected_rows})}")
+          		selected_by_key[key] = resolved[key]
+
+          all_missing_annual = []
+          all_welfare_mismatches = []
+          for key, row in selected_by_key.items():
+          	canonical = annual_by_key.get(key)
+          	if canonical is None:
+          		all_missing_annual.append(key)
+          		continue
+          	if row.get("welfare_type") != canonical.get("welfare_type"):
+          		all_welfare_mismatches.append((key, row.get("welfare_type"), canonical.get("welfare_type")))
+
+          print(f"canonical_survey_rows={len(selected_by_key)}")
+          print(f"canonical_countries={len({key[0] for key in selected_by_key})}")
+          print(f"all_selected_missing_annual={len(all_missing_annual)}")
+          print(f"all_selected_welfare_mismatches={len(all_welfare_mismatches)}")
+          if all_missing_annual:
+          	print("missing annual examples=" + repr(all_missing_annual[:20]))
+          if all_welfare_mismatches:
+          	print("welfare mismatch examples=" + repr(all_welfare_mismatches[:20]))
+
+          by_year = Counter(key[1] for key in selected_by_key)
+          print("canonical exact-year coverage:")
+          for year in sorted(by_year)[-10:]:
+          	print(f"  {year}: {by_year[year]}")
 
           for key in sorted(duplicates)[:20]:
           	rows = duplicates[key]
@@ -132,4 +154,7 @@ jobs:
           		print(key, reason, "annual=", {field: canonical.get(field) for field in ("welfare_type", "survey_acronym", "survey_year", "comparable_spell") } if canonical else None)
           		for row in rows:
           			print(" ", {field: row.get(field) for field in ("welfare_type", "survey_acronym", "survey_year", "comparable_spell", "gini")})
+
+          if unresolved or all_missing_annual or all_welfare_mismatches:
+          	raise RuntimeError("PIP canonical Gini selection is not fully consistent.")
           PY
