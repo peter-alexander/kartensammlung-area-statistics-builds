@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Compare IMF CPI-derived inflation with WDI
+      - name: Audit IMF CPI aliases and index breaks
         shell: bash
         run: |
           python - <<'PY'
@@ -38,8 +38,10 @@ jobs:
           import scripts.build_world_bank as common
 
           IMF_URL = "https://api.imf.org/external/sdmx/3.0/data/dataflow/IMF.STA/CPI/~/*.CPI._T.IX.A?startPeriod=1959"
+          IMF_TRANSFORM_URL = "https://api.imf.org/external/sdmx/3.0/data/dataflow/IMF.STA/CPI/~/USA.CPI._T.*.A?startPeriod=2020"
           WDI_URL = "https://api.worldbank.org/v2/country/all/indicator/FP.CPI.TOTL.ZG?format=json&per_page=20000&date=1960:2026"
           REGISTRY_URL = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+          COUNTRY_ALIASES = {"KOS": "XKX", "WBG": "PSE"}
           UA = "kartensammlung-area-statistics-builds/1"
 
           def fetch(url, accept="text/csv, application/json, */*"):
@@ -58,6 +60,11 @@ jobs:
           			last = exc
           			print(f"request failed ({attempt}/{len(delays)}): {url}: {exc!r}")
           	raise RuntimeError(f"request failed: {url}") from last
+
+          def read_csv(raw):
+          	text = raw.decode("utf-8-sig")
+          	reader = csv.DictReader(io.StringIO(text))
+          	return reader.fieldnames or [], list(reader)
 
           registry = common.load_json_source(REGISTRY_URL, 120)
           if not isinstance(registry, dict) or registry.get("schema") != "kartensammlung.area-registry/v1":
@@ -80,33 +87,43 @@ jobs:
           if len(area_by_iso3) != 250:
           	raise RuntimeError(f"Unexpected registry country count: {len(area_by_iso3)}")
 
-          raw = fetch(IMF_URL, "text/csv")
-          text = raw.decode("utf-8-sig")
-          reader = csv.DictReader(io.StringIO(text))
-          fields = reader.fieldnames or []
-          required = {"COUNTRY", "INDEX_TYPE", "COICOP_1999", "TYPE_OF_TRANSFORMATION", "FREQUENCY", "TIME_PERIOD", "OBS_VALUE", "IFS_FLAG"}
+          transform_fields, transform_rows = read_csv(fetch(IMF_TRANSFORM_URL, "text/csv"))
+          transformations = sorted({str(row.get("TYPE_OF_TRANSFORMATION", "")).strip() for row in transform_rows if str(row.get("COUNTRY", "")).strip()})
+          print(f"USA annual transformation codes={transformations}")
+
+          fields, source_rows = read_csv(fetch(IMF_URL, "text/csv"))
+          required = {
+          	"COUNTRY", "INDEX_TYPE", "COICOP_1999", "TYPE_OF_TRANSFORMATION", "FREQUENCY",
+          	"TIME_PERIOD", "OBS_VALUE", "IFS_FLAG", "REFERENCE_PERIOD", "COMMON_REFERENCE_PERIOD",
+          	"OVERLAP", "DERIVATION_TYPE", "STATUS", "TRANSFORMATION"
+          }
           missing = sorted(required - set(fields))
           if missing:
           	raise RuntimeError("IMF CSV missing fields: " + ", ".join(missing))
 
           index_by_country = defaultdict(dict)
+          meta_by_country = defaultdict(dict)
           imf_source_rows = 0
           ignored_imf_codes = set()
+          alias_rows = defaultdict(int)
           non_ifs_rows = 0
           duplicate_rows = 0
-          for row in reader:
-          	iso3 = str(row.get("COUNTRY", "")).strip().upper()
+          for row in source_rows:
+          	raw_iso3 = str(row.get("COUNTRY", "")).strip().upper()
+          	iso3 = COUNTRY_ALIASES.get(raw_iso3, raw_iso3)
           	year_raw = str(row.get("TIME_PERIOD", "")).strip()
           	value_raw = str(row.get("OBS_VALUE", "")).strip()
-          	if not iso3 or not year_raw or not value_raw:
+          	if not raw_iso3 or not year_raw or not value_raw:
           		continue
           	if row.get("INDEX_TYPE") != "CPI" or row.get("COICOP_1999") != "_T" or row.get("TYPE_OF_TRANSFORMATION") != "IX" or row.get("FREQUENCY") != "A":
           		raise RuntimeError("Unexpected IMF CPI series dimensions")
           	imf_source_rows += 1
           	if str(row.get("IFS_FLAG", "")).strip().lower() != "true":
           		non_ifs_rows += 1
+          	if raw_iso3 != iso3:
+          		alias_rows[f"{raw_iso3}->{iso3}"] += 1
           	if iso3 not in area_by_iso3:
-          		ignored_imf_codes.add(iso3)
+          		ignored_imf_codes.add(raw_iso3)
           		continue
           	try:
           		year = int(year_raw)
@@ -121,14 +138,31 @@ jobs:
           		if not math.isclose(previous, value, rel_tol=0, abs_tol=1e-12):
           			raise RuntimeError(f"Conflicting IMF duplicate {iso3} {year}: {previous} vs {value}")
           	index_by_country[iso3][year] = value
+          	meta_by_country[iso3][year] = {
+          		"rawCountry": raw_iso3,
+          		"referencePeriod": str(row.get("REFERENCE_PERIOD", "")).strip(),
+          		"commonReferencePeriod": str(row.get("COMMON_REFERENCE_PERIOD", "")).strip(),
+          		"overlap": str(row.get("OVERLAP", "")).strip(),
+          		"derivationType": str(row.get("DERIVATION_TYPE", "")).strip(),
+          		"status": str(row.get("STATUS", "")).strip(),
+          		"transformation": str(row.get("TRANSFORMATION", "")).strip(),
+          	}
 
           direct = {}
+          continuity = {}
           for iso3, series in index_by_country.items():
           	for year, value in series.items():
           		previous = series.get(year - 1)
           		if previous is None or previous <= 0:
           			continue
           		direct[(iso3, year)] = (value / previous - 1.0) * 100.0
+          		current_meta = meta_by_country[iso3].get(year, {})
+          		previous_meta = meta_by_country[iso3].get(year - 1, {})
+          		continuity[(iso3, year)] = {
+          			"referencePeriodChanged": current_meta.get("referencePeriod") != previous_meta.get("referencePeriod"),
+          			"commonReferencePeriodChanged": current_meta.get("commonReferencePeriod") != previous_meta.get("commonReferencePeriod"),
+          			"overlapChanged": current_meta.get("overlap") != previous_meta.get("overlap"),
+          		}
 
           wdi_payload = json.loads(fetch(WDI_URL, "application/json").decode("utf-8"))
           if not isinstance(wdi_payload, list) or len(wdi_payload) < 2 or not isinstance(wdi_payload[1], list):
@@ -169,6 +203,7 @@ jobs:
           print("=== IMF CPI index")
           print(f"sourceRows={imf_source_rows}")
           print(f"mappedIndexAreas={len(index_by_country)}")
+          print(f"aliases={dict(sorted(alias_rows.items()))}")
           print(f"ignoredCodes={sorted(ignored_imf_codes)}")
           print(f"nonIFSRows={non_ifs_rows}")
           print(f"duplicateRows={duplicate_rows}")
@@ -190,9 +225,18 @@ jobs:
           	print(f"medianAbsDiff={statistics.median(abs_diffs)}")
           	print(f"maxAbsDiff={max(abs_diffs)}")
 
-          print("=== Largest differences")
-          for (iso3, year), imf_value, wdi_value, diff in sorted(diffs, key=lambda item: item[3], reverse=True)[:30]:
-          	print(f"{iso3} {year}: IMF-derived={imf_value:.12g} WDI={wdi_value:.12g} absDiff={diff:.12g}")
+          print("=== Differences over 0.1 percentage points with metadata")
+          for (iso3, year), imf_value, wdi_value, diff in sorted(diffs, key=lambda item: item[3], reverse=True):
+          	if diff <= 0.1:
+          		break
+          	series = index_by_country[iso3]
+          	print(
+          		f"{iso3} {year}: IMF-derived={imf_value:.12g} WDI={wdi_value:.12g} absDiff={diff:.12g} "
+          		f"indexPrev={series.get(year - 1)} indexCurrent={series.get(year)} "
+          		f"continuity={json.dumps(continuity.get((iso3, year), {}), sort_keys=True)}"
+          	)
+          	print("  previous=" + json.dumps(meta_by_country[iso3].get(year - 1, {}), sort_keys=True))
+          	print("  current=" + json.dumps(meta_by_country[iso3].get(year, {}), sort_keys=True))
 
           print("=== Recent coverage")
           all_years = sorted(set(direct_years) | set(wdi_years))
@@ -202,11 +246,7 @@ jobs:
           	union_count = sum(1 for iso3 in area_by_iso3 if (iso3, year) in direct or (iso3, year) in wdi)
           	print(f"{year}: IMF={direct_count} WDI={wdi_count} union={union_count}")
 
-          print("=== Direct-only recent examples")
-          for iso3, year in sorted(direct_only, key=lambda key: (key[1], key[0]), reverse=True)[:30]:
-          	print(f"{iso3} {year}: {direct[(iso3, year)]:.12g}")
-
           print("=== WDI-only recent examples")
-          for iso3, year in sorted(wdi_only, key=lambda key: (key[1], key[0]), reverse=True)[:30]:
+          for iso3, year in sorted(wdi_only, key=lambda key: (key[1], key[0]), reverse=True)[:40]:
           	print(f"{iso3} {year}: {wdi[(iso3, year)]:.12g}")
           PY
