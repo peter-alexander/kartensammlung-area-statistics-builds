@@ -12,23 +12,49 @@ permissions:
 
 jobs:
   audit:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gas: CH4
+            gwp: "28"
+            wdi: EN.GHG.CH4.MT.CE.AR5
+            url: https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/EDGAR/datasets/EDGAR_2025_GHG/EDGAR_CH4_1970_2024.zip
+          - gas: N2O
+            gwp: "265"
+            wdi: EN.GHG.N2O.MT.CE.AR5
+            url: https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/EDGAR/datasets/EDGAR_2025_GHG/EDGAR_N2O_1970_2024.zip
+    name: audit-${{ matrix.gas }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 12
+    env:
+      GAS: ${{ matrix.gas }}
+      GWP: ${{ matrix.gwp }}
+      WDI_INDICATOR: ${{ matrix.wdi }}
+      EDGAR_URL: ${{ matrix.url }}
     steps:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install dependencies
         run: python -m pip install --quiet "openpyxl>=3.1,<4"
-      - name: Download EDGAR archives
+      - name: Download EDGAR archive
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/edgar
-          CURL_RETRY=(--fail --location --show-error --connect-timeout 30 --max-time 300 --retry 2 --retry-delay 5 --retry-all-errors)
-          curl "${CURL_RETRY[@]}" --output /tmp/edgar/CH4.zip "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/EDGAR/datasets/EDGAR_2025_GHG/EDGAR_CH4_1970_2024.zip"
-          curl "${CURL_RETRY[@]}" --output /tmp/edgar/N2O.zip "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/EDGAR/datasets/EDGAR_2025_GHG/EDGAR_N2O_1970_2024.zip"
-          ls -lh /tmp/edgar/*.zip
+          curl \
+            --fail \
+            --location \
+            --show-error \
+            --connect-timeout 20 \
+            --max-time 180 \
+            --retry 3 \
+            --retry-delay 4 \
+            --retry-all-errors \
+            --output "/tmp/edgar/${GAS}.zip" \
+            "$EDGAR_URL"
+          ls -lh "/tmp/edgar/${GAS}.zip"
       - name: Compare EDGAR with WDI
         shell: bash
         run: |
@@ -37,6 +63,7 @@ jobs:
           import io
           import json
           import math
+          import os
           from pathlib import Path
           import urllib.parse
           import urllib.request
@@ -45,14 +72,16 @@ jobs:
 
           import openpyxl
 
-          HEADERS = {'User-Agent': 'kartensammlung-area-statistics-builds/1', 'Accept': 'application/json'}
-          GAS = {
-          	'CH4': {'gwp': 28.0, 'wdi': 'EN.GHG.CH4.MT.CE.AR5'},
-          	'N2O': {'gwp': 265.0, 'wdi': 'EN.GHG.N2O.MT.CE.AR5'},
+          gas = os.environ['GAS']
+          gwp = float(os.environ['GWP'])
+          indicator = os.environ['WDI_INDICATOR']
+          headers_http = {
+          	'User-Agent': 'kartensammlung-area-statistics-builds/1',
+          	'Accept': 'application/json',
           }
 
           def fetch_json(url):
-          	request = urllib.request.Request(url, headers=HEADERS)
+          	request = urllib.request.Request(url, headers=headers_http)
           	with urllib.request.urlopen(request, timeout=90) as response:
           		body = response.read()
           		print('FETCH', url, response.status, len(body))
@@ -66,128 +95,140 @@ jobs:
           }
           print('REGISTRY', len(registry_iso3))
 
-          def load_direct(gas, gwp):
-          	body = Path(f'/tmp/edgar/{gas}.zip').read_bytes()
-          	with zipfile.ZipFile(io.BytesIO(body)) as archive:
-          		xlsx_name = next(name for name in archive.namelist() if name.lower().endswith('.xlsx'))
-          		xlsx = archive.read(xlsx_name)
-          	wb = openpyxl.load_workbook(io.BytesIO(xlsx), read_only=True, data_only=True)
-          	ws = wb['TOTALS BY COUNTRY']
+          body = Path(f'/tmp/edgar/{gas}.zip').read_bytes()
+          with zipfile.ZipFile(io.BytesIO(body)) as archive:
+          	xlsx_name = next(name for name in archive.namelist() if name.lower().endswith('.xlsx'))
+          	xlsx = archive.read(xlsx_name)
 
-          	rows = list(ws.iter_rows(values_only=True))
-          	header_idx = None
-          	for pos, row in enumerate(rows[:30]):
-          		values = [str(value).strip() if value is not None else '' for value in row]
-          		year_hits = sum(1 for value in values if value.isdigit() and 1970 <= int(value) <= 2024)
-          		if year_hits >= 40:
-          			header_idx = pos
-          			break
-          	if header_idx is None:
-          		raise RuntimeError(f'Could not find header in {gas} TOTALS BY COUNTRY')
+          wb = openpyxl.load_workbook(io.BytesIO(xlsx), read_only=True, data_only=True)
+          ws = wb['TOTALS BY COUNTRY']
+          rows = list(ws.iter_rows(values_only=True))
 
-          	headers = [str(value).strip() if value is not None else '' for value in rows[header_idx]]
-          	print('HEADER', gas, header_idx + 1, headers[:12], headers[-5:])
-          	for row in rows[header_idx + 1:header_idx + 6]:
-          		print('SAMPLE', gas, row[:12])
+          header_idx = None
+          for pos, row in enumerate(rows[:30]):
+          	values = [str(value).strip() if value is not None else '' for value in row]
+          	year_hits = sum(1 for value in values if value.isdigit() and 1970 <= int(value) <= 2024)
+          	if year_hits >= 40:
+          		header_idx = pos
+          		break
+          if header_idx is None:
+          	raise RuntimeError(f'Could not find header in {gas} TOTALS BY COUNTRY')
 
-          	iso_candidates = [i for i, name in enumerate(headers) if name.upper() in {'ISO_A3', 'ISO3', 'COUNTRY_CODE_A3', 'COUNTRY CODE A3', 'COUNTRY_CODE'}]
-          	if not iso_candidates:
-          		iso_candidates = [i for i, name in enumerate(headers) if ('A3' in name.upper() or 'ISO' in name.upper()) and 'CODE' in name.upper()]
-          	if not iso_candidates:
-          		raise RuntimeError(f'Could not identify ISO3 column for {gas}: {headers[:12]}')
-          	iso_col = iso_candidates[0]
-          	name_candidates = [i for i, name in enumerate(headers) if name.upper() in {'NAME', 'COUNTRY', 'COUNTRY_NAME', 'COUNTRY NAME'}]
-          	name_col = name_candidates[0] if name_candidates else None
-          	year_cols = {int(name): i for i, name in enumerate(headers) if name.isdigit() and 1970 <= int(name) <= 2024}
-          	if set(year_cols) != set(range(1970, 2025)):
-          		raise RuntimeError(f'Unexpected year columns for {gas}: {min(year_cols, default=None)}-{max(year_cols, default=None)}, count={len(year_cols)}')
+          sheet_headers = [str(value).strip() if value is not None else '' for value in rows[header_idx]]
+          print('HEADER', gas, header_idx + 1, sheet_headers[:12], sheet_headers[-5:])
+          for row in rows[header_idx + 1:header_idx + 6]:
+          	print('SAMPLE', gas, row[:12])
 
-          	direct = {}
-          	unmapped = Counter()
-          	for row in rows[header_idx + 1:]:
-          		iso3 = str(row[iso_col] or '').strip().upper() if iso_col < len(row) else ''
-          		name = str(row[name_col] or '').strip() if name_col is not None and name_col < len(row) else ''
-          		if not iso3:
-          			continue
-          		if iso3 not in registry_iso3:
-          			unmapped[(iso3, name)] += 1
-          			continue
-          		for year, col in year_cols.items():
-          			value = row[col] if col < len(row) else None
-          			if value is None or value == '':
-          				continue
-          			try:
-          				value = float(value)
-          			except (TypeError, ValueError):
-          				continue
-          			if not math.isfinite(value):
-          				continue
-          			# EDGAR totals are Gg (= kt) gas/year. Convert with AR5 GWP to Mt CO2e.
-          			co2e = value * gwp / 1000.0
-          			direct[(iso3, year)] = co2e
-          	return direct, unmapped
+          iso_candidates = [
+          	i for i, name in enumerate(sheet_headers)
+          	if name.upper() in {'ISO_A3', 'ISO3', 'COUNTRY_CODE_A3', 'COUNTRY CODE A3', 'COUNTRY_CODE'}
+          ]
+          if not iso_candidates:
+          	iso_candidates = [
+          		i for i, name in enumerate(sheet_headers)
+          		if ('A3' in name.upper() or 'ISO' in name.upper()) and 'CODE' in name.upper()
+          	]
+          if not iso_candidates:
+          	raise RuntimeError(f'Could not identify ISO3 column for {gas}: {sheet_headers[:12]}')
+          iso_col = iso_candidates[0]
 
-          def load_wdi(indicator):
-          	url = 'https://api.worldbank.org/v2/country/all/indicator/' + indicator + '?' + urllib.parse.urlencode({
-          		'format': 'json',
-          		'per_page': 20000,
-          		'source': 2,
-          	})
-          	payload = fetch_json(url)
-          	if not isinstance(payload, list) or len(payload) < 2:
-          		raise RuntimeError(f'Unexpected WDI response for {indicator}')
-          	values = {}
-          	for row in payload[1]:
-          		iso3 = str(row.get('countryiso3code', '')).strip().upper()
-          		if iso3 not in registry_iso3 or row.get('value') is None:
+          name_candidates = [
+          	i for i, name in enumerate(sheet_headers)
+          	if name.upper() in {'NAME', 'COUNTRY', 'COUNTRY_NAME', 'COUNTRY NAME'}
+          ]
+          name_col = name_candidates[0] if name_candidates else None
+          year_cols = {
+          	int(name): i
+          	for i, name in enumerate(sheet_headers)
+          	if name.isdigit() and 1970 <= int(name) <= 2024
+          }
+          if set(year_cols) != set(range(1970, 2025)):
+          	raise RuntimeError(
+          		f'Unexpected year columns for {gas}: '
+          		f'{min(year_cols, default=None)}-{max(year_cols, default=None)}, count={len(year_cols)}'
+          	)
+
+          direct = {}
+          unmapped = Counter()
+          for row in rows[header_idx + 1:]:
+          	iso3 = str(row[iso_col] or '').strip().upper() if iso_col < len(row) else ''
+          	name = str(row[name_col] or '').strip() if name_col is not None and name_col < len(row) else ''
+          	if not iso3:
+          		continue
+          	if iso3 not in registry_iso3:
+          		unmapped[(iso3, name)] += 1
+          		continue
+          	for year, col in year_cols.items():
+          		value = row[col] if col < len(row) else None
+          		if value is None or value == '':
           			continue
           		try:
-          			year = int(row['date'])
-          			value = float(row['value'])
-          		except (KeyError, TypeError, ValueError):
+          			value = float(value)
+          		except (TypeError, ValueError):
           			continue
-          		if math.isfinite(value):
-          			values[(iso3, year)] = value
-          	return values
+          		if not math.isfinite(value):
+          			continue
+          		# EDGAR totals are Gg (= kt) gas/year. Convert AR5 GWP to Mt CO2e.
+          		direct[(iso3, year)] = value * gwp / 1000.0
 
-          for gas, config in GAS.items():
-          	direct, unmapped = load_direct(gas, config['gwp'])
-          	wdi = load_wdi(config['wdi'])
-          	overlap = sorted(set(direct) & set(wdi))
-          	direct_only = sorted(set(direct) - set(wdi))
-          	wdi_only = sorted(set(wdi) - set(direct))
-          	diffs = sorted(
-          		((key, direct[key], wdi[key], abs(direct[key] - wdi[key])) for key in overlap),
-          		key=lambda item: item[3], reverse=True,
-          	)
-          	rel = [item[3] / abs(item[2]) for item in diffs if item[2] != 0]
+          wdi_url = 'https://api.worldbank.org/v2/country/all/indicator/' + indicator + '?' + urllib.parse.urlencode({
+          	'format': 'json',
+          	'per_page': 20000,
+          	'source': 2,
+          })
+          payload = fetch_json(wdi_url)
+          if not isinstance(payload, list) or len(payload) < 2:
+          	raise RuntimeError(f'Unexpected WDI response for {indicator}')
 
-          	print('\n===', gas, '===')
-          	print('DIRECT', len(direct), 'areas', len({c for c, _ in direct}), 'years', min(y for _, y in direct), max(y for _, y in direct))
-          	print('WDI', len(wdi), 'areas', len({c for c, _ in wdi}), 'years', min(y for _, y in wdi), max(y for _, y in wdi))
-          	print('OVERLAP', len(overlap))
-          	print('DIRECT_ONLY', len(direct_only))
-          	print('WDI_ONLY', len(wdi_only))
-          	print('WDI_ONLY_FROM_2000', sum(1 for _, year in wdi_only if year >= 2000))
-          	print('WDI_ONLY_2024', sum(1 for _, year in wdi_only if year == 2024))
-          	print('DIRECT_ONLY_2024', sum(1 for _, year in direct_only if year == 2024))
-          	print('DIFF_GT_1E-9', sum(1 for item in diffs if item[3] > 1e-9))
-          	print('DIFF_GT_1E-6', sum(1 for item in diffs if item[3] > 1e-6))
-          	print('DIFF_GT_0.001', sum(1 for item in diffs if item[3] > 0.001))
-          	print('DIFF_GT_0.01', sum(1 for item in diffs if item[3] > 0.01))
-          	print('DIFF_GT_0.1', sum(1 for item in diffs if item[3] > 0.1))
-          	print('MAX_DIFF', diffs[0] if diffs else None)
-          	print('MAX_REL_DIFF', max(rel) if rel else None)
-          	print('TOP_DIFFS')
-          	for item in diffs[:20]:
-          		print(item)
-          	print('UNMAPPED', len(unmapped), unmapped.most_common(50))
-          	print('DIRECT_ONLY_SAMPLE', direct_only[:100])
-          	print('WDI_ONLY_SAMPLE', wdi_only[:100])
-          	for year in (1970, 1990, 2000, 2020, 2021, 2022, 2023, 2024):
-          		print('YEAR', year, 'DIRECT', sum(1 for _, y in direct if y == year), 'WDI', sum(1 for _, y in wdi if y == year))
-          	for iso3 in ('AUT', 'DEU', 'USA', 'IND', 'CHN', 'BRA', 'NGA', 'XKX'):
-          		for year in (1990, 2000, 2020, 2024):
-          			if (iso3, year) in direct or (iso3, year) in wdi:
-          				print('VALUE', iso3, year, 'DIRECT', direct.get((iso3, year)), 'WDI', wdi.get((iso3, year)))
+          wdi = {}
+          for row in payload[1]:
+          	iso3 = str(row.get('countryiso3code', '')).strip().upper()
+          	if iso3 not in registry_iso3 or row.get('value') is None:
+          		continue
+          	try:
+          		year = int(row['date'])
+          		value = float(row['value'])
+          	except (KeyError, TypeError, ValueError):
+          		continue
+          	if math.isfinite(value):
+          		wdi[(iso3, year)] = value
+
+          overlap = sorted(set(direct) & set(wdi))
+          direct_only = sorted(set(direct) - set(wdi))
+          wdi_only = sorted(set(wdi) - set(direct))
+          diffs = sorted(
+          	((key, direct[key], wdi[key], abs(direct[key] - wdi[key])) for key in overlap),
+          	key=lambda item: item[3],
+          	reverse=True,
+          )
+          rel = [item[3] / abs(item[2]) for item in diffs if item[2] != 0]
+
+          print('\n===', gas, '===')
+          print('DIRECT', len(direct), 'areas', len({c for c, _ in direct}), 'years', min(y for _, y in direct), max(y for _, y in direct))
+          print('WDI', len(wdi), 'areas', len({c for c, _ in wdi}), 'years', min(y for _, y in wdi), max(y for _, y in wdi))
+          print('OVERLAP', len(overlap))
+          print('DIRECT_ONLY', len(direct_only))
+          print('WDI_ONLY', len(wdi_only))
+          print('WDI_ONLY_FROM_2000', sum(1 for _, year in wdi_only if year >= 2000))
+          print('WDI_ONLY_2024', sum(1 for _, year in wdi_only if year == 2024))
+          print('DIRECT_ONLY_2024', sum(1 for _, year in direct_only if year == 2024))
+          print('DIFF_GT_1E-9', sum(1 for item in diffs if item[3] > 1e-9))
+          print('DIFF_GT_1E-6', sum(1 for item in diffs if item[3] > 1e-6))
+          print('DIFF_GT_0.001', sum(1 for item in diffs if item[3] > 0.001))
+          print('DIFF_GT_0.01', sum(1 for item in diffs if item[3] > 0.01))
+          print('DIFF_GT_0.1', sum(1 for item in diffs if item[3] > 0.1))
+          print('MAX_DIFF', diffs[0] if diffs else None)
+          print('MAX_REL_DIFF', max(rel) if rel else None)
+          print('TOP_DIFFS')
+          for item in diffs[:20]:
+          	print(item)
+          print('UNMAPPED', len(unmapped), unmapped.most_common(50))
+          print('DIRECT_ONLY_SAMPLE', direct_only[:100])
+          print('WDI_ONLY_SAMPLE', wdi_only[:100])
+          for year in (1970, 1990, 2000, 2020, 2021, 2022, 2023, 2024):
+          	print('YEAR', year, 'DIRECT', sum(1 for _, y in direct if y == year), 'WDI', sum(1 for _, y in wdi if y == year))
+          for iso3 in ('AUT', 'DEU', 'USA', 'IND', 'CHN', 'BRA', 'NGA', 'XKX'):
+          	for year in (1990, 2000, 2020, 2024):
+          		if (iso3, year) in direct or (iso3, year) in wdi:
+          			print('VALUE', iso3, year, 'DIRECT', direct.get((iso3, year)), 'WDI', wdi.get((iso3, year)))
           PY
