@@ -20,12 +20,7 @@ jobs:
           fetch-depth: 0
 
       - name: Apply patch
-        shell: bash
-        run: |
-          echo 'aW1wb3J0IGpzb24KZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpjb25maWdfcGF0aCA9IFBhdGgoImNvbmZpZy93aG8taW5kaWNhdG9ycy5qc29uIikKd29ya2Zsb3dfcGF0aCA9IFBhdGgoIi5naXRodWIvd29ya2Zsb3dzL2J1aWxkLXdoby1zdGF0aXN0aWNzLnltbCIpCgpjb25maWcgPSBqc29uLmxvYWRzKGNvbmZpZ19wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKSkKaW5kaWNhdG9ycyA9IGNvbmZpZ1siaW5kaWNhdG9ycyJdCmJ5X2lkID0ge2l0ZW1bImlkIl06IGl0ZW0gZm9yIGl0ZW0gaW4gaW5kaWNhdG9yc30KCmR0cDMgPSBkaWN0KGJ5X2lkWyJpbW11bml6YXRpb24uZHB0LXBlcmNlbnQiXSkKbWN2MSA9IGRpY3QoYn lfaWRbImltbXVuaXphdGlvbi5tZWFzbGVzLXBlcmNlbnQiXSkK'.replace(' ', '') | base64 -d > /tmp/patch.py
-          cat >> /tmp/patch.py <<'PY'
-PY
-          python /tmp/patch.py
+        run: python .github/scripts/tmp_patch_who_immunization.py
 
       - name: Validate patch
         run: |
