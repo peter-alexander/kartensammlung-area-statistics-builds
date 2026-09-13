@@ -60,7 +60,11 @@ jobs:
           		return json.loads(body)
 
           def normalize_substance(value):
-          	return str(value or '').strip().replace('₄', '4').replace('₂', '2')
+          	text = str(value or '').strip().replace('₄', '4').replace('₂', '2')
+          	prefix = 'GWP_100_AR5_'
+          	if text.startswith(prefix):
+          		text = text[len(prefix):]
+          	return text
 
           wb = openpyxl.load_workbook('/tmp/edgar-2026.xlsx', read_only=True, data_only=True)
           print('INFO')
