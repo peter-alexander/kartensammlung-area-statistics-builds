@@ -97,6 +97,11 @@
 			"index": "ember/index.json"
 		},
 		{
+			"id": "iea-sdg7",
+			"name": "IEA – Erneuerbare Energie & SDG 7",
+			"index": "iea-sdg7/index.json"
+		},
+		{
 			"id": "unesco-uis",
 			"name": "UNESCO UIS – Bildung",
 			"index": "unesco-uis/index.json"
