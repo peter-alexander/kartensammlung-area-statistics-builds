@@ -54,6 +54,43 @@ cat("registryCountries=", length(registry_codes), "\n", sep="")
 cat("widTwoLetterCodes=", length(wid_codes), "\n", sep="")
 cat("queryCountries=", length(query_codes), "\n", sep="")
 cat("registryWithoutWIDCode=", paste(setdiff(registry_codes, wid_codes), collapse=","), "\n", sep="")
+cat("widHasKS=", "KS" %in% wid_codes, " widHasXK=", "XK" %in% wid_codes, " registryHasXK=", "XK" %in% registry_codes, "\n", sep="")
+
+fetch_codes <- function(codes, include_extrapolations=TRUE) {
+	if (length(codes) == 0) return(NULL)
+	download_wid(
+		indicators=indicators,
+		areas=codes,
+		perc=percentiles,
+		years="all",
+		ages=992,
+		pop="j",
+		metadata=FALSE,
+		include_extrapolations=include_extrapolations,
+		verbose=FALSE
+	)
+}
+
+cat("\n===== Kosovo code audit =====\n")
+for (code in c("KS", "XK")) {
+	if (!(code %in% wid_codes)) {
+		cat(code, ": absent from WID country list\n", sep="")
+		next
+	}
+	probe <- fetch_codes(code, TRUE)
+	if (is.null(probe) || nrow(probe) == 0) {
+		cat(code, ": no target rows\n", sep="")
+		next
+	}
+	cat(
+		code,
+		": rows=", nrow(probe),
+		" returnedCountries=", paste(sort(unique(probe$country)), collapse=","),
+		" latestYear=", max(probe$year),
+		" coverage2024=", length(unique(probe$country[probe$year == 2024])),
+		"\n", sep=""
+	)
+}
 
 fetch <- function(include_extrapolations) {
 	chunks <- split(query_codes, ceiling(seq_along(query_codes) / 40))
@@ -66,17 +103,7 @@ fetch <- function(include_extrapolations) {
 			" includeExtrapolations=", include_extrapolations,
 			"\n", sep=""
 		)
-		pieces[[index]] <- download_wid(
-			indicators=indicators,
-			areas=codes,
-			perc=percentiles,
-			years="all",
-			ages=992,
-			pop="j",
-			metadata=FALSE,
-			include_extrapolations=include_extrapolations,
-			verbose=FALSE
-		)
+		pieces[[index]] <- fetch_codes(codes, include_extrapolations)
 	}
 	pieces <- pieces[!vapply(pieces, is.null, logical(1))]
 	if (length(pieces) == 0) return(NULL)
@@ -132,6 +159,35 @@ without_extrapolations <- fetch(FALSE)
 
 summarize_data(with_extrapolations, "including interpolations/extrapolations")
 summarize_data(without_extrapolations, "excluding interpolations/extrapolations")
+
+cat("\n===== 2024 distribution audit =====\n")
+latest_rows <- registry_rows(with_extrapolations)
+for (variable in sort(unique(latest_rows$variable))) {
+	for (percentile in percentiles) {
+		subset <- latest_rows[
+			latest_rows$variable == variable &
+			latest_rows$percentile == percentile &
+			latest_rows$year == 2024,
+			, drop=FALSE
+		]
+		if (nrow(subset) == 0) next
+		q <- quantile(
+			subset$value * 100,
+			probs=c(0, 0.1, 0.25, 0.5, 0.75, 0.9, 1),
+			na.rm=TRUE,
+			names=FALSE,
+			type=7
+		)
+		cat(
+			variable, " ", percentile,
+			": n=", nrow(subset),
+			" negative=", sum(subset$value < 0, na.rm=TRUE),
+			" percent[min,p10,p25,p50,p75,p90,max]=",
+			paste(format(round(q, 3), trim=TRUE, scientific=FALSE), collapse=","),
+			"\n", sep=""
+		)
+	}
+}
 
 cat("\n===== extrapolation effect by variable/percentile =====\n")
 for (variable in sort(unique(with_extrapolations$variable))) {
