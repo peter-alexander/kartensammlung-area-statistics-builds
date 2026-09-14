@@ -14,199 +14,50 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install audit dependency
-        run: python -m pip install --disable-pip-version-check openpyxl==3.1.5
-
-      - name: Audit current KNOMAD remittance workbooks
+      - name: Audit stable Data Catalog resource endpoints
         run: |
           python - <<'PY'
           import hashlib
-          import io
           import json
-          import math
-          import sys
           from urllib.request import Request, urlopen
 
-          from openpyxl import load_workbook
-
-          sys.path.insert(0, "scripts")
-          import build_world_bank as common
-
-          SOURCES = {
-          	"inward": (
-          		"https://datacatalogfiles.worldbank.org/ddh-published/0066146/DR0095569/"
-          		"Inward_remittance_flows_%28September_2025%29.xlsx"
-          	),
-          	"outward": (
-          		"https://datacatalogfiles.worldbank.org/ddh-published/0066146/DR0095570/"
-          		"Outward_remittance_flows_%28September_2025%29.xlsx"
-          	),
+          RESOURCES = {
+          	"DR0095569": "d7963387e786e54d4a5a4566294855e0563e3f09cc75b98c2e470599d4a75ddb",
+          	"DR0095570": "50e5ea5ca1be529914eae315ad361721f4a2c5ec2347cc17691b4273f958e28e",
           }
-          NAME_ALIASES = {
-          	"China*": "CHN",
-          	"Czech Republic": "CZE",
-          	"Faeroe Islands": "FRO",
-          	"Korea, Dem. Rep.": "PRK",
-          	"Puerto Rico": "PRI",
-          	"Somalia": "SOM",
-          	"Türkiye, Rep. of": "TUR",
-          	"United Arab Emirates*": "ARE",
-          	"Vietnam": "VNM",
-          }
-          IGNORED_NAMES = {"Channel Islands"}
-          EXPECTED_YEARS = list(range(2000, 2025))
-          registry_url = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
-          area_by_iso3, _ = common.load_registry(registry_url, 60)
+          BASE = "https://ddh-openapi.worldbank.org"
 
           def fetch(url, accept="*/*"):
-          	request = Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1", "Accept": accept})
-          	with urlopen(request, timeout=180) as response:
-          		return response.read()
+          	request = Request(url, headers={
+          		"Accept": accept,
+          		"User-Agent": "kartensammlung-area-statistics-builds/1",
+          	})
+          	with urlopen(request, timeout=120) as response:
+          		return response.read(), response.geturl(), response.headers.get("Content-Type", "")
 
-          wb_payload = json.loads(fetch("https://api.worldbank.org/v2/country?format=json&per_page=400", "application/json").decode("utf-8"))
-          wb_entries = wb_payload[1]
-          wb_country_by_name = {}
-          wb_aggregate_by_name = {}
-          for entry in wb_entries:
-          	name = str(entry.get("name", "")).strip()
-          	iso3 = str(entry.get("id", "")).strip().upper()
-          	region_id = str((entry.get("region") or {}).get("id", "")).strip().upper()
-          	if not name or not iso3:
-          		continue
-          	if region_id == "NA":
-          		wb_aggregate_by_name[name] = iso3
-          	else:
-          		wb_country_by_name[name] = iso3
-          print(f"registryIso3={len(area_by_iso3)} wbCountries={len(wb_country_by_name)} wbAggregates={len(wb_aggregate_by_name)}")
-          for name, iso3 in NAME_ALIASES.items():
-          	if iso3 not in area_by_iso3:
-          		raise RuntimeError(f"Alias target missing from registry: {name} -> {iso3}")
+          for resource_id, expected_sha256 in RESOURCES.items():
+          	metadata_bytes, metadata_url, metadata_type = fetch(
+          		f"{BASE}/resources/{resource_id}",
+          		"application/json",
+          	)
+          	metadata = json.loads(metadata_bytes.decode("utf-8"))
+          	print(f"resource={resource_id}")
+          	print(f"metadataUrl={metadata_url}")
+          	print(f"metadataType={metadata_type}")
+          	print("metadata=" + json.dumps(metadata, ensure_ascii=False, sort_keys=True)[:5000])
 
-          def percentile(values, fraction):
-          	ordered = sorted(values)
-          	if not ordered:
-          		return None
-          	position = (len(ordered) - 1) * fraction
-          	lo = math.floor(position)
-          	hi = math.ceil(position)
-          	if lo == hi:
-          		return ordered[lo]
-          	return ordered[lo] + (ordered[hi] - ordered[lo]) * (position - lo)
-
-          def numeric(value):
-          	if value is None or value == "":
-          		return None
-          	if isinstance(value, bool):
-          		return None
-          	try:
-          		parsed = float(value)
-          	except (TypeError, ValueError):
-          		return None
-          	return parsed if math.isfinite(parsed) else None
-
-          for source_name, url in SOURCES.items():
-          	data = fetch(url, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*")
-          	print(f"\n=== {source_name.upper()} ===")
-          	print(f"bytes={len(data)} sha256={hashlib.sha256(data).hexdigest()}")
-          	workbook = load_workbook(io.BytesIO(data), data_only=True, read_only=True)
-          	nonempty_sheets = []
-          	for sheet in workbook.worksheets:
-          		rows = list(sheet.iter_rows(values_only=True))
-          		if not rows or not any(value not in (None, "") for row in rows for value in row):
-          			continue
-          		nonempty_sheets.append(sheet.title)
-          		header = list(rows[0])
-          		nonempty_header = [(index + 1, value) for index, value in enumerate(header) if value not in (None, "")]
-          		print(f"sheet={sheet.title!r} max_row={sheet.max_row} max_column={sheet.max_column}")
-          		print(f"header={json.dumps(nonempty_header, ensure_ascii=False)}")
-          		year_columns = {}
-          		for index, value in enumerate(header[1:], start=1):
-          			try:
-          				year = int(value)
-          			except (TypeError, ValueError):
-          				continue
-          			if 1900 <= year <= 2200:
-          				year_columns[year] = index
-          		print(f"years={sorted(year_columns)}")
-          		if sorted(year_columns) != EXPECTED_YEARS:
-          			print("WARNING: year columns differ from expected 2000-2024")
-
-          		mapped_rows = []
-          		aggregate_rows = []
-          		ignored_rows = []
-          		unmatched_rows = []
-          		nonregistry_rows = []
-          		all_names = []
-          		for row_index, row in enumerate(rows[1:], start=2):
-          			name = str(row[0] or "").strip()
-          			if not name:
-          				continue
-          			all_names.append(name)
-          			if name in IGNORED_NAMES:
-          				ignored_rows.append((row_index, name))
-          				continue
-          			iso3 = NAME_ALIASES.get(name) or wb_country_by_name.get(name)
-          			if iso3:
-          				if iso3 in area_by_iso3:
-          					mapped_rows.append((row_index, name, iso3, row))
-          				else:
-          					nonregistry_rows.append((row_index, name, iso3))
-          				continue
-          			aggregate_iso3 = wb_aggregate_by_name.get(name)
-          			if aggregate_iso3:
-          				aggregate_rows.append((row_index, name, aggregate_iso3))
-          			else:
-          				unmatched_rows.append((row_index, name))
-
-          		print(
-          			f"dataRows={len(all_names)} mappedCountries={len(mapped_rows)} aggregates={len(aggregate_rows)} "
-          			f"ignored={ignored_rows} nonRegistry={nonregistry_rows}"
+          	data, download_url, content_type = fetch(
+          		f"{BASE}/resources/{resource_id}/download",
+          		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*",
+          	)
+          	digest = hashlib.sha256(data).hexdigest()
+          	print(f"downloadUrl={download_url}")
+          	print(f"contentType={content_type}")
+          	print(f"bytes={len(data)} sha256={digest}")
+          	if digest != expected_sha256:
+          		raise RuntimeError(
+          			f"Stable download differs for {resource_id}: {digest} != {expected_sha256}"
           		)
-          		print(f"unmatched={json.dumps(unmatched_rows, ensure_ascii=False)}")
-          		print(f"aggregates={json.dumps(aggregate_rows, ensure_ascii=False)}")
-          		print(f"tailNames={json.dumps(all_names[-30:], ensure_ascii=False)}")
-
-          		for year in (2020, 2021, 2022, 2023, 2024):
-          			column = year_columns.get(year)
-          			if column is None:
-          				continue
-          			values = []
-          			zeroes = 0
-          			for _, _, _, row in mapped_rows:
-          				value = numeric(row[column] if column < len(row) else None)
-          				if value is None:
-          					continue
-          				values.append(value)
-          				if value == 0:
-          					zeroes += 1
-          			positive = [value for value in values if value > 0]
-          			if positive:
-          				print(
-          					f"{year}: numeric={len(values)} zero={zeroes} positive={len(positive)} "
-          					f"sum={sum(values):.6g} minPositive={min(positive):.6g} "
-          					f"p25={percentile(positive, 0.25):.6g} p50={percentile(positive, 0.50):.6g} "
-          					f"p75={percentile(positive, 0.75):.6g} p90={percentile(positive, 0.90):.6g} "
-          					f"p95={percentile(positive, 0.95):.6g} max={max(positive):.6g}"
-          				)
-
-          		latest_column = year_columns.get(2024)
-          		latest = []
-          		if latest_column is not None:
-          			for _, name, iso3, row in mapped_rows:
-          				value = numeric(row[latest_column] if latest_column < len(row) else None)
-          				if value is not None:
-          					latest.append((value, iso3, name))
-          		print("top2024=" + json.dumps(sorted(latest, reverse=True)[:15], ensure_ascii=False))
-          	workbook.close()
-          	print(f"nonemptySheets={nonempty_sheets}")
           PY
