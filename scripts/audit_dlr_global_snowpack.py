@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -30,7 +31,7 @@ def fetch_json(url: str, attempts: int = 4) -> dict:
 					"User-Agent": USER_AGENT,
 				},
 			)
-			with urlopen(request, timeout=60) as response:
+			with urlopen(request, timeout=45) as response:
 				return json.load(response)
 		except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
 			last_error = exc
@@ -92,7 +93,7 @@ def http_probe(url: str) -> dict:
 			headers["Range"] = "bytes=0-0"
 		request = Request(url, method=method, headers=headers)
 		try:
-			with urlopen(request, timeout=60) as response:
+			with urlopen(request, timeout=20) as response:
 				result.update(
 					{
 						"probeMethod": method,
@@ -108,8 +109,8 @@ def http_probe(url: str) -> dict:
 				return result
 		except HTTPError as exc:
 			result[f"{method.lower()}Error"] = f"HTTP {exc.code}: {exc.reason}"
-		except URLError as exc:
-			result[f"{method.lower()}Error"] = str(exc.reason)
+		except (URLError, TimeoutError) as exc:
+			result[f"{method.lower()}Error"] = str(exc)
 	return result
 
 
@@ -118,16 +119,40 @@ def gdal_probe(url: str) -> dict:
 	# the global raster and defeat this first-stage metadata/COG-access audit.
 	command = [
 		"gdalinfo",
+		"--config",
+		"GDAL_DISABLE_READDIR_ON_OPEN",
+		"EMPTY_DIR",
+		"--config",
+		"CPL_VSIL_CURL_ALLOWED_EXTENSIONS",
+		".tif,.tiff",
+		"--config",
+		"GDAL_HTTP_TIMEOUT",
+		"20",
+		"--config",
+		"GDAL_HTTP_CONNECTTIMEOUT",
+		"10",
 		"-json",
 		f"/vsicurl/{url}",
 	]
-	completed = subprocess.run(
-		command,
-		check=False,
-		capture_output=True,
-		text=True,
-		timeout=180,
-	)
+	environment = os.environ.copy()
+	environment["CPL_CURL_VERBOSE"] = "NO"
+	try:
+		completed = subprocess.run(
+			command,
+			check=False,
+			capture_output=True,
+			text=True,
+			timeout=45,
+			env=environment,
+		)
+	except subprocess.TimeoutExpired as exc:
+		return {
+			"timedOut": True,
+			"timeoutSeconds": 45,
+			"stdout": (exc.stdout or "")[-4000:] if isinstance(exc.stdout, str) else "",
+			"stderr": (exc.stderr or "")[-4000:] if isinstance(exc.stderr, str) else "",
+		}
+
 	result: dict[str, object] = {
 		"returnCode": completed.returncode,
 	}
@@ -241,8 +266,8 @@ def audit_collection(collection_id: str, probe_gdal: bool) -> dict:
 		if probe_gdal:
 			gdal = probe.get("gdal", {})
 			print(
-				f"  gdal rc={gdal.get('returnCode')} size={gdal.get('size')} "
-				f"bands={gdal.get('bands')}",
+				f"  gdal rc={gdal.get('returnCode')} timeout={gdal.get('timedOut')} "
+				f"size={gdal.get('size')} bands={gdal.get('bands')}",
 				flush=True,
 			)
 	return result
