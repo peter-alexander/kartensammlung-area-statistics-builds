@@ -6,6 +6,7 @@ on:
       - audit/cckp-era5
     paths:
       - "scripts/audit_cckp_era5.py"
+      - "scripts/audit_cckp_era5_latest.py"
       - ".github/workflows/audit-cckp-era5.yml"
   workflow_dispatch:
 
@@ -26,10 +27,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Validate audit script
+      - name: Validate audit scripts
         run: |
           set -euo pipefail
-          python -m py_compile scripts/audit_cckp_era5.py
+          python -m py_compile scripts/audit_cckp_era5.py scripts/audit_cckp_era5_latest.py
           git diff --check
 
       - name: Audit CCKP ERA5 API
@@ -37,6 +38,11 @@ jobs:
           set -o pipefail
           mkdir -p diagnostics
           python scripts/audit_cckp_era5.py 2>&1 | tee diagnostics/cckp-era5-audit.log
+
+      - name: Audit latest worldwide CCKP ERA5 data
+        run: |
+          set -o pipefail
+          python scripts/audit_cckp_era5_latest.py 2>&1 | tee diagnostics/cckp-era5-latest-audit.log
 
       - name: Upload diagnostics
         if: always()
