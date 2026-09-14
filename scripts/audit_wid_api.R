@@ -24,15 +24,27 @@ if (length(registry_codes) != 250) {
 	stop(paste("Expected 250 two-letter registry country codes, got", length(registry_codes)))
 }
 
-wid_countries <- read.csv(wid_countries_url, sep=";", stringsAsFactors=FALSE, check.names=FALSE)
+wid_countries <- read.csv(
+	wid_countries_url,
+	sep=";",
+	stringsAsFactors=FALSE,
+	check.names=FALSE,
+	na.strings=""
+)
 if (!("alpha2" %in% names(wid_countries))) {
 	stop("WID_countries.csv has no alpha2 column")
 }
 wid_codes <- sort(unique(toupper(trimws(wid_countries$alpha2))))
-wid_codes <- wid_codes[grepl("^[A-Z]{2}$", wid_codes)]
+wid_codes <- wid_codes[!is.na(wid_codes) & grepl("^[A-Z]{2}$", wid_codes)]
+if (!("NA" %in% wid_codes)) {
+	stop("Namibia ISO2 code NA was lost while parsing WID_countries.csv")
+}
 query_codes <- intersect(registry_codes, wid_codes)
 if (length(query_codes) != 232) {
 	stop(paste("Expected 232 WID/registry ISO2 overlaps, got", length(query_codes)))
+}
+if (!("NA" %in% query_codes)) {
+	stop("Namibia must be present in the WID/registry overlap")
 }
 
 cat("===== WID targeted API audit =====\n")
