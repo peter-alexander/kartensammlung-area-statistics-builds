@@ -1,4 +1,4 @@
-name: Temporary apply UNESCO UIS R&D extension
+name: Temporary test UNESCO UIS R&D extension
 
 on:
   push:
@@ -9,119 +9,86 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply:
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: feature/unesco-uis-rd
 
-      - name: Apply production changes
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate sources
         run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          config_path = Path("config/unesco-uis-indicators.json")
-          text = config_path.read_text(encoding="utf-8")
-
-          old_dataset_name = '"dataset": "UNESCO DataHub – SDG 4 Education Indicators and Other Policy Relevant Indicators"'
-          new_dataset_name = '"dataset": "UNESCO DataHub – Bildung, Forschung & Entwicklung"'
-          if text.count(old_dataset_name) != 1:
-          	raise SystemExit(f"Unexpected provider dataset-name match count: {text.count(old_dataset_name)}")
-          text = text.replace(old_dataset_name, new_dataset_name, 1)
-
-          uis006_needle = '\t\t"uis006": {'
-          if text.count(uis006_needle) != 1:
-          	raise SystemExit(f"Unexpected uis006 insertion-point count: {text.count(uis006_needle)}")
-          uis004_block = (
-          	'\t\t"uis004": {\n'
-          	'\t\t\t"name": "SDG 9.5 – Research & Development (R&D) Indicators",\n'
-          	'\t\t\t"sourceUrl": "https://data.unesco.org/explore/assets/uis004/",\n'
-          	'\t\t\t"minimumSourceLatestYear": 2024\n'
-          	'\t\t},\n'
-          )
-          text = text.replace(uis006_needle, uis004_block + uis006_needle, 1)
-
-          end_marker = '\n\t]\n}\n'
-          if text.count(end_marker) != 1:
-          	raise SystemExit(f"Unexpected indicators-array end count: {text.count(end_marker)}")
-          rd_indicators = (
-          	',\n'
-          	'\t\t{\n'
-          	'\t\t\t"id": "research.rd-expenditure-gdp-percent",\n'
-          	'\t\t\t"slug": "research-rd-expenditure-gdp-percent",\n'
-          	'\t\t\t"dataset": "uis004",\n'
-          	'\t\t\t"sourceIndicator": "EXPGDP.TOT",\n'
-          	'\t\t\t"sourceLabel": "GERD as a percentage of GDP",\n'
-          	'\t\t\t"title": "F&E-Ausgaben am BIP",\n'
-          	'\t\t\t"description": "Bruttoinlandsausgaben für Forschung und Entwicklung (GERD) als Anteil des Bruttoinlandsprodukts nach UNESCO UIS.",\n'
-          	'\t\t\t"unit": {"id": "percent-of-gdp", "label": "% des BIP", "symbol": "%"},\n'
-          	'\t\t\t"classification": {"type": "fixed", "scale": "linear", "breaks": [0.1, 0.25, 0.5, 1, 2, 3]},\n'
-          	'\t\t\t"minAreasWithAnyValue": 150,\n'
-          	'\t\t\t"minAreasInDefaultYear": 80\n'
-          	'\t\t},\n'
-          	'\t\t{\n'
-          	'\t\t\t"id": "research.researchers-per-million-fte",\n'
-          	'\t\t\t"slug": "research-researchers-per-million-fte",\n'
-          	'\t\t\t"dataset": "uis004",\n'
-          	'\t\t\t"sourceIndicator": "RESDEN.INHAB.TFTE",\n'
-          	'\t\t\t"sourceLabel": "Researchers per million inhabitants (FTE)",\n'
-          	'\t\t\t"title": "Forscherinnen und Forscher je Mio. Einwohner",\n'
-          	'\t\t\t"description": "Forscherinnen und Forscher in Forschung und Entwicklung, gemessen in Vollzeitäquivalenten (FTE) je eine Million Einwohner, nach UNESCO UIS.",\n'
-          	'\t\t\t"unit": {"id": "per-million-inhabitants", "label": "je Mio. Einwohner", "symbol": "je Mio."},\n'
-          	'\t\t\t"classification": {"type": "fixed", "scale": "linear", "breaks": [100, 500, 1000, 2500, 5000, 7500]},\n'
-          	'\t\t\t"minAreasWithAnyValue": 140,\n'
-          	'\t\t\t"minAreasInDefaultYear": 75\n'
-          	'\t\t}'
-          )
-          text = text.replace(end_marker, rd_indicators + end_marker, 1)
-          config_path.write_text(text, encoding="utf-8")
-
-          builder_path = Path("scripts/build_unesco_uis.py")
-          text = builder_path.read_text(encoding="utf-8")
-
-          replacements = [
-          	(
-          		'parser = argparse.ArgumentParser(description="Build normalized country education statistics from UNESCO UIS DataHub.")',
-          		'parser = argparse.ArgumentParser(description="Build normalized country education and research statistics from UNESCO UIS DataHub.")',
-          	),
-          	(
-          		'\t\tif not str(dataset["sourceUrl"]).startswith("https://"):\n\t\t\traise ValueError(f"UNESCO UIS dataset {dataset_id} sourceUrl must use HTTPS.")\n',
-          		'\t\tif not str(dataset["sourceUrl"]).startswith("https://"):\n\t\t\traise ValueError(f"UNESCO UIS dataset {dataset_id} sourceUrl must use HTTPS.")\n\t\tdataset_minimum_latest = dataset.get("minimumSourceLatestYear")\n\t\tif dataset_minimum_latest is not None and (not isinstance(dataset_minimum_latest, int) or not 1900 <= dataset_minimum_latest <= 2200):\n\t\t\traise ValueError(f"UNESCO UIS dataset {dataset_id} has invalid minimumSourceLatestYear.")\n',
-          	),
-          	(
-          		'\tif source_latest < int(config["minimumSourceLatestYear"]):\n\t\traise RuntimeError(\n\t\t\tf"UNESCO UIS dataset {dataset_id} is unexpectedly old: latest selected-source year {source_latest}."\n\t\t)\n',
-          		'\tminimum_source_latest = int(config["datasets"][dataset_id].get("minimumSourceLatestYear", config["minimumSourceLatestYear"]))\n\tif source_latest < minimum_source_latest:\n\t\traise RuntimeError(\n\t\t\tf"UNESCO UIS dataset {dataset_id} is unexpectedly old: latest selected-source year {source_latest}; "\n\t\t\tf"expected at least {minimum_source_latest}."\n\t\t)\n',
-          	),
-          	(
-          		'\t\t\t"sourceLatestYear": source_latest,\n\t\t\t"selectedIndicators": sorted(str(indicator["sourceIndicator"]) for indicator in indicators_by_dataset[dataset_id]),\n',
-          		'\t\t\t"sourceLatestYear": source_latest,\n\t\t\t"minimumSourceLatestYear": int(config["datasets"][dataset_id].get("minimumSourceLatestYear", config["minimumSourceLatestYear"])),\n\t\t\t"selectedIndicators": sorted(str(indicator["sourceIndicator"]) for indicator in indicators_by_dataset[dataset_id]),\n',
-          	),
-          	(
-          		'\t\t\t"Country-level education statistics are fetched from current UNESCO DataHub filtered CSV exports.",',
-          		'\t\t\t"Country-level education and research statistics are fetched from current UNESCO DataHub filtered CSV exports.",',
-          	),
-          ]
-          for old, new in replacements:
-          	count = text.count(old)
-          	if count != 1:
-          		raise SystemExit(f"Unexpected builder replacement count {count} for {old[:80]!r}")
-          	text = text.replace(old, new, 1)
-          builder_path.write_text(text, encoding="utf-8")
-          PY
-
           python -m py_compile scripts/build_unesco_uis.py scripts/build_unesco_uis_entry.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
           python -m json.tool config/unesco-uis-indicators.json >/dev/null
           git diff --check
-          git diff -- config/unesco-uis-indicators.json scripts/build_unesco_uis.py
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add config/unesco-uis-indicators.json scripts/build_unesco_uis.py
-          git commit -m "Add UNESCO UIS research and development statistics"
-          git push origin HEAD:feature/unesco-uis-rd
+      - name: Build UNESCO UIS statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_unesco_uis_entry.py --registry "$REGISTRY_URL"
+
+      - name: Validate R&D extension
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("dist/statistics/unesco-uis")
+          provider = json.loads((root / "index.json").read_text(encoding="utf-8"))
+          assert provider["provider"]["id"] == "unesco-uis"
+          assert provider["provider"]["dataset"] == "UNESCO DataHub – Bildung, Forschung & Entwicklung"
+          assert provider["datasets"]["uis001"]["minimumSourceLatestYear"] == 2025
+          assert provider["datasets"]["uis006"]["minimumSourceLatestYear"] == 2025
+          assert provider["datasets"]["uis004"]["minimumSourceLatestYear"] == 2024
+          assert provider["datasets"]["uis004"]["sourceLatestYear"] == 2024
+          assert provider["datasets"]["uis004"]["selectedIndicators"] == ["EXPGDP.TOT", "RESDEN.INHAB.TFTE"]
+
+          by_id = {item["id"]: item for item in provider["indicators"]}
+          expected = {
+          	"research.rd-expenditure-gdp-percent": ("EXPGDP.TOT", 156, 2023, 84),
+          	"research.researchers-per-million-fte": ("RESDEN.INHAB.TFTE", 146, 2023, 76),
+          }
+          for indicator_id, (source_indicator, any_areas, default_year, default_areas) in expected.items():
+          	item = by_id[indicator_id]
+          	assert item["sourceDataset"] == "uis004"
+          	assert item["sourceIndicator"] == source_indicator
+          	assert item["availableYears"][0] == 1996
+          	assert item["availableYears"][-1] == 2024
+          	assert item["defaultYear"] == default_year
+          	assert item["coverage"]["areasWithAnyValue"] == any_areas
+          	assert item["coverage"]["areasInDefaultYear"] == default_areas
+          	payload = json.loads((root / item["path"]).read_text(encoding="utf-8"))
+          	assert payload["source"]["datasetId"] == "uis004"
+          	assert payload["source"]["indicator"] == source_indicator
+          	assert payload["source"]["qualifiersObserved"] == ["NAT_EST", "UIS_EST"]
+          	assert payload["source"]["magnitudesObserved"] == []
+          	assert "2024" in payload["values"]
+
+          rd = by_id["research.rd-expenditure-gdp-percent"]
+          researchers = by_id["research.researchers-per-million-fte"]
+          assert rd["classification"]["breaks"] == [0.1, 0.25, 0.5, 1, 2, 3]
+          assert researchers["classification"]["breaks"] == [100, 500, 1000, 2500, 5000, 7500]
+
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"indicators={len(provider['indicators'])}")
+          for indicator_id in expected:
+          	item = by_id[indicator_id]
+          	print(
+          		f"{indicator_id}: years={item['availableYears'][0]}-{item['availableYears'][-1]} "
+          		f"defaultYear={item['defaultYear']} defaultCoverage={item['coverage']['areasInDefaultYear']} "
+          		f"anyCoverage={item['coverage']['areasWithAnyValue']} latestCoverage={item['coverage']['areasInLatestYear']}"
+          	)
+          PY
