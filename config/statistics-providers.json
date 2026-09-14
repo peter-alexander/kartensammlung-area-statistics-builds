@@ -37,6 +37,11 @@
 			"index": "world-bank-pip/index.json"
 		},
 		{
+			"id": "world-bank-remittances",
+			"name": "Weltbank/KNOMAD – Rücküberweisungen",
+			"index": "world-bank-remittances/index.json"
+		},
+		{
 			"id": "imf-weo",
 			"name": "IWF – Wirtschaft & Prognosen",
 			"index": "imf-weo/index.json"
@@ -123,7 +128,7 @@
 		},
 		{
 			"id": "unesco-uis",
-			"name": "UNESCO UIS – Bildung",
+			"name": "UNESCO UIS – Bildung, Forschung & Entwicklung",
 			"index": "unesco-uis/index.json"
 		},
 		{
