@@ -37,7 +37,7 @@ EXPECTED_EXPORT_FIELDS = [
 
 
 def parse_args() -> argparse.Namespace:
-	parser = argparse.ArgumentParser(description="Build normalized country education statistics from UNESCO UIS DataHub.")
+	parser = argparse.ArgumentParser(description="Build normalized country education and research statistics from UNESCO UIS DataHub.")
 	parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
 	parser.add_argument("--providers", type=Path, default=DEFAULT_PROVIDERS)
 	parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
@@ -74,6 +74,9 @@ def validate_config(payload: Any) -> dict[str, Any]:
 				raise ValueError(f"UNESCO UIS dataset {dataset_id} is missing {key}.")
 		if not str(dataset["sourceUrl"]).startswith("https://"):
 			raise ValueError(f"UNESCO UIS dataset {dataset_id} sourceUrl must use HTTPS.")
+		dataset_minimum_latest = dataset.get("minimumSourceLatestYear")
+		if dataset_minimum_latest is not None and (not isinstance(dataset_minimum_latest, int) or not 1900 <= dataset_minimum_latest <= 2200):
+			raise ValueError(f"UNESCO UIS dataset {dataset_id} has invalid minimumSourceLatestYear.")
 
 	indicators = payload.get("indicators")
 	if not isinstance(indicators, list) or not indicators:
@@ -251,9 +254,11 @@ def load_dataset(
 		raise RuntimeError(f"UNESCO UIS export {dataset_id} contained no annual values.")
 	source_start = min(all_years)
 	source_latest = max(all_years)
-	if source_latest < int(config["minimumSourceLatestYear"]):
+	minimum_source_latest = int(config["datasets"][dataset_id].get("minimumSourceLatestYear", config["minimumSourceLatestYear"]))
+	if source_latest < minimum_source_latest:
 		raise RuntimeError(
-			f"UNESCO UIS dataset {dataset_id} is unexpectedly old: latest selected-source year {source_latest}."
+			f"UNESCO UIS dataset {dataset_id} is unexpectedly old: latest selected-source year {source_latest}; "
+			f"expected at least {minimum_source_latest}."
 		)
 	return values, qualifiers, footnote_rows, ignored_iso3, source_start, source_latest, export_url
 
@@ -382,6 +387,7 @@ def main() -> None:
 			"exportUrl": export_url,
 			"sourceStartYear": source_start,
 			"sourceLatestYear": source_latest,
+			"minimumSourceLatestYear": int(config["datasets"][dataset_id].get("minimumSourceLatestYear", config["minimumSourceLatestYear"])),
 			"selectedIndicators": sorted(str(indicator["sourceIndicator"]) for indicator in indicators_by_dataset[dataset_id]),
 		}
 
@@ -439,7 +445,7 @@ def main() -> None:
 		"datasets": dataset_stats,
 		"indicators": index_indicators,
 		"notes": [
-			"Country-level education statistics are fetched from current UNESCO DataHub filtered CSV exports.",
+			"Country-level education and research statistics are fetched from current UNESCO DataHub filtered CSV exports.",
 			"The newest source year can be only partially reported; each indicator defaults to the newest year that reaches its configured country-coverage threshold.",
 			"UIS qualifiers are preserved as observed qualifier codes in source metadata; detailed country-specific source footnotes remain available at UNESCO DataHub and are not duplicated into the map payload.",
 			"Gross enrolment ratios can exceed 100 percent because learners outside the official age group are included in the numerator.",
