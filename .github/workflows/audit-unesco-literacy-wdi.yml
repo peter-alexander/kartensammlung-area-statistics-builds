@@ -1,0 +1,260 @@
+name: Audit UNESCO literacy WDI and staleness
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/audit-unesco-literacy-wdi.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compare UNESCO UIS with WDI and audit latest-observation age
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          python - <<'PY' | tee diagnostics/unesco-literacy-wdi.txt
+          from __future__ import annotations
+
+          import csv
+          import io
+          import json
+          import math
+          import statistics
+          import urllib.parse
+          import urllib.request
+          from collections import Counter, defaultdict
+
+          API_BASE = "https://data.unesco.org/api/explore/v2.1/catalog/datasets"
+          REGISTRY_URL = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+          USER_AGENT = "kartensammlung-area-statistics-builds/1"
+          SERIES = {
+          	"youth_total": ("LR.AG15T24", "SE.ADT.1524.LT.ZS"),
+          	"youth_female": ("LR.AG15T24.F", "SE.ADT.1524.LT.FE.ZS"),
+          	"youth_male": ("LR.AG15T24.M", "SE.ADT.1524.LT.MA.ZS"),
+          	"adult_total": ("LR.AG15T99", "SE.ADT.LITR.ZS"),
+          	"adult_female": ("LR.AG15T99.F", "SE.ADT.LITR.FE.ZS"),
+          	"adult_male": ("LR.AG15T99.M", "SE.ADT.LITR.MA.ZS"),
+          }
+
+          def fetch_bytes(url: str, accept: str = "application/json") -> bytes:
+          	request = urllib.request.Request(url, headers={
+          		"Accept": accept,
+          		"User-Agent": USER_AGENT,
+          	})
+          	with urllib.request.urlopen(request, timeout=120) as response:
+          		return response.read()
+
+          registry = json.loads(fetch_bytes(REGISTRY_URL))
+          production_iso3 = {
+          	str((area.get("codes") or {}).get("iso3") or "").strip().upper()
+          	for area in registry.get("areas", [])
+          	if area.get("level") == "country"
+          }
+          production_iso3 = {iso3 for iso3 in production_iso3 if len(iso3) == 3}
+          if len(production_iso3) != 250:
+          	raise RuntimeError(f"Unexpected country registry size: {len(production_iso3)}")
+          print(f"registry_countries={len(production_iso3)}")
+
+          source_codes = [pair[0] for pair in SERIES.values()]
+          quoted = ",".join(f'"{code}"' for code in source_codes)
+          params = urllib.parse.urlencode({
+          	"where": f"indicator_id in ({quoted})",
+          	"select": "indicator_id,country_id,year,value,indicator_label_en,qualifier,footnotes",
+          	"delimiter": ",",
+          })
+          unesco_url = f"{API_BASE}/uis001/exports/csv?{params}"
+          raw = fetch_bytes(unesco_url, "text/csv,*/*;q=0.1")
+          reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+          expected_fields = [
+          	"indicator_id", "country_id", "year", "value", "indicator_label_en", "qualifier", "footnotes"
+          ]
+          if reader.fieldnames != expected_fields:
+          	raise RuntimeError(f"Unexpected UNESCO schema: {reader.fieldnames}")
+
+          unesco_by_code: dict[str, dict[tuple[str, int], float]] = {code: {} for code in source_codes}
+          labels: dict[str, str] = {}
+          qualifier_counts: dict[str, Counter[str]] = defaultdict(Counter)
+          footnote_counts: Counter[str] = Counter()
+          for row in reader:
+          	code = str(row.get("indicator_id") or "").strip()
+          	if code not in unesco_by_code:
+          		raise RuntimeError(f"Unexpected UNESCO indicator: {code}")
+          	label = str(row.get("indicator_label_en") or "").strip()
+          	if code in labels and labels[code] != label:
+          		raise RuntimeError(f"UNESCO label mismatch for {code}: {labels[code]!r} vs {label!r}")
+          	labels[code] = label
+          	qualifier = str(row.get("qualifier") or "").strip()
+          	if qualifier:
+          		qualifier_counts[code][qualifier] += 1
+          	if str(row.get("footnotes") or "").strip():
+          		footnote_counts[code] += 1
+          	iso3 = str(row.get("country_id") or "").strip().upper()
+          	year_text = str(row.get("year") or "").strip()
+          	value_text = str(row.get("value") or "").strip()
+          	if iso3 not in production_iso3 or not year_text.isdigit() or not value_text:
+          		continue
+          	try:
+          		value = float(value_text)
+          	except ValueError:
+          		continue
+          	if not math.isfinite(value):
+          		continue
+          	key = (iso3, int(year_text))
+          	if key in unesco_by_code[code]:
+          		raise RuntimeError(f"Duplicate UNESCO observation {code} {key}")
+          	unesco_by_code[code][key] = value
+
+          def fetch_wdi(code: str) -> tuple[str, dict[tuple[str, int], float]]:
+          	meta_params = urllib.parse.urlencode({"format": "json", "source": "2", "per_page": "100"})
+          	meta_url = f"https://api.worldbank.org/v2/indicator/{code}?{meta_params}"
+          	meta_payload = json.loads(fetch_bytes(meta_url))
+          	if not isinstance(meta_payload, list) or len(meta_payload) != 2 or not meta_payload[1]:
+          		raise RuntimeError(f"Missing WDI metadata for {code}: {meta_payload}")
+          	matching = [row for row in meta_payload[1] if str(row.get("id") or "") == code]
+          	if len(matching) != 1:
+          		raise RuntimeError(f"Unexpected WDI metadata count for {code}: {len(matching)}")
+          	name = str(matching[0].get("name") or "").strip()
+
+          	query = urllib.parse.urlencode({
+          		"format": "json",
+          		"source": "2",
+          		"per_page": "20000",
+          		"page": "1",
+          	})
+          	url = f"https://api.worldbank.org/v2/country/all/indicator/{code}?{query}"
+          	payload = json.loads(fetch_bytes(url))
+          	if not isinstance(payload, list) or len(payload) != 2:
+          		raise RuntimeError(f"Unexpected WDI response for {code}")
+          	metadata, rows = payload
+          	if int(metadata.get("pages", 1)) != 1:
+          		raise RuntimeError(f"Unexpected WDI pagination for {code}: {metadata}")
+          	values = {}
+          	for row in rows or []:
+          		iso3 = str(row.get("countryiso3code") or "").strip().upper()
+          		year_text = str(row.get("date") or "").strip()
+          		value = row.get("value")
+          		if iso3 not in production_iso3 or not year_text.isdigit() or value is None:
+          			continue
+          		number = float(value)
+          		if not math.isfinite(number):
+          			continue
+          		key = (iso3, int(year_text))
+          		if key in values:
+          			raise RuntimeError(f"Duplicate WDI observation {code} {key}")
+          		values[key] = number
+          	return name, values
+
+          wdi_by_code = {}
+          wdi_names = {}
+          for _label, (_unesco_code, wdi_code) in SERIES.items():
+          	name, values = fetch_wdi(wdi_code)
+          	wdi_names[wdi_code] = name
+          	wdi_by_code[wdi_code] = values
+
+          def describe(values: dict[tuple[str, int], float]) -> tuple[int, int, int, int]:
+          	years = sorted({year for _, year in values})
+          	return (
+          		len(values),
+          		len({iso3 for iso3, _ in values}),
+          		years[0] if years else 0,
+          		years[-1] if years else 0,
+          	)
+
+          for label, (unesco_code, wdi_code) in SERIES.items():
+          	u = unesco_by_code[unesco_code]
+          	w = wdi_by_code[wdi_code]
+          	print(f"\n=== {label} ===")
+          	print(f"UNESCO {unesco_code}: {labels.get(unesco_code)}")
+          	print(f"WDI {wdi_code}: {wdi_names[wdi_code]}")
+          	print(f"UNESCO observations/countries/years={describe(u)}")
+          	print(f"WDI observations/countries/years={describe(w)}")
+          	print(f"UNESCO qualifiers={dict(qualifier_counts[unesco_code])} footnote_rows={footnote_counts[unesco_code]}")
+
+          	overlap = sorted(set(u) & set(w))
+          	unesco_only = sorted(set(u) - set(w))
+          	wdi_only = sorted(set(w) - set(u))
+          	diffs = [abs(u[key] - w[key]) for key in overlap]
+          	if not overlap:
+          		raise RuntimeError(f"No UNESCO/WDI overlap for {label}")
+          	print(
+          		f"overlap={len(overlap)} UNESCO_only={len(unesco_only)} WDI_only={len(wdi_only)} "
+          		f"exact_1e-12={sum(diff <= 1e-12 for diff in diffs)} ({sum(diff <= 1e-12 for diff in diffs)/len(diffs):.2%}) "
+          		f"within_1e-6={sum(diff <= 1e-6 for diff in diffs)} ({sum(diff <= 1e-6 for diff in diffs)/len(diffs):.2%}) "
+          		f"max_abs={max(diffs):.12g} median_abs={statistics.median(diffs):.12g}"
+          	)
+          	if unesco_only:
+          		print(f"UNESCO-only sample={unesco_only[-20:]}")
+          	if wdi_only:
+          		print(f"WDI-only sample={wdi_only[-20:]}")
+          	largest = sorted(
+          		((abs(u[key] - w[key]), key, u[key], w[key]) for key in overlap),
+          		reverse=True,
+          	)[:10]
+          	for diff, key, u_value, w_value in largest:
+          		print(f"  diff {key[0]} {key[1]}: UNESCO={u_value:.12g} WDI={w_value:.12g} abs={diff:.12g}")
+
+          def latest_observations(values: dict[tuple[str, int], float], cutoff: int):
+          	latest = {}
+          	for (iso3, year), value in values.items():
+          		if year > cutoff:
+          			continue
+          		current = latest.get(iso3)
+          		if current is None or year > current[0]:
+          			latest[iso3] = (year, value)
+          	return latest
+
+          print("\n=== latest-observation coverage and staleness (UNESCO both-sex core series) ===")
+          for label in ("youth_total", "adult_total"):
+          	unesco_code, _wdi_code = SERIES[label]
+          	values = unesco_by_code[unesco_code]
+          	print(f"\n{label} {unesco_code}")
+          	for cutoff in (1990, 2000, 2010, 2015, 2020, 2024):
+          		latest = latest_observations(values, cutoff)
+          		ages = [cutoff - year for year, _value in latest.values()]
+          		print(
+          			f"cutoff={cutoff} coverage={len(latest)} "
+          			f"age0={sum(age == 0 for age in ages)} "
+          			f"age<=2={sum(age <= 2 for age in ages)} "
+          			f"age<=5={sum(age <= 5 for age in ages)} "
+          			f"age<=10={sum(age <= 10 for age in ages)} "
+          			f"age<=15={sum(age <= 15 for age in ages)} "
+          			f"age<=20={sum(age <= 20 for age in ages)} "
+          			f"age>20={sum(age > 20 for age in ages)} "
+          			f"median_age={statistics.median(ages) if ages else None} "
+          			f"max_age={max(ages) if ages else None}"
+          		)
+
+          	latest_2024 = latest_observations(values, 2024)
+          	oldest = sorted(
+          		((2024 - year, iso3, year, value) for iso3, (year, value) in latest_2024.items()),
+          		reverse=True,
+          	)[:30]
+          	print("oldest carried-forward candidates at 2024:")
+          	for age, iso3, year, value in oldest:
+          		print(f"  {iso3}: sourceYear={year} age={age} value={value:.8g}")
+          PY
+
+      - name: Upload audit diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unesco-literacy-wdi-audit-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 14
