@@ -1,0 +1,46 @@
+name: Audit climate extremes and drought
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/climate-extremes-drought
+    paths:
+      - "scripts/audit_climate_extremes.py"
+      - ".github/workflows/audit-climate-extremes.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate audit script
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/audit_climate_extremes.py
+          git diff --check
+
+      - name: Audit OECD heat and World Bank SPEI
+        run: |
+          set -o pipefail
+          python scripts/audit_climate_extremes.py 2>&1 | tee climate-extremes-audit.log
+
+      - name: Upload audit log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: climate-extremes-audit-${{ github.sha }}
+          path: climate-extremes-audit.log
+          if-no-files-found: error
+          retention-days: 14
