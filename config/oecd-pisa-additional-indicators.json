@@ -1,0 +1,265 @@
+{
+	"schema": "kartensammlung.oecd-pisa-additional/v1",
+	"providerLicense": {
+		"label": "OECD-Nutzungsbedingungen / CC BY 4.0 (quellenabhängig)",
+		"url": "https://www.oecd.org/en/about/oecd-open-by-default-policy.html"
+	},
+	"countryAliases": {
+		"Brunei Darussalam": "BRN",
+		"Czech Republic": "CZE",
+		"Czechia": "CZE",
+		"Hong Kong (China)": "HKG",
+		"Hong Kong-China": "HKG",
+		"Korea": "KOR",
+		"Kosovo": "XKX",
+		"Macao (China)": "MAC",
+		"Macao-China": "MAC",
+		"Moldova": "MDA",
+		"Palestinian Authority": "PSE",
+		"Russia": "RUS",
+		"Russian Federation": "RUS",
+		"Slovak Republic": "SVK",
+		"Chinese Taipei": "TWN",
+		"Turkey": "TUR",
+		"Türkiye": "TUR",
+		"Viet Nam": "VNM"
+	},
+	"sources": {
+		"pisa-2025-volume-i": {
+			"publication": "PISA 2025 Results (Volume I): Future-Ready Students",
+			"publicationDate": "2026-09-08",
+			"sourceUrl": "https://www.oecd.org/en/publications/pisa-2025-results-volume-i_73451bc5-en/full-report/results-for-countries-and-economies_33854635.html",
+			"dataUrl": "https://stat.link/mrq53f",
+			"license": "CC BY 4.0",
+			"licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+			"attribution": "OECD (2026), PISA 2025 Results (Volume I): Future-Ready Students"
+		},
+		"pisa-2022-financial-literacy": {
+			"publication": "PISA 2022 Results (Volume IV): How Financially Smart Are Students?",
+			"publicationDate": "2024-06-27",
+			"sourceUrl": "https://www.oecd.org/en/publications/pisa-2022-results-volume-iv_5a849c2a-en.html",
+			"dataUrl": "https://stat.link/4nx1lb",
+			"license": "OECD Terms & Conditions",
+			"licenseUrl": "https://www.oecd.org/en/about/terms-conditions.html",
+			"attribution": "OECD (2024), PISA 2022 Results (Volume IV): How Financially Smart Are Students?"
+		},
+		"pisa-2022-creative-thinking": {
+			"publication": "PISA 2022 Results (Volume III): Creative Minds, Creative Schools",
+			"publicationDate": "2024-06-18",
+			"sourceUrl": "https://www.oecd.org/en/publications/pisa-2022-results-volume-iii_765ee8c2-en.html",
+			"dataUrl": "https://stat.link/opbe7a",
+			"license": "OECD Terms & Conditions",
+			"licenseUrl": "https://www.oecd.org/en/about/terms-conditions.html",
+			"attribution": "OECD (2024), PISA 2022 Results (Volume III): Creative Minds, Creative Schools"
+		},
+		"pisa-2018-global-competence": {
+			"publication": "PISA 2018 Results (Volume VI): Are Students Ready to Thrive in an Interconnected World?",
+			"publicationDate": "2020-10-22",
+			"sourceUrl": "https://www.oecd.org/en/publications/pisa-2018-results-volume-vi_d5f68679-en.html",
+			"dataUrl": "https://doi.org/10.1787/888934171229",
+			"license": "OECD Terms & Conditions",
+			"licenseUrl": "https://www.oecd.org/en/about/terms-conditions.html",
+			"attribution": "OECD (2020), PISA 2018 Results (Volume VI): Are Students Ready to Thrive in an Interconnected World?"
+		},
+		"pisa-2015-collaborative-problem-solving": {
+			"publication": "PISA 2015 Results (Volume V): Collaborative Problem Solving",
+			"publicationDate": "2017-11-21",
+			"sourceUrl": "https://www.oecd.org/en/publications/pisa-2015-results-volume-v_9789264285521-en.html",
+			"dataUrl": "https://doi.org/10.1787/888933616769",
+			"license": "OECD Terms & Conditions",
+			"licenseUrl": "https://www.oecd.org/en/about/terms-conditions.html",
+			"attribution": "OECD (2017), PISA 2015 Results (Volume V): Collaborative Problem Solving"
+		},
+		"pisa-2012-annex-b3": {
+			"publication": "PISA 2012 Results: What Students Know and Can Do (Volume I, Revised edition, February 2014)",
+			"sourceUrl": "https://www.oecd.org/en/publications/pisa-2012-results-what-students-know-and-can-do-volume-i_9789264201118-en.html",
+			"dataUrl": "https://doi.org/10.1787/888932935781",
+			"license": "OECD Terms & Conditions",
+			"licenseUrl": "https://www.oecd.org/en/about/terms-conditions.html",
+			"attribution": "OECD (2014), PISA 2012 Results: What Students Know and Can Do (Volume I, Revised edition, February 2014)"
+		},
+		"pisa-2012-problem-solving": {
+			"publication": "PISA 2012 Results: Creative Problem Solving (Volume V): Students' Skills in Tackling Real-Life Problems",
+			"publicationDate": "2014-04-01",
+			"sourceUrl": "https://www.oecd.org/en/publications/2014/04/pisa-2012-results-creative-problem-solving-volume-v_g1g3b025.html",
+			"dataUrl": "https://doi.org/10.1787/888933003668",
+			"license": "OECD Terms & Conditions",
+			"licenseUrl": "https://www.oecd.org/en/about/terms-conditions.html",
+			"attribution": "OECD (2014), PISA 2012 Results: Creative Problem Solving (Volume V)"
+		},
+		"pisa-2009-digital-reading": {
+			"publication": "PISA 2009 Results: Students On Line – Digital Technologies and Performance (Volume VI)",
+			"publicationDate": "2011-06-28",
+			"sourceUrl": "https://www.oecd.org/en/publications/pisa-2009-results-students-on-line_9789264112995-en.html",
+			"dataUrl": "https://doi.org/10.1787/888932436556",
+			"license": "OECD Terms & Conditions",
+			"licenseUrl": "https://www.oecd.org/en/about/terms-conditions.html",
+			"attribution": "OECD (2011), PISA 2009 Results: Students On Line – Digital Technologies and Performance (Volume VI)"
+		},
+		"pisa-2003-problem-solving": {
+			"publication": "Problem Solving for Tomorrow's World: First Measures of Cross-Curricular Competencies from PISA 2003",
+			"publicationDate": "2005-01-24",
+			"sourceUrl": "https://www.oecd.org/en/publications/problem-solving-for-tomorrow-s-world_9789264006430-en.html",
+			"dataUrl": "https://doi.org/10.1787/402381481733",
+			"license": "OECD Terms & Conditions",
+			"licenseUrl": "https://www.oecd.org/en/about/terms-conditions.html",
+			"attribution": "OECD (2005), Problem Solving for Tomorrow's World: First Measures of Cross-Curricular Competencies from PISA 2003"
+		}
+	},
+	"indicators": [
+		{
+			"id": "education.pisa-cross-curricular-problem-solving-mean-score",
+			"slug": "education-pisa-cross-curricular-problem-solving-mean-score",
+			"title": "PISA fächerübergreifendes Problemlösen – mittlere Punktzahl",
+			"description": "Mittlere Punktzahl der PISA-2003-Sondererhebung zum fächerübergreifenden Problemlösen. Dargestellt wird ausschließlich der tatsächlich veröffentlichte Zyklus 2003.",
+			"unit": {"id": "pisa-points", "label": "PISA-Punkte"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [300, 350, 400, 450, 500, 550]},
+			"valueRange": [200, 700],
+			"expectedYears": [2003],
+			"expectedAreasByYear": {"2003": 29},
+			"expectedAreasWithAnyValue": 29,
+			"excludedEntities": [],
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:JPN"],
+			"inputs": [
+				{"source": "pisa-2003-problem-solving", "sheet": "Table A5.2", "parser": "single-mean", "year": 2003}
+			]
+		},
+		{
+			"id": "education.pisa-digital-reading-mean-score",
+			"slug": "education-pisa-digital-reading-mean-score",
+			"title": "PISA digitales Lesen – mittlere Punktzahl",
+			"description": "Mittlere PISA-Punktzahl beim digitalen Lesen in den optionalen computerbasierten Erhebungen 2009 und 2012. Nur teilnehmende Länder und Volkswirtschaften werden dargestellt; zwischen den Zyklen wird nicht interpoliert.",
+			"unit": {"id": "pisa-points", "label": "PISA-Punkte"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [300, 350, 400, 450, 500, 550]},
+			"valueRange": [200, 700],
+			"expectedYears": [2009, 2012],
+			"expectedAreasByYear": {"2009": 19, "2012": 31},
+			"expectedAreasWithAnyValue": 33,
+			"excludedEntities": ["Shanghai-China"],
+			"requiredAreas": ["country:AUT", "country:USA", "country:JPN", "country:HKG"],
+			"inputs": [
+				{"source": "pisa-2009-digital-reading", "sheet": "T VI.2.4", "parser": "single-mean", "year": 2009, "sectionStart": "Digital reading scale", "sectionEnd": "Print reading scale"},
+				{"source": "pisa-2012-annex-b3", "sheet": "Table B3.I.9", "parser": "single-mean", "year": 2012}
+			]
+		},
+		{
+			"id": "education.pisa-computer-based-mathematics-mean-score",
+			"slug": "education-pisa-computer-based-mathematics-mean-score",
+			"title": "PISA computergestützte Mathematik – mittlere Punktzahl",
+			"description": "Mittlere PISA-Punktzahl der optionalen computergestützten Mathematik-Erhebung 2012. Shanghai-China wird als Teilgebiet nicht auf die Fläche Chinas übertragen.",
+			"unit": {"id": "pisa-points", "label": "PISA-Punkte"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [300, 350, 400, 450, 500, 550]},
+			"valueRange": [200, 700],
+			"expectedYears": [2012],
+			"expectedAreasByYear": {"2012": 31},
+			"expectedAreasWithAnyValue": 31,
+			"excludedEntities": ["Shanghai-China"],
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:JPN", "country:SGP"],
+			"inputs": [
+				{"source": "pisa-2012-annex-b3", "sheet": "Table B3.I.3", "parser": "single-mean", "year": 2012}
+			]
+		},
+		{
+			"id": "education.pisa-problem-solving-mean-score",
+			"slug": "education-pisa-problem-solving-mean-score",
+			"title": "PISA Problemlösekompetenz – mittlere Punktzahl",
+			"description": "Mittlere Punktzahl der individuellen PISA-2012-Erhebung zum kreativen Problemlösen. England und Shanghai-China sind Teilgebiete und werden nicht auf die Flächen des Vereinigten Königreichs beziehungsweise Chinas übertragen.",
+			"unit": {"id": "pisa-points", "label": "PISA-Punkte"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [300, 350, 400, 450, 500, 550]},
+			"valueRange": [200, 700],
+			"expectedYears": [2012],
+			"expectedAreasByYear": {"2012": 42},
+			"expectedAreasWithAnyValue": 42,
+			"excludedEntities": ["England (United Kingdom)", "Shanghai-China"],
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:JPN", "country:SGP"],
+			"inputs": [
+				{"source": "pisa-2012-problem-solving", "sheet": "Table V.2.2", "parser": "single-mean", "year": 2012}
+			]
+		},
+		{
+			"id": "education.pisa-financial-literacy-mean-score",
+			"slug": "education-pisa-financial-literacy-mean-score",
+			"title": "PISA Finanzkompetenz – mittlere Punktzahl",
+			"description": "Mittlere PISA-Punktzahl zur Finanzkompetenz in den optionalen Erhebungen 2012, 2015, 2018 und 2022. Die Teilnahme ist deutlich kleiner als bei den PISA-Kernfächern; Zwischenjahre werden nicht interpoliert.",
+			"unit": {"id": "pisa-points", "label": "PISA-Punkte"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [300, 350, 400, 450, 500, 550]},
+			"valueRange": [200, 700],
+			"expectedYears": [2012, 2015, 2018, 2022],
+			"expectedAreasByYear": {"2012": 5, "2015": 7, "2018": 8, "2022": 18},
+			"expectedAreasWithAnyValue": 18,
+			"excludedEntities": ["Canadian provinces", "Flemish community of Belgium"],
+			"requiredAreas": ["country:AUT", "country:ITA", "country:USA"],
+			"inputs": [
+				{"source": "pisa-2022-financial-literacy", "sheet": "Table IV.B1.2.1", "parser": "financial-trend", "years": [2012, 2015, 2018, 2022], "cautionYear": 2022}
+			]
+		},
+		{
+			"id": "education.pisa-collaborative-problem-solving-mean-score",
+			"slug": "education-pisa-collaborative-problem-solving-mean-score",
+			"title": "PISA kollaboratives Problemlösen – mittlere Punktzahl",
+			"description": "Mittlere Punktzahl der PISA-2015-Sondererhebung zum gemeinsamen Problemlösen. B-S-J-G (China) wird als Teilgebiet nicht auf die Fläche Chinas übertragen.",
+			"unit": {"id": "pisa-points", "label": "PISA-Punkte"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [300, 350, 400, 450, 500, 550]},
+			"valueRange": [200, 700],
+			"expectedYears": [2015],
+			"expectedAreasByYear": {"2015": 51},
+			"expectedAreasWithAnyValue": 51,
+			"excludedEntities": ["B-S-J-G (China)"],
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:JPN"],
+			"inputs": [
+				{"source": "pisa-2015-collaborative-problem-solving", "sheet": "Table V.3.2", "parser": "single-mean", "year": 2015}
+			]
+		},
+		{
+			"id": "education.pisa-global-competence-mean-score",
+			"slug": "education-pisa-global-competence-mean-score",
+			"title": "PISA globale Kompetenz – mittlere Punktzahl",
+			"description": "Mittlere Punktzahl des kognitiven PISA-2018-Tests zur globalen Kompetenz. Nur die teilnehmenden Länder und Volkswirtschaften werden dargestellt; Schottland und die nicht national repräsentative israelische Teilstichprobe werden nicht auf Ganzstaatenflächen übertragen.",
+			"unit": {"id": "pisa-points", "label": "PISA-Punkte"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [300, 350, 400, 450, 500, 550]},
+			"valueRange": [200, 700],
+			"expectedYears": [2018],
+			"expectedAreasByYear": {"2018": 25},
+			"expectedAreasWithAnyValue": 25,
+			"excludedEntities": ["Israel", "Scotland (United Kingdom)"],
+			"requiredAreas": ["country:CAN", "country:SGP", "country:TWN"],
+			"inputs": [
+				{"source": "pisa-2018-global-competence", "sheet": "Table VI.B1.6.1", "parser": "single-mean", "year": 2018}
+			]
+		},
+		{
+			"id": "education.pisa-creative-thinking-mean-score",
+			"slug": "education-pisa-creative-thinking-mean-score",
+			"title": "PISA kreatives Denken – mittlere Punktzahl",
+			"description": "Mittlere Punktzahl der PISA-2022-Erhebung zum kreativen Denken auf der Skala von 0 bis 60 Punkten. Baku und die ausgewiesenen ukrainischen Regionen werden als Teilgebiete nicht auf Ganzstaatenflächen übertragen; besondere OECD-Vergleichbarkeitshinweise bleiben in den Metadaten erhalten.",
+			"unit": {"id": "pisa-creative-thinking-points", "label": "Punkte (0–60)"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [15, 20, 25, 30, 35, 40]},
+			"valueRange": [0, 60],
+			"expectedYears": [2022],
+			"expectedAreasByYear": {"2022": 62},
+			"expectedAreasWithAnyValue": 62,
+			"excludedEntities": ["Baku (Azerbaijan)", "Ukrainian regions (18 of 27)"],
+			"requiredAreas": ["country:DEU", "country:SGP", "country:TWN"],
+			"inputs": [
+				{"source": "pisa-2022-creative-thinking", "sheet": "Table III.B1.2.1", "parser": "single-mean", "year": 2022}
+			]
+		},
+		{
+			"id": "education.pisa-computational-problem-solving-mean-score",
+			"slug": "education-pisa-computational-problem-solving-mean-score",
+			"title": "PISA computationales Problemlösen – mittlere Punktzahl",
+			"description": "Mittlere PISA-2025-Punktzahl im computationalen Problemlösen als Teil von Learning in the Digital World. Teilstichproben werden wie bei den PISA-Kernfächern nicht auf Ganzstaatenflächen übertragen.",
+			"unit": {"id": "pisa-points", "label": "PISA-Punkte"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [300, 350, 400, 450, 500, 550]},
+			"valueRange": [200, 700],
+			"expectedYears": [2025],
+			"expectedAreasByYear": {"2025": 83},
+			"expectedAreasWithAnyValue": 83,
+			"excludedEntities": ["B-S-J-Z (China)", "Dushanbe (Tajikistan)", "Kurdistan Region (Iraq)", "Ukrainian regions (17 of 27)"],
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:JPN", "country:SGP"],
+			"inputs": [
+				{"source": "pisa-2025-volume-i", "sheet": "Table I.B1.2a.4", "parser": "single-mean", "year": 2025}
+			]
+		}
+	]
+}
