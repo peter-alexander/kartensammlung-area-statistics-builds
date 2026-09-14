@@ -12,6 +12,8 @@ jobs:
   audit:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      R_LIBS_USER: /tmp/Rlib
     steps:
       - uses: actions/checkout@v4
       - name: Install WID R package
@@ -19,6 +21,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes r-base
+          mkdir -p "$R_LIBS_USER"
           Rscript -e 'install.packages("wid", repos="https://cloud.r-project.org")'
       - name: Download selected WID series
         shell: bash
