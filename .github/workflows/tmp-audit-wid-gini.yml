@@ -1,0 +1,143 @@
+name: Audit WID pre-tax income Gini
+
+on:
+  push:
+    branches:
+      - feature/wid-inequality
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      R_LIBS_USER: /tmp/Rlib
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install WID R package
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes r-base r-cran-httr r-cran-base64enc r-cran-plyr r-cran-jsonlite
+          mkdir -p "$R_LIBS_USER"
+          Rscript -e 'install.packages("wid", repos="https://cloud.r-project.org", dependencies=FALSE)'
+
+      - name: Download WID Gini
+        shell: bash
+        run: |
+          mkdir -p /tmp/wid-gini-audit
+          Rscript - <<'RS'
+          library(wid)
+          data <- download_wid(
+          	indicators = "gptinc",
+          	areas = "all",
+          	years = 1980:2026,
+          	perc = "p0p100",
+          	ages = "992",
+          	pop = "j",
+          	metadata = FALSE,
+          	quality_filter = NULL,
+          	verbose = TRUE
+          )
+          if (is.null(data) || nrow(data) == 0) stop("WID returned no Gini data")
+          required <- c("country", "variable", "percentile", "year", "value", "data_quality")
+          missing <- setdiff(required, names(data))
+          if (length(missing) > 0) stop(paste("WID response missing columns:", paste(missing, collapse=",")))
+          write.csv(data, "/tmp/wid-gini-audit/gini.csv", row.names=FALSE, na="")
+          cat("rows=", nrow(data), "\n", sep="")
+          cat("variables=", paste(sort(unique(data$variable)), collapse=","), "\n", sep="")
+          cat("percentiles=", paste(sort(unique(data$percentile)), collapse=","), "\n", sep="")
+          RS
+
+      - name: Audit Gini coverage
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv
+          import json
+          import math
+          import urllib.request
+          from collections import Counter, defaultdict
+          from pathlib import Path
+
+          with urllib.request.urlopen("https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json", timeout=60) as response:
+          	registry = json.load(response)
+
+          iso2_to_area = {}
+          for area in registry["areas"]:
+          	if area.get("level") != "country":
+          		continue
+          	iso2 = str((area.get("codes") or {}).get("iso2") or "").upper()
+          	if iso2:
+          		iso2_to_area[iso2] = area["area_id"]
+          iso2_to_area["KS"] = "country:XKX"
+
+          rows = list(csv.DictReader(Path("/tmp/wid-gini-audit/gini.csv").open(encoding="utf-8-sig")))
+          records = []
+          unmapped = Counter()
+          for row in rows:
+          	country = str(row.get("country") or "").strip().upper()
+          	if str(row.get("variable") or "").strip() != "gptinc992j":
+          		continue
+          	if str(row.get("percentile") or "").strip() != "p0p100":
+          		continue
+          	area_id = iso2_to_area.get(country)
+          	if not area_id:
+          		unmapped[country] += 1
+          		continue
+          	try:
+          		year = int(float(row["year"]))
+          		value = float(row["value"])
+          		quality = float(row["data_quality"])
+          	except (KeyError, TypeError, ValueError):
+          		continue
+          	if math.isfinite(value) and math.isfinite(quality):
+          		records.append((year, area_id, value, quality))
+
+          if not records:
+          	raise RuntimeError("No mapped WID Gini observations")
+
+          result = {
+          	"rawRows": len(rows),
+          	"mappedRows": len(records),
+          	"unmapped": dict(sorted(unmapped.items())),
+          	"thresholds": {},
+          }
+          for minimum_quality in range(0, 6):
+          	by_year = defaultdict(dict)
+          	for year, area_id, value, quality in records:
+          		if quality >= minimum_quality:
+          			by_year[year][area_id] = value
+          	if not by_year:
+          		result["thresholds"][str(minimum_quality)] = None
+          		continue
+          	years = sorted(by_year)
+          	areas_any = {area for values in by_year.values() for area in values}
+          	latest = years[-1]
+          	result["thresholds"][str(minimum_quality)] = {
+          		"years": [years[0], years[-1]],
+          		"areasAny": len(areas_any),
+          		"latestYear": latest,
+          		"latestCoverage": len(by_year[latest]),
+          		"recentCoverage": {str(year): len(by_year[year]) for year in years[-8:]},
+          		"samples": {area: by_year[latest][area] for area in (
+          			"country:AUT", "country:DEU", "country:USA", "country:IND",
+          			"country:CHN", "country:BRA", "country:ZAF", "country:XKX",
+          		) if area in by_year[latest]},
+          	}
+
+          output = Path("/tmp/wid-gini-audit/audit.json")
+          output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wid-gini-audit
+          path: /tmp/wid-gini-audit/audit.json
+          if-no-files-found: error
+          retention-days: 7
