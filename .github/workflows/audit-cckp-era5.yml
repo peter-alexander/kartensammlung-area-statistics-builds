@@ -1,0 +1,48 @@
+name: Audit CCKP ERA5 API
+
+on:
+  push:
+    branches:
+      - audit/cckp-era5
+    paths:
+      - "scripts/audit_cckp_era5.py"
+      - ".github/workflows/audit-cckp-era5.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate audit script
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/audit_cckp_era5.py
+          git diff --check
+
+      - name: Audit CCKP ERA5 API
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          python scripts/audit_cckp_era5.py 2>&1 | tee diagnostics/cckp-era5-audit.log
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cckp-era5-audit-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 14
