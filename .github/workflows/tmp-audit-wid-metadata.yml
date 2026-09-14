@@ -1,0 +1,100 @@
+name: Audit WID imputation metadata
+
+on:
+  push:
+    branches:
+      - audit/wid-inequality-bulk
+    paths:
+      - .github/workflows/tmp-audit-wid-metadata.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit WID metadata
+        shell: bash
+        run: |
+          mkdir -p audit
+          python3 - <<'PY'
+          import json
+          import re
+          import urllib.parse
+          import urllib.request
+          from collections import Counter
+          from pathlib import Path
+
+          REGISTRY = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+          STATA_CLIENT = "https://raw.githubusercontent.com/world-inequality-database/wid-stata-tool/master/java/com/wid/WIDDownloader.java"
+          API = "https://rfap9nitz6.execute-api.eu-west-1.amazonaws.com/prod/countries-variables-metadata"
+          variables = [
+          	"sptinc_p0p50_992_j", "sptinc_p90p100_992_j", "sptinc_p99p100_992_j",
+          	"shweal_p0p50_992_j", "shweal_p90p100_992_j", "shweal_p99p100_992_j",
+          ]
+
+          def get(url, headers=None):
+          	req = urllib.request.Request(url, headers=headers or {"User-Agent": "kartensammlung-area-statistics-audit/1.0"})
+          	with urllib.request.urlopen(req, timeout=180) as response:
+          		return response.read()
+
+          registry = json.loads(get(REGISTRY))
+          iso2 = sorted(str((a.get("codes") or {}).get("iso2") or "").upper() for a in registry["areas"] if a.get("level") == "country" and (a.get("codes") or {}).get("iso2"))
+          java = get(STATA_CLIENT).decode("utf-8")
+          match = re.search(r'private static final String apiKey = "([^"]+)";', java)
+          if not match:
+          	raise SystemExit("Could not obtain API key from official WID Stata client")
+
+          query = urllib.parse.urlencode({"countries": ",".join(iso2), "variables": ",".join(variables)})
+          payload = json.loads(get(API + "?" + query, {"x-api-key": match.group(1), "User-Agent": "kartensammlung-area-statistics-audit/1.0"}))
+          metadata_func = payload[0]["metadata_func"]
+          samples = {"AT", "DE", "US", "IN", "CN", "BR", "ZA", "XK"}
+          result = {"series": {}}
+
+          for wrapped in metadata_func:
+          	indicator = next(iter(wrapped))
+          	parts = indicator.split("_")
+          	concept = parts[0][1:6]
+          	items = wrapped[indicator]
+          	units = items[4]["units"]
+          	notes = items[5]["notes"][0]
+          	note_rows = notes.get(concept, [])
+          	note_by_country = {row.get("alpha2"): row for row in note_rows}
+          	countries = [row.get("country") for row in units if row.get("country")]
+          	imp = Counter()
+          	quality = Counter()
+          	sample_meta = {}
+          	for country in countries:
+          		row = note_by_country.get(country, {})
+          		imputation = str(row.get("imputation") or "").strip()
+          		data_quality = str(row.get("data_quality") or "").strip()
+          		imp[imputation or "<empty>"] += 1
+          		quality[data_quality or "<empty>"] += 1
+          		if country in samples:
+          			sample_meta[country] = {
+          				"imputation": imputation,
+          				"dataQuality": data_quality,
+          				"source": str(row.get("source") or "")[:1000],
+          				"method": str(row.get("method") or "")[:1000],
+          			}
+          	result["series"][indicator] = {
+          		"countries": len(countries),
+          		"countriesWithNotes": len(note_by_country),
+          		"imputation": dict(sorted(imp.items())),
+          		"dataQuality": dict(sorted(quality.items())),
+          		"samples": sample_meta,
+          	}
+
+          Path("audit/wid-metadata.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(result, ensure_ascii=False, indent=2))
+          PY
+      - name: Upload audit result
+        uses: actions/upload-artifact@v4
+        with:
+          name: wid-metadata
+          path: audit/wid-metadata.json
+          if-no-files-found: error
