@@ -43,8 +43,8 @@ jobs:
       - name: Install official WID R client
         shell: bash
         run: |
-          Rscript -e 'install.packages("remotes", repos="https://cloud.r-project.org")'
-          Rscript -e 'remotes::install_github("world-inequality-database/wid-r-tool@master", upgrade="never")'
+          git clone --depth 1 https://github.com/world-inequality-database/wid-r-tool.git /tmp/wid-r-tool
+          R CMD INSTALL /tmp/wid-r-tool
       - name: Audit target WID distribution series
         run: Rscript scripts/audit_wid_api.R | tee wid-api-audit.txt
       - name: Upload API audit output
