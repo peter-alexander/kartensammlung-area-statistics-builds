@@ -67,7 +67,7 @@ CCKP data reference for ERA5 0.25-degree observed climate data:
 Relevant source pages:
 
 - `https://climateknowledgeportal.worldbank.org/`
-- `https://climateknowledgeportal.worldbank.org/metadata`
+- `https://climateknowledgeportal.worldbank.org/index.php/metadata`
 - `https://worldbank.github.io/climateknowledgeportal/docs/collections/era5-x0.25.html`
 
 ## September 2026 audit
