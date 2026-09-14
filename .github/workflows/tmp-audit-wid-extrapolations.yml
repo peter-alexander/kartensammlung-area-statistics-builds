@@ -1,0 +1,187 @@
+name: Audit WID extrapolation-free coverage
+
+on:
+  push:
+    branches:
+      - audit/wid-inequality-bulk
+    paths:
+      - .github/workflows/tmp-audit-wid-extrapolations.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      R_LIBS_USER: /tmp/Rlib
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install patched official WID R client
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes r-base r-cran-httr r-cran-base64enc r-cran-plyr r-cran-jsonlite
+          mkdir -p "$R_LIBS_USER"
+          git clone --depth 1 https://github.com/world-inequality-database/wid-r-tool.git /tmp/wid-r-tool
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('/tmp/wid-r-tool/R/download-wid.R')
+          text = path.read_text(encoding='utf-8')
+          old = 'factor(variables$data_code)'
+          new = 'factor(variables$data_codes)'
+          count = text.count(old)
+          if count != 1:
+          	raise SystemExit(f'Expected exactly one upstream data_code typo, found {count}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+          R CMD INSTALL --library="$R_LIBS_USER" /tmp/wid-r-tool
+
+      - name: Compare coverage with and without extrapolations
+        shell: bash
+        run: |
+          mkdir -p /tmp/wid-audit audit
+          Rscript - <<'RS'
+          library(wid)
+
+          indicators <- c("sptinc", "shweal")
+          percentiles <- c("p0p50", "p90p100", "p99p100")
+
+          for (include_extrapolations in c(TRUE, FALSE)) {
+          	cat("Downloading include_extrapolations=", include_extrapolations, "\n", sep="")
+          	data <- download_wid(
+          		indicators = indicators,
+          		areas = "all",
+          		years = 1980:2026,
+          		perc = percentiles,
+          		ages = "992",
+          		pop = "j",
+          		metadata = FALSE,
+          		include_extrapolations = include_extrapolations,
+          		verbose = TRUE
+          	)
+          	if (is.null(data) || nrow(data) == 0) stop("WID returned no data")
+          	name <- if (include_extrapolations) "with-extrapolations" else "without-extrapolations"
+          	write.csv(data, file.path("/tmp/wid-audit", paste0(name, ".csv")), row.names=FALSE, na="")
+          	cat(name, ": rows=", nrow(data), " cols=", paste(names(data), collapse=","), "\n", sep="")
+          }
+          RS
+
+          python3 - <<'PY'
+          import csv
+          import json
+          import math
+          import statistics
+          import urllib.request
+          from collections import defaultdict
+          from pathlib import Path
+
+          REGISTRY = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+          with urllib.request.urlopen(REGISTRY, timeout=60) as response:
+          	registry = json.load(response)
+
+          iso2_to_area = {}
+          country_count = 0
+          for area in registry["areas"]:
+          	if area.get("level") != "country":
+          		continue
+          	country_count += 1
+          	iso2 = str((area.get("codes") or {}).get("iso2") or "").upper()
+          	if iso2:
+          		iso2_to_area[iso2] = area["area_id"]
+
+          expected = {
+          	("sptinc", "p0p50"): "income.bottom50.share",
+          	("sptinc", "p90p100"): "income.top10.share",
+          	("sptinc", "p99p100"): "income.top1.share",
+          	("shweal", "p0p50"): "wealth.bottom50.share",
+          	("shweal", "p90p100"): "wealth.top10.share",
+          	("shweal", "p99p100"): "wealth.top1.share",
+          }
+          samples = ["country:AUT", "country:DEU", "country:USA", "country:IND", "country:CHN", "country:BRA", "country:ZAF", "country:XKX"]
+
+          def load(name):
+          	rows = list(csv.DictReader((Path('/tmp/wid-audit') / f'{name}.csv').open(encoding='utf-8-sig')))
+          	series = defaultdict(lambda: defaultdict(dict))
+          	unmapped = defaultdict(int)
+          	for row in rows:
+          		key = (str(row.get('variable') or '').strip(), str(row.get('percentile') or '').strip())
+          		if key not in expected:
+          			continue
+          		country = str(row.get('country') or '').strip().upper()
+          		area_id = iso2_to_area.get(country)
+          		if area_id is None:
+          			unmapped[country] += 1
+          			continue
+          		try:
+          			year = int(float(row['year']))
+          			value = float(row['value'])
+          		except (KeyError, TypeError, ValueError):
+          			continue
+          		if math.isfinite(value):
+          			series[expected[key]][year][area_id] = value
+          	return rows, series, unmapped
+
+          rows_with, with_extrap, unmapped_with = load('with-extrapolations')
+          rows_without, without_extrap, unmapped_without = load('without-extrapolations')
+
+          result = {
+          	"registry": {"countries": country_count, "iso2": len(iso2_to_area), "xk": iso2_to_area.get("XK")},
+          	"rows": {"withExtrapolations": len(rows_with), "withoutExtrapolations": len(rows_without)},
+          	"unmapped": {
+          		"withExtrapolations": dict(sorted(unmapped_with.items())),
+          		"withoutExtrapolations": dict(sorted(unmapped_without.items())),
+          	},
+          	"series": {},
+          }
+
+          for name in sorted(expected.values()):
+          	with_by_year = with_extrap.get(name, {})
+          	without_by_year = without_extrap.get(name, {})
+          	all_years = sorted(set(with_by_year) | set(without_by_year))
+          	if not all_years:
+          		continue
+          	latest_with = max(with_by_year) if with_by_year else None
+          	latest_without = max(without_by_year) if without_by_year else None
+          	any_with = {area for values in with_by_year.values() for area in values}
+          	any_without = {area for values in without_by_year.values() for area in values}
+          	year_rows = []
+          	for year in all_years[-12:]:
+          		a = with_by_year.get(year, {})
+          		b = without_by_year.get(year, {})
+          		year_rows.append({
+          			"year": year,
+          			"with": len(a),
+          			"without": len(b),
+          			"removed": len(set(a) - set(b)),
+          		})
+          	sample_values = {}
+          	for area_id in samples:
+          		sample_values[area_id] = {
+          			"latestWith": next(({"year": y, "value": with_by_year[y][area_id]} for y in sorted(with_by_year, reverse=True) if area_id in with_by_year[y]), None),
+          			"latestWithout": next(({"year": y, "value": without_by_year[y][area_id]} for y in sorted(without_by_year, reverse=True) if area_id in without_by_year[y]), None),
+          		}
+          	result["series"][name] = {
+          		"firstYear": all_years[0],
+          		"latestYearWith": latest_with,
+          		"latestYearWithout": latest_without,
+          		"areasAnyWith": len(any_with),
+          		"areasAnyWithout": len(any_without),
+          		"recentCoverage": year_rows,
+          		"samples": sample_values,
+          	}
+
+          Path('audit/wid-extrapolation-coverage.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(result, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Upload audit result
+        uses: actions/upload-artifact@v4
+        with:
+          name: wid-extrapolation-coverage
+          path: audit/wid-extrapolation-coverage.json
+          if-no-files-found: error
