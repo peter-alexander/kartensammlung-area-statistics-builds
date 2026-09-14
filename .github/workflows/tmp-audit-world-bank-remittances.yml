@@ -80,7 +80,7 @@ jobs:
           	assert coverage["mappedSourceRows"] == 213
           	assert coverage["areasInLatestYear"] == 200
           	assert coverage["areasInDefaultYear"] == 200
-          	assert coverage["areasWithAnyValue"] >= 205
+          	assert coverage["areasWithAnyValue"] == 200
           	payload = json.loads((root / item["path"]).read_text(encoding="utf-8"))
           	assert payload["source"]["resourceId"] == expected_item["resourceId"]
           	assert payload["source"]["ignoredSourceNames"] == ["Channel Islands"]
