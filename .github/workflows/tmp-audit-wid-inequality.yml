@@ -16,6 +16,7 @@ jobs:
       R_LIBS_USER: /tmp/Rlib
     steps:
       - uses: actions/checkout@v4
+
       - name: Install WID R package
         shell: bash
         run: |
@@ -23,6 +24,12 @@ jobs:
           sudo apt-get install --yes r-base r-cran-httr r-cran-base64enc r-cran-plyr r-cran-jsonlite
           mkdir -p "$R_LIBS_USER"
           Rscript -e 'install.packages("wid", repos="https://cloud.r-project.org", dependencies=FALSE)'
+          Rscript - <<'RS'
+          library(wid)
+          cat("wid package version=", as.character(packageVersion("wid")), "\n", sep="")
+          cat("download_wid arguments=", paste(names(formals(download_wid)), collapse=","), "\n", sep="")
+          RS
+
       - name: Download selected WID series
         shell: bash
         run: |
@@ -33,26 +40,28 @@ jobs:
           indicators <- c("sptinc", "shweal")
           percentiles <- c("p0p50", "p50p90", "p90p100", "p99p100")
 
-          for (include_extrapolations in c(TRUE, FALSE)) {
-          	cat("Downloading include_extrapolations=", include_extrapolations, "\n", sep="")
-          	data <- download_wid(
-          		indicators = indicators,
-          		areas = "all",
-          		years = 1980:2026,
-          		perc = percentiles,
-          		ages = "992",
-          		pop = "j",
-          		metadata = TRUE,
-          		include_extrapolations = include_extrapolations,
-          		verbose = TRUE
-          	)
-          	if (is.null(data) || nrow(data) == 0) stop("WID returned no data")
-          	name <- if (include_extrapolations) "with-extrapolations" else "without-extrapolations"
-          	write.csv(data, file.path("/tmp/wid-audit", paste0(name, ".csv")), row.names=FALSE, na="")
-          	cat(name, ": rows=", nrow(data), " cols=", paste(names(data), collapse=","), "\n", sep="")
-          }
+          data <- download_wid(
+          	indicators = indicators,
+          	areas = "all",
+          	years = 1980:2026,
+          	perc = percentiles,
+          	ages = "992",
+          	pop = "j",
+          	metadata = TRUE,
+          	quality_filter = NULL,
+          	verbose = TRUE
+          )
+          if (is.null(data) || nrow(data) == 0) stop("WID returned no data")
+          required <- c("country", "variable", "percentile", "year", "value", "data_quality")
+          missing <- setdiff(required, names(data))
+          if (length(missing) > 0) stop(paste("WID response missing columns:", paste(missing, collapse=",")))
+          write.csv(data, "/tmp/wid-audit/wid-selected.csv", row.names=FALSE, na="")
+          cat("rows=", nrow(data), " cols=", paste(names(data), collapse=","), "\n", sep="")
+          cat("variables=", paste(sort(unique(data$variable)), collapse=","), "\n", sep="")
+          cat("quality=", paste(sort(unique(data$data_quality)), collapse=","), "\n", sep="")
           RS
-      - name: Audit mapping, years and coverage
+
+      - name: Audit mapping, years and quality coverage
         shell: bash
         run: |
           python - <<'PY'
@@ -61,21 +70,23 @@ jobs:
           import math
           import statistics
           import urllib.request
-          from collections import defaultdict
+          from collections import Counter, defaultdict
+          from datetime import datetime, timezone
           from pathlib import Path
 
           REGISTRY = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+          INPUT = Path("/tmp/wid-audit/wid-selected.csv")
+          OUTPUT = Path("/tmp/wid-audit/audit.json")
+
           with urllib.request.urlopen(REGISTRY, timeout=60) as response:
           	registry = json.load(response)
 
+          country_areas = [area for area in registry["areas"] if area.get("level") == "country"]
           iso2_to_area = {}
-          for area in registry["areas"]:
-          	if area.get("level") != "country":
-          		continue
+          for area in country_areas:
           	iso2 = str((area.get("codes") or {}).get("iso2") or "").upper()
           	if iso2:
           		iso2_to_area[iso2] = area["area_id"]
-          print(f"registry countries={len([a for a in registry['areas'] if a.get('level') == 'country'])} iso2={len(iso2_to_area)} XK={iso2_to_area.get('XK')}")
 
           expected = {
           	("sptinc", "p0p50"): "income_bottom50",
@@ -87,8 +98,12 @@ jobs:
           	("shweal", "p90p100"): "wealth_top10",
           	("shweal", "p99p100"): "wealth_top1",
           }
+          samples = (
+          	"country:AUT", "country:DEU", "country:USA", "country:IND",
+          	"country:CHN", "country:BRA", "country:ZAF", "country:XKX",
+          )
 
-          def percentile(values, p):
+          def quantile(values, p):
           	values = sorted(values)
           	if not values:
           		return None
@@ -100,57 +115,104 @@ jobs:
           	w = pos - lo
           	return values[lo] * (1 - w) + values[hi] * w
 
-          for filename in ("with-extrapolations.csv", "without-extrapolations.csv"):
-          	path = Path("/tmp/wid-audit") / filename
-          	rows = list(csv.DictReader(path.open(encoding="utf-8-sig")))
-          	print(f"\n=== {filename} rows={len(rows)} ===")
-          	print("columns=", list(rows[0]) if rows else [])
+          raw_rows = list(csv.DictReader(INPUT.open(encoding="utf-8-sig")))
+          unmapped = Counter()
+          unexpected = Counter()
+          records = []
+          metadata_examples = {}
+          quality_counts = Counter()
 
-          	unmapped = defaultdict(int)
-          	series = defaultdict(lambda: defaultdict(dict))
-          	meta_examples = {}
-          	for row in rows:
-          		country = str(row.get("country") or "").strip().upper()
-          		variable = str(row.get("variable") or "").strip()
-          		percentile_code = str(row.get("percentile") or "").strip()
-          		key = (variable, percentile_code)
-          		if key not in expected:
-          			continue
-          		area_id = iso2_to_area.get(country)
-          		if area_id is None:
-          			unmapped[country] += 1
-          			continue
-          		try:
-          			year = int(float(row["year"]))
-          			value = float(row["value"])
-          		except (TypeError, ValueError, KeyError):
-          			continue
-          		if not math.isfinite(value):
-          			continue
-          		series[expected[key]][year][area_id] = value
-          		if key not in meta_examples:
-          			meta_examples[key] = {k: row.get(k) for k in row if k not in {"country", "variable", "percentile", "year", "value"}}
-
-          print(f"unmapped codes count={len(unmapped)} top={sorted(unmapped.items(), key=lambda x: (-x[1], x[0]))[:40]}")
-          for key, meta in sorted(meta_examples.items()):
-          	print(f"META {key}: {meta}")
-
-          for name in sorted(series):
-          	by_year = series[name]
-          	years = sorted(by_year)
-          	areas_any = {area for values in by_year.values() for area in values}
-          	print(f"\n{name}: years={years[0]}-{years[-1]} areasAny={len(areas_any)}")
-          	for year in years[-8:]:
-          		print(f"  year={year} coverage={len(by_year[year])}")
-          	latest = years[-1]
-          	values = list(by_year[latest].values())
-          	print(
-          		f"  latest={latest} n={len(values)} min={min(values):.5f} "
-          		f"p10={percentile(values, .10):.5f} p25={percentile(values, .25):.5f} "
-          		f"median={statistics.median(values):.5f} p75={percentile(values, .75):.5f} "
-          		f"p90={percentile(values, .90):.5f} max={max(values):.5f}"
+          for row in raw_rows:
+          	country = str(row.get("country") or "").strip().upper()
+          	variable_full = str(row.get("variable") or "").strip()
+          	indicator = variable_full[:6]
+          	percentile_code = str(row.get("percentile") or "").strip()
+          	key = (indicator, percentile_code)
+          	if key not in expected:
+          		unexpected[(variable_full, percentile_code)] += 1
+          		continue
+          	area_id = iso2_to_area.get(country)
+          	if area_id is None:
+          		unmapped[country] += 1
+          		continue
+          	try:
+          		year = int(float(row["year"]))
+          		value = float(row["value"])
+          		quality = float(row["data_quality"])
+          	except (TypeError, ValueError, KeyError):
+          		continue
+          	if not (math.isfinite(value) and math.isfinite(quality)):
+          		continue
+          	quality_counts[str(quality)] += 1
+          	records.append((expected[key], year, area_id, value, quality))
+          	metadata_examples.setdefault(
+          		expected[key],
+          		{k: row.get(k) for k in row if k not in {"country", "year", "value"}},
           	)
-          	for area_id in ("country:AUT", "country:DEU", "country:USA", "country:IND", "country:CHN", "country:BRA", "country:ZAF", "country:XKX"):
-          		if area_id in by_year[latest]:
-          			print(f"  {area_id}={by_year[latest][area_id]:.6f}")
+
+          if not records:
+          	raise RuntimeError("No expected WID observations survived parsing/mapping")
+
+          results = {
+          	"retrievedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+          	"registryCountries": len(country_areas),
+          	"registryIso2": len(iso2_to_area),
+          	"rawRows": len(raw_rows),
+          	"mappedRows": len(records),
+          	"qualityCounts": dict(sorted(quality_counts.items())),
+          	"unmappedCodes": dict(sorted(unmapped.items())),
+          	"unexpectedSeries": {f"{k[0]}|{k[1]}": v for k, v in sorted(unexpected.items())},
+          	"metadataExamples": metadata_examples,
+          	"thresholds": {},
+          }
+
+          for minimum_quality in range(0, 6):
+          	by_series = defaultdict(lambda: defaultdict(dict))
+          	for name, year, area_id, value, quality in records:
+          		if quality >= minimum_quality:
+          			by_series[name][year][area_id] = value
+
+          	threshold_result = {}
+          	for name in sorted(expected.values()):
+          		by_year = by_series.get(name, {})
+          		if not by_year:
+          			threshold_result[name] = {"years": None, "areasAny": 0, "latest": None}
+          			continue
+          		years = sorted(by_year)
+          		areas_any = {area for values in by_year.values() for area in values}
+          		latest = years[-1]
+          		latest_values = list(by_year[latest].values())
+          		threshold_result[name] = {
+          			"years": [years[0], years[-1]],
+          			"areasAny": len(areas_any),
+          			"latest": {
+          				"year": latest,
+          				"coverage": len(latest_values),
+          				"distribution": {
+          					"min": min(latest_values),
+          					"p10": quantile(latest_values, 0.10),
+          					"p25": quantile(latest_values, 0.25),
+          					"median": statistics.median(latest_values),
+          					"p75": quantile(latest_values, 0.75),
+          					"p90": quantile(latest_values, 0.90),
+          					"max": max(latest_values),
+          				},
+          				"samples": {area: by_year[latest][area] for area in samples if area in by_year[latest]},
+          			},
+          			"recentCoverage": {str(year): len(by_year[year]) for year in years[-8:]},
+          		}
+          	results["thresholds"][str(minimum_quality)] = threshold_result
+
+          OUTPUT.write_text(json.dumps(results, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(results, ensure_ascii=False, indent=2, sort_keys=True))
           PY
+
+      - name: Upload audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wid-inequality-audit
+          path: |
+            /tmp/wid-audit/wid-selected.csv
+            /tmp/wid-audit/audit.json
+          if-no-files-found: error
+          retention-days: 7
