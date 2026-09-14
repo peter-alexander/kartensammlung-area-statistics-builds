@@ -27,6 +27,11 @@
 			"index": "world-bank-spei/index.json"
 		},
 		{
+			"id": "world-bank-esmap-solar-pv",
+			"name": "Weltbank/ESMAP – Solarenergie & PV-Potenzial",
+			"index": "world-bank-esmap-solar-pv/index.json"
+		},
+		{
 			"id": "cru-cy",
 			"name": "CRU – Klima & Wetter (CRU-CY)",
 			"index": "cru-cy/index.json"
