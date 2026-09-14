@@ -32,32 +32,34 @@ jobs:
           from pathlib import Path
 
           config_path = Path("config/imf-world-revenue-indicators.json")
-          config = config_path.read_text(encoding="utf-8")
-          old = '''\t\t\t"sourceIndicator": "TotRev",
-\t\t\t"title": "Gesamte Staatseinnahmen",
-\t\t\t"description": "Gesamte Staatseinnahmen nach IMF WoRLD in Prozent des BIP. Der abgedeckte Staatssektor folgt der WoRLD-Methodik; soweit verfügbar wird der Gesamtstaat (General Government) bevorzugt, andernfalls können Zentralstaat oder in Einzelfällen der öffentliche Sektor verwendet werden.",
-\t\t\t"unit": {"id": "percent-of-gdp", "label": "Prozent des BIP", "symbol": "%"},
-\t\t\t"classification": {"type": "fixed", "breaks": [15, 25, 35, 45, 55, 65]},
-\t\t\t"valueRange": [-20, 150],'''
-          new = old.replace('"valueRange": [-20, 150]', '"valueRange": [-20, 200]')
-          if config.count(old) != 1:
-          	raise SystemExit(f"Unexpected TotRev config match count: {config.count(old)}")
-          config_path.write_text(config.replace(old, new), encoding="utf-8")
+          lines = config_path.read_text(encoding="utf-8").splitlines(keepends=True)
+          in_total_revenue = False
+          replacements = 0
+          for index, line in enumerate(lines):
+          	if '"sourceIndicator": "TotRev"' in line:
+          		in_total_revenue = True
+          	elif in_total_revenue and '"valueRange": [-20, 150]' in line:
+          		lines[index] = line.replace('[-20, 150]', '[-20, 200]')
+          		replacements += 1
+          		in_total_revenue = False
+          if replacements != 1:
+          	raise SystemExit(f"Unexpected TotRev replacement count: {replacements}")
+          config_path.write_text("".join(lines), encoding="utf-8")
 
           build_path = Path("scripts/build_imf_world_revenue.py")
-          build = build_path.read_text(encoding="utf-8")
-          old = '''\ttargets: dict[str, str] = {}
-\tfor sheet in workbook.find("m:sheets", XML_NS) or []:
-\t\tname = str(sheet.attrib.get("name", "")).strip()'''
-          new = '''\ttargets: dict[str, str] = {}
-\tsheets = workbook.find("m:sheets", XML_NS)
-\tif sheets is None:
-\t\traise RuntimeError("IMF WoRLD workbook is missing the workbook sheets collection.")
-\tfor sheet in sheets:
-\t\tname = str(sheet.attrib.get("name", "")).strip()'''
-          if build.count(old) != 1:
-          	raise SystemExit(f"Unexpected workbook-sheet parser match count: {build.count(old)}")
-          build_path.write_text(build.replace(old, new), encoding="utf-8")
+          lines = build_path.read_text(encoding="utf-8").splitlines(keepends=True)
+          needle = '\tfor sheet in workbook.find("m:sheets", XML_NS) or []:\n'
+          matches = [index for index, line in enumerate(lines) if line == needle]
+          if len(matches) != 1:
+          	raise SystemExit(f"Unexpected workbook parser match count: {len(matches)}")
+          index = matches[0]
+          lines[index:index + 1] = [
+          	'\tsheets = workbook.find("m:sheets", XML_NS)\n',
+          	'\tif sheets is None:\n',
+          	'\t\traise RuntimeError("IMF WoRLD workbook is missing the workbook sheets collection.")\n',
+          	'\tfor sheet in sheets:\n',
+          ]
+          build_path.write_text("".join(lines), encoding="utf-8")
           PY
 
           python -m py_compile scripts/build_imf_world_revenue.py scripts/build_world_bank.py
