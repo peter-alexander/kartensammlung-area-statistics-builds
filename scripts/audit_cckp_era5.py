@@ -3,17 +3,19 @@
 import json
 import sys
 import urllib.error
-import urllib.parse
 import urllib.request
 from pathlib import Path
 
 API_BASE = "https://cckpapi.worldbank.org/cckp/v1"
 REGISTRY_URL = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
 VARIABLES = ["tas", "tasmax", "tasmin", "pr", "txx", "tnn", "fd", "tr", "rx1day", "rx5day"]
-ENDPOINT_TEMPLATE = (
-	"era5-x0.25_timeseries_{variables}_timeseries_annual_1950-2022_"
-	"mean_historical_era5_x0.25_mean/{geocode}?_format=json"
-)
+
+
+def endpoint_for(variables, geocode, period="1950-2022"):
+	return (
+		f"era5-x0.25_timeseries_{variables}_timeseries_annual_{period}_"
+		f"mean_historical_era5_x0.25_mean/{geocode}?_format=json"
+	)
 
 
 def fetch(url):
@@ -54,16 +56,15 @@ def describe(value, depth=0):
 	return value
 
 
-def collect_three_letter_strings(value, output):
+def collect_iso3(value, output):
 	if isinstance(value, dict):
 		for key, item in value.items():
-			if isinstance(item, str) and len(item) == 3 and item.isalpha():
-				if key.lower() in {"iso3", "iso_a3", "code", "geocode", "countrycode", "country_code"}:
-					output.add(item.upper())
-			collect_three_letter_strings(item, output)
+			if key.lower() in {"iso3", "iso_a3"} and isinstance(item, str) and len(item) == 3:
+				output.add(item.upper())
+			collect_iso3(item, output)
 	elif isinstance(value, list):
 		for item in value:
-			collect_three_letter_strings(item, output)
+			collect_iso3(item, output)
 
 
 def load_registry():
@@ -73,25 +74,22 @@ def load_registry():
 	payload = json.loads(body)
 	areas = payload.get("areas") or payload.get("countries") or []
 	iso3 = set()
-	for area in areas:
-		if not isinstance(area, dict):
-			continue
-		for key in ("iso3", "ISO3", "code"):
-			value = area.get(key)
-			if isinstance(value, str) and len(value) == 3:
-				iso3.add(value.upper())
-				break
+	collect_iso3(areas, iso3)
 	print(f"registry_http={status} content_type={content_type} bytes={len(body)}")
 	print(f"registry_top_keys={list(payload) if isinstance(payload, dict) else '<non-dict>'}")
 	print(f"registry_area_count={len(areas)} extracted_iso3={len(iso3)}")
+	if areas:
+		print("registry_first_area=" + json.dumps(areas[0], ensure_ascii=False, sort_keys=True))
 	return payload, iso3
 
 
-def request_payload(variables, geocode, output_path):
-	endpoint = ENDPOINT_TEMPLATE.format(variables=variables, geocode=geocode)
-	url = f"{API_BASE}/{endpoint}"
+def request_payload(variables, geocode, output_path, period="1950-2022"):
+	url = f"{API_BASE}/{endpoint_for(variables, geocode, period)}"
 	status, content_type, body = fetch(url)
-	print(f"request variables={variables} geocode={geocode} http={status} content_type={content_type} bytes={len(body)}")
+	print(
+		f"request variables={variables} geocode={geocode} period={period} "
+		f"http={status} content_type={content_type} bytes={len(body)}"
+	)
 	if status != 200:
 		print(body[:2000].decode("utf-8", errors="replace"))
 		return None
@@ -101,8 +99,27 @@ def request_payload(variables, geocode, output_path):
 		print(body[:2000].decode("utf-8", errors="replace"))
 		return None
 	output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+	metadata = payload.get("metadata", {}) if isinstance(payload, dict) else {}
+	print("metadata=" + json.dumps(metadata, ensure_ascii=False, sort_keys=True))
 	print(json.dumps(describe(payload), ensure_ascii=False, indent=2)[:12000])
 	return payload
+
+
+def summarize_country_series(label, payload, geocode="AUT"):
+	if not isinstance(payload, dict):
+		return
+	data = payload.get("data")
+	if not isinstance(data, dict):
+		return
+	series = data.get(geocode)
+	if not isinstance(series, dict):
+		print(f"series {label}: no {geocode} dict; data_keys={list(data)[:20]}")
+		return
+	keys = sorted(series)
+	print(
+		f"series {label}: count={len(keys)} first={keys[0] if keys else None} "
+		f"last={keys[-1] if keys else None} last_value={series.get(keys[-1]) if keys else None}"
+	)
 
 
 def main():
@@ -112,25 +129,48 @@ def main():
 	(outdir / "registry.json").write_text(json.dumps(registry, ensure_ascii=False, indent=2), encoding="utf-8")
 
 	failures = []
+	individual = {}
 	for variable in VARIABLES:
-		payload = request_payload(variable, "AUT", outdir / f"AUT-{variable}.json")
+		payload = request_payload(variable, "AUT", outdir / f"AUT-{variable}-1950-2022.json")
+		individual[variable] = payload
 		if payload is None:
 			failures.append(f"AUT:{variable}")
+		else:
+			summarize_country_series(variable, payload)
 
-	all_countries = request_payload("tas", "all_countries", outdir / "all-countries-tas.json")
+	combined = request_payload(
+		"tas,tasmax,tasmin",
+		"AUT",
+		outdir / "AUT-tas-tasmax-tasmin-1950-2022.json",
+	)
+	if combined is not None:
+		print("combined_temperature_request_success=true")
+
+	for period in ("1950-2023", "1950-2024", "1950-2025"):
+		payload = request_payload("tas", "AUT", outdir / f"AUT-tas-{period}.json", period=period)
+		summarize_country_series(f"tas:{period}", payload)
+
+	all_countries = request_payload("tas", "all_countries", outdir / "all-countries-tas-1950-2022.json")
 	if all_countries is None:
 		failures.append("all_countries:tas")
 	else:
-		cckp_codes = set()
-		collect_three_letter_strings(all_countries, cckp_codes)
-		print(f"all_countries_detected_three_letter_codes={len(cckp_codes)}")
-		if cckp_codes:
-			print("cckp_codes=" + ",".join(sorted(cckp_codes)))
-			if registry_iso3:
-				missing = sorted(registry_iso3 - cckp_codes)
-				extra = sorted(cckp_codes - registry_iso3)
-				print(f"registry_iso3_not_detected={len(missing)}: {','.join(missing)}")
-				print(f"cckp_codes_not_in_registry={len(extra)}: {','.join(extra)}")
+		data = all_countries.get("data") if isinstance(all_countries, dict) else None
+		cckp_codes = set(data) if isinstance(data, dict) else set()
+		print(f"all_countries_codes={len(cckp_codes)}")
+		print("cckp_codes=" + ",".join(sorted(cckp_codes)))
+		if registry_iso3:
+			missing = sorted(registry_iso3 - cckp_codes)
+			extra = sorted(cckp_codes - registry_iso3)
+			print(f"registry_iso3_not_in_cckp={len(missing)}: {','.join(missing)}")
+			print(f"cckp_codes_not_in_registry={len(extra)}: {','.join(extra)}")
+
+	for variable in ("tasmax", "tasmin"):
+		try:
+			tas_series = individual["tas"]["data"]["AUT"]
+			other_series = individual[variable]["data"]["AUT"]
+			print(f"individual_{variable}_equals_tas={other_series == tas_series}")
+		except (KeyError, TypeError):
+			pass
 
 	if failures:
 		print("FAILED_REQUESTS=" + ",".join(failures), file=sys.stderr)
