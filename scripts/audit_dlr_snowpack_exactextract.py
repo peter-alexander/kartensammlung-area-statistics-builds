@@ -85,8 +85,17 @@ def read_country_features(path: Path) -> list[dict]:
 			raise RuntimeError("Country feature without iso3")
 		if iso3 in seen:
 			raise RuntimeError(f"Duplicate country feature: {iso3}")
+		geometry = feature.get("geometry")
+		if not geometry:
+			raise RuntimeError(f"Country feature without geometry: {iso3}")
 		seen.add(iso3)
-		features.append(feature)
+		features.append(
+			{
+				"type": "Feature",
+				"properties": {"iso3": iso3},
+				"geometry": geometry,
+			}
+		)
 	if len(features) != EXPECTED_COUNTRIES:
 		raise RuntimeError(
 			f"Country geometry count mismatch: expected={EXPECTED_COUNTRIES}, actual={len(features)}"
