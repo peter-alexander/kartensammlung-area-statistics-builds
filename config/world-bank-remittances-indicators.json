@@ -1,0 +1,67 @@
+{
+	"schema": "kartensammlung.world-bank-remittances-statistics/v1",
+	"apiBase": "https://ddh-openapi.worldbank.org",
+	"countryApiUrl": "https://api.worldbank.org/v2/country?format=json&per_page=400",
+	"datasetId": "0066146",
+	"sourcePage": "https://datacatalog.worldbank.org/search/dataset/0066146/knomad",
+	"expectedDatasetTitle": "KNOMAD",
+	"expectedLicense": "Creative Commons Attribution 4.0",
+	"expectedSecurityClassification": "Public",
+	"expectedStartYear": 2000,
+	"minimumLatestYear": 2024,
+	"minimumResourceUpdatedDate": "2025-09-08",
+	"provider": {
+		"id": "world-bank-remittances",
+		"name": "World Bank / KNOMAD",
+		"dataset": "KNOMAD – Remittance Flows",
+		"license": "CC BY 4.0",
+		"licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+		"attribution": "World Bank / KNOMAD"
+	},
+	"nameAliases": {
+		"China*": "CHN",
+		"Czech Republic": "CZE",
+		"Faeroe Islands": "FRO",
+		"Korea, Dem. Rep.": "PRK",
+		"Puerto Rico": "PRI",
+		"Somalia": "SOM",
+		"Türkiye, Rep. of": "TUR",
+		"United Arab Emirates*": "ARE",
+		"Vietnam": "VNM"
+	},
+	"ignoredSourceNames": [
+		"Channel Islands"
+	],
+	"indicators": [
+		{
+			"id": "migration.remittance-inflows-current-usd-million",
+			"slug": "migration-remittance-inflows-current-usd-million",
+			"resourceId": "DR0095569",
+			"sourceTitlePrefix": "Inward Remittance Flows",
+			"sheet": "Inward remittance flows",
+			"header": "Remittance inflows (US$ million)",
+			"title": "Eingehende Rücküberweisungen",
+			"description": "Rücküberweisungen, die in die berichtende Volkswirtschaft eingehen, in Millionen laufenden US-Dollar.",
+			"unit": {"id": "million-current-usd", "label": "Mio. US-Dollar (laufend)", "symbol": "Mio. $"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [10, 100, 500, 2000, 10000, 50000]},
+			"minAreasWithAnyValue": 205,
+			"minAreasInDefaultYear": 195,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		},
+		{
+			"id": "migration.remittance-outflows-current-usd-million",
+			"slug": "migration-remittance-outflows-current-usd-million",
+			"resourceId": "DR0095570",
+			"sourceTitlePrefix": "Outward Remittance Flows",
+			"sheet": "Outward remittance flows",
+			"header": "Remittance outflows (US$ million)",
+			"title": "Ausgehende Rücküberweisungen",
+			"description": "Rücküberweisungen, die aus der berichtenden Volkswirtschaft ins Ausland fließen, in Millionen laufenden US-Dollar.",
+			"unit": {"id": "million-current-usd", "label": "Mio. US-Dollar (laufend)", "symbol": "Mio. $"},
+			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [10, 100, 500, 2000, 10000, 50000]},
+			"minAreasWithAnyValue": 205,
+			"minAreasInDefaultYear": 195,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
+		}
+	]
+}
