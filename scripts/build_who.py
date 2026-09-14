@@ -363,6 +363,7 @@ def normalize_indicator(
 	upper_field = str(indicator.get("upperField", "RATE_PER_100_NU")) if has_confidence_intervals else None
 	dimension_filters = {str(key): str(value) for key, value in indicator.get("dimensionFilters", {}).items()}
 	value_multiplier = float(indicator.get("valueMultiplier", 1.0))
+	skip_missing_values = bool(indicator.get("skipMissingValues", False))
 	required_fields = {
 		"IND_CODE", "IND_UUID", "DIM_TIME", "DIM_TIME_TYPE", "DIM_GEO_CODE_M49",
 		"DIM_GEO_CODE_TYPE", "DIM_PUBLISH_STATE_CODE", "IND_NAME", "GEO_NAME_SHORT",
@@ -406,7 +407,12 @@ def normalize_indicator(
 				ignored_m49.add(m49)
 			continue
 		area_id = area_by_m49[m49]
-		value = parse_number(round(float(parse_number(row.get(value_field))) * value_multiplier, 12))
+		raw_value = row.get(value_field)
+		if raw_value is None or str(raw_value).strip() == "":
+			if skip_missing_values:
+				continue
+			raise ValueError("Missing numeric value.")
+		value = parse_number(round(float(parse_number(raw_value)) * value_multiplier, 12))
 		validate_value_range(indicator, area_id, year, value, "value")
 		interval = None
 		if has_confidence_intervals:
