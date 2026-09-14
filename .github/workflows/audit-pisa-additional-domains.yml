@@ -24,4 +24,11 @@ jobs:
       - name: Install audit dependencies
         run: python -m pip install --disable-pip-version-check openpyxl==3.1.5 xlrd==2.0.1
       - name: Audit official OECD sources
-        run: python scripts/audit_pisa_additional_domains.py
+        run: python scripts/audit_pisa_additional_domains.py | tee pisa-additional-domains-audit.txt
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pisa-additional-domains-audit
+          path: pisa-additional-domains-audit.txt
+          if-no-files-found: error
+          retention-days: 7
