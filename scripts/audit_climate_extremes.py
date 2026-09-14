@@ -37,6 +37,10 @@ def text_name(node: ET.Element) -> str:
 	return ""
 
 
+def iso3_list(area_ids: set[str]) -> list[str]:
+	return sorted(area_id.split(":", 1)[1] for area_id in area_ids)
+
+
 def audit_oecd_structure() -> set[str]:
 	raw = fetch(OECD_STRUCTURE, "application/vnd.sdmx.structure+xml;version=2.1")
 	print(f"OECD structure bytes={len(raw)}")
@@ -130,6 +134,7 @@ def build_oecd_country_map(area_by_iso3: dict[str, str], regional_codes: set[str
 
 
 def audit_oecd_data(source_to_area: dict[str, str]) -> None:
+	registry_areas = set(source_to_area.values())
 	ref_areas = "+".join(sorted(source_to_area))
 	queries = {
 		"HD_PW_EXP": f"{OECD_DATA_BASE}/{ref_areas}.A.HD_PW_EXP...H_35......?startPeriod=1979&endPeriod=2024&dimensionAtObservation=AllDimensions",
@@ -140,9 +145,9 @@ def audit_oecd_data(source_to_area: dict[str, str]) -> None:
 		reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
 		fields = set(reader.fieldnames or [])
 		required = {"REF_AREA", "FREQ", "MEASURE", "UNIT_MEASURE", "DURATION", "TEMP_THRESHOLD", "TIME_PERIOD", "OBS_VALUE"}
-		missing = sorted(required - fields)
-		if missing:
-			raise RuntimeError(f"OECD {measure} response missing fields: {missing}")
+		missing_fields = sorted(required - fields)
+		if missing_fields:
+			raise RuntimeError(f"OECD {measure} response missing fields: {missing_fields}")
 		by_threshold: dict[str, dict[int, dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
 		units: set[str] = set()
 		durations: set[str] = set()
@@ -166,10 +171,13 @@ def audit_oecd_data(source_to_area: dict[str, str]) -> None:
 			by_year = by_threshold[threshold]
 			years = sorted(by_year)
 			all_areas = set().union(*(set(values) for values in by_year.values()))
+			latest_areas = set(by_year[years[-1]])
 			print(
 				f"  threshold={threshold or '<blank>'} years={years[0]}-{years[-1]} "
-				f"areasWithAny={len(all_areas)} latestCoverage={len(by_year[years[-1]])}"
+				f"areasWithAny={len(all_areas)} latestCoverage={len(latest_areas)}"
 			)
+			print(f"    missingAny={iso3_list(registry_areas - all_areas)}")
+			print(f"    missingLatest={iso3_list(registry_areas - latest_areas)}")
 			for iso3 in ("AUT", "DEU", "USA", "IND", "CHN", "ZAF", "NAM", "XKX"):
 				area_id = f"country:{iso3}"
 				series = [(year, by_year[year][area_id]) for year in years if area_id in by_year[year]]
@@ -177,6 +185,7 @@ def audit_oecd_data(source_to_area: dict[str, str]) -> None:
 
 
 def audit_spei(area_by_iso3: dict[str, str]) -> None:
+	registry_areas = set(area_by_iso3.values())
 	raw = fetch(SPEI_URL, "application/json")
 	payload = json.loads(raw)
 	if not isinstance(payload, list) or len(payload) != 2:
@@ -203,7 +212,10 @@ def audit_spei(area_by_iso3: dict[str, str]) -> None:
 	for year in available_years[-8:]:
 		print(f"  SPEI {year}: coverage={len(by_year[year])}")
 	all_areas = set().union(*(set(values) for values in by_year.values()))
+	latest_areas = set(by_year[available_years[-1]])
 	print(f"SPEI areasWithAnyValue={len(all_areas)} unmapped={sorted(unmapped)}")
+	print(f"SPEI missingAny={iso3_list(registry_areas - all_areas)}")
+	print(f"SPEI missingLatest={iso3_list(registry_areas - latest_areas)}")
 	for iso3 in ("AUT", "DEU", "USA", "IND", "CHN", "ZAF", "NAM", "XKX"):
 		area_id = area_by_iso3[iso3]
 		series = [(year, by_year[year][area_id]) for year in available_years if area_id in by_year[year]]
