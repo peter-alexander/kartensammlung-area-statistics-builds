@@ -52,6 +52,18 @@ jobs:
           		"Outward_remittance_flows_%28September_2025%29.xlsx"
           	),
           }
+          NAME_ALIASES = {
+          	"China*": "CHN",
+          	"Czech Republic": "CZE",
+          	"Faeroe Islands": "FRO",
+          	"Korea, Dem. Rep.": "PRK",
+          	"Puerto Rico": "PRI",
+          	"Somalia": "SOM",
+          	"Türkiye, Rep. of": "TUR",
+          	"United Arab Emirates*": "ARE",
+          	"Vietnam": "VNM",
+          }
+          IGNORED_NAMES = {"Channel Islands"}
           EXPECTED_YEARS = list(range(2000, 2025))
           registry_url = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
           area_by_iso3, _ = common.load_registry(registry_url, 60)
@@ -76,6 +88,9 @@ jobs:
           	else:
           		wb_country_by_name[name] = iso3
           print(f"registryIso3={len(area_by_iso3)} wbCountries={len(wb_country_by_name)} wbAggregates={len(wb_aggregate_by_name)}")
+          for name, iso3 in NAME_ALIASES.items():
+          	if iso3 not in area_by_iso3:
+          		raise RuntimeError(f"Alias target missing from registry: {name} -> {iso3}")
 
           def percentile(values, fraction):
           	ordered = sorted(values)
@@ -128,6 +143,7 @@ jobs:
 
           		mapped_rows = []
           		aggregate_rows = []
+          		ignored_rows = []
           		unmatched_rows = []
           		nonregistry_rows = []
           		all_names = []
@@ -136,7 +152,10 @@ jobs:
           			if not name:
           				continue
           			all_names.append(name)
-          			iso3 = wb_country_by_name.get(name)
+          			if name in IGNORED_NAMES:
+          				ignored_rows.append((row_index, name))
+          				continue
+          			iso3 = NAME_ALIASES.get(name) or wb_country_by_name.get(name)
           			if iso3:
           				if iso3 in area_by_iso3:
           					mapped_rows.append((row_index, name, iso3, row))
@@ -149,7 +168,10 @@ jobs:
           			else:
           				unmatched_rows.append((row_index, name))
 
-          		print(f"dataRows={len(all_names)} mappedCountries={len(mapped_rows)} aggregates={len(aggregate_rows)} nonRegistry={nonregistry_rows}")
+          		print(
+          			f"dataRows={len(all_names)} mappedCountries={len(mapped_rows)} aggregates={len(aggregate_rows)} "
+          			f"ignored={ignored_rows} nonRegistry={nonregistry_rows}"
+          		)
           		print(f"unmatched={json.dumps(unmatched_rows, ensure_ascii=False)}")
           		print(f"aggregates={json.dumps(aggregate_rows, ensure_ascii=False)}")
           		print(f"tailNames={json.dumps(all_names[-30:], ensure_ascii=False)}")
