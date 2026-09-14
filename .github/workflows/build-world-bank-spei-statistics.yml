@@ -87,6 +87,7 @@ jobs:
           assert provider["dataset"]["sourceLatestYear"] >= 2023
           assert provider["dataset"]["publishedLatestYear"] >= 2023
           assert provider["dataset"]["expectedMissingIso3"] == config["expectedMissingIso3"]
+          assert provider["dataset"]["expectedAdditionalMissingByYear"] == {"1961": ["VUT"]}
           assert len(provider["dataset"]["expectedMissingIso3"]) == 61
           assert len(provider["indicators"]) == 1
           assert any(item["id"] == "world-bank-spei" for item in global_index["providers"])
@@ -104,7 +105,8 @@ jobs:
           assert item["coverage"]["areasWithAnyValue"] == 189
           assert item["coverage"]["areasInLatestYear"] == 189
           assert item["coverage"]["areasInDefaultYear"] == 189
-          assert item["coverage"]["observations"] == 189 * len(item["availableYears"])
+          expected_observations = 189 * len(item["availableYears"]) - (1 if 1961 in item["availableYears"] else 0)
+          assert item["coverage"]["observations"] == expected_observations
 
           payload = json.loads((provider_dir / item["path"]).read_text(encoding="utf-8"))
           assert payload["source"]["providerId"] == "world-bank-spei"
@@ -113,12 +115,18 @@ jobs:
           assert payload["source"]["timeScaleMonths"] == 12
           assert payload["source"]["aggregationMethod"] == "Average"
           assert payload["source"]["expectedMissingIso3"] == config["expectedMissingIso3"]
+          assert payload["source"]["expectedAdditionalMissingByYear"] == {"1961": ["VUT"]}
           assert payload["source"]["sourceLatestYear"] >= payload["defaultYear"]
           assert all(year > payload["defaultYear"] for year in payload["source"]["excludedTrailingYears"])
           assert "fallback" not in payload["source"]
 
           for year in payload["availableYears"]:
-              assert len(payload["values"][str(year)]) == 189, year
+              expected_count = 188 if year == 1961 else 189
+              assert len(payload["values"][str(year)]) == expected_count, (year, len(payload["values"][str(year)]))
+          assert "country:VUT" not in payload["values"]["1961"]
+          for year in payload["availableYears"]:
+              if year != 1961:
+                  assert "country:VUT" in payload["values"][str(year)], year
           for missing_iso3 in config["expectedMissingIso3"]:
               assert f"country:{missing_iso3}" not in payload["values"][str(payload["defaultYear"])]
           for area_id in config["requiredAreas"]:
@@ -137,7 +145,8 @@ jobs:
           print(f"retrievedAt={provider['retrievedAt']}")
           print(
               f"published=1960-{item['defaultYear']} sourceLatest={provider['dataset']['sourceLatestYear']} "
-              f"excludedTrailing={provider['dataset']['excludedTrailingYears']} coverage=189/250"
+              f"excludedTrailing={provider['dataset']['excludedTrailingYears']} latestCoverage=189/250 "
+              f"historicalException=1961:VUT"
           )
           PY
           du -h dist/statistics/world-bank-spei/index.json
