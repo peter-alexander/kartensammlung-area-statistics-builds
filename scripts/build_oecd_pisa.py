@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import io
-import json
 import math
 import re
 import time
@@ -58,8 +57,7 @@ def validate_config(payload: Any) -> dict[str, Any]:
 	for key in ("sourceUrl", "dataUrl"):
 		if not str(payload.get(key, "")).startswith("https://"):
 			raise ValueError(f"OECD PISA {key} must use HTTPS.")
-	publication_date = str(payload.get("publicationDate", ""))
-	if publication_date != "2026-09-08":
+	if str(payload.get("publicationDate", "")) != "2026-09-08":
 		raise ValueError("Unexpected PISA 2025 publication date.")
 
 	provider = payload.get("provider")
@@ -71,13 +69,13 @@ def validate_config(payload: Any) -> dict[str, Any]:
 	if provider.get("license") != "CC BY 4.0":
 		raise ValueError("OECD PISA license must remain CC BY 4.0.")
 
-	excluded = payload.get("excludedPartialEntities")
 	expected_excluded = {
 		"B-S-J-Z (China)",
 		"Dushanbe (Tajikistan)",
 		"Kurdistan Region (Iraq)",
 		"Ukrainian regions (17 of 27)",
 	}
+	excluded = payload.get("excludedPartialEntities")
 	if not isinstance(excluded, list) or set(excluded) != expected_excluded or len(excluded) != len(expected_excluded):
 		raise ValueError("OECD PISA excluded partial-country entities changed unexpectedly.")
 
@@ -191,11 +189,12 @@ def extract_year_columns(sheet: Any, expected_years: list[int]) -> dict[int, int
 		if not isinstance(value, str):
 			continue
 		match = re.fullmatch(r"PISA (\d{4})", value.strip())
-		if match:
-			year = int(match.group(1))
-			if year in year_columns:
-				raise RuntimeError(f"Duplicate PISA year column {year} in {sheet.title}.")
-			year_columns[year] = column
+		if not match:
+			continue
+		year = int(match.group(1))
+		if year in year_columns:
+			raise RuntimeError(f"Duplicate PISA year column {year} in {sheet.title}.")
+		year_columns[year] = column
 	if sorted(year_columns) != expected_years:
 		raise RuntimeError(
 			f"Unexpected PISA cycle columns in {sheet.title}: {sorted(year_columns)}; expected {expected_years}."
@@ -361,7 +360,7 @@ def normalize_values(
 			_, area_id = mapped
 			if area_id in values[year]:
 				raise RuntimeError(f"Duplicate PISA value for {indicator['id']} {area_id} {year}.")
-			values[year][area_id] = common.normalize_number(value)
+			values[year][area_id] = common.normalize_number(f"{value:.5f}")
 			retained_observations += 1
 	return values, source_observations, retained_observations
 
@@ -413,18 +412,9 @@ def build_payload(
 				f"OECD PISA {indicator['id']} default cycle {default_year} is missing required area {area_id}."
 			)
 
-	sampling_caution_areas = sorted(
-		mapping[name][1]
-		for name in starred_entities
-		if name in mapping and 2025 in next(
-			(source_values for source_name, source_values in [] if source_name == name),
-			{},
-		)
-	)
 	# The asterisk is attached to country/economy names in the OECD 2025 trend tables.
 	# Store every mapped starred entity as a 2025 sampling caution; no historical values are altered.
 	sampling_caution_areas = sorted(mapping[name][1] for name in starred_entities if name in mapping)
-
 	latest_year = available_years[-1]
 	payload = {
 		"schema": "kartensammlung.statistics-indicator/v1",
