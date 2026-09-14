@@ -157,6 +157,11 @@
 			"index": "aquastat/index.json"
 		},
 		{
+			"id": "oecd-pisa",
+			"name": "OECD PISA – Schülerleistungen",
+			"index": "oecd-pisa/index.json"
+		},
+		{
 			"id": "oecd-revenue-statistics",
 			"name": "OECD – Steuern & Abgaben",
 			"index": "oecd-revenue-statistics/index.json"

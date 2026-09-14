@@ -1,0 +1,82 @@
+{
+	"schema": "kartensammlung.oecd-pisa-statistics/v1",
+	"sourceUrl": "https://www.oecd.org/en/publications/pisa-2025-results-volume-i_73451bc5-en/full-report/results-for-countries-and-economies_33854635.html",
+	"dataUrl": "https://stat.link/mrq53f",
+	"publication": "PISA 2025 Results (Volume I): Future-Ready Students",
+	"publicationDate": "2026-09-08",
+	"provider": {
+		"id": "oecd-pisa",
+		"name": "OECD",
+		"dataset": "PISA 2025 Results (Volume I) – Annex B1A",
+		"license": "CC BY 4.0",
+		"licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+		"attribution": "OECD (2026), PISA 2025 Results (Volume I): Future-Ready Students"
+	},
+	"excludedPartialEntities": [
+		"B-S-J-Z (China)",
+		"Dushanbe (Tajikistan)",
+		"Kurdistan Region (Iraq)",
+		"Ukrainian regions (17 of 27)"
+	],
+	"countryAliases": {
+		"Brunei Darussalam": "BRN",
+		"Czechia": "CZE",
+		"Hong Kong (China)": "HKG",
+		"Korea": "KOR",
+		"Kosovo": "XKX",
+		"Macao (China)": "MAC",
+		"Moldova": "MDA",
+		"Palestinian Authority": "PSE",
+		"Slovak Republic": "SVK",
+		"Chinese Taipei": "TWN",
+		"Türkiye": "TUR",
+		"Viet Nam": "VNM"
+	},
+	"indicators": [
+		{
+			"id": "education.pisa-science-mean-score",
+			"slug": "education-pisa-science-mean-score",
+			"sourceIndicator": "Table I.B1.2a.36",
+			"currentTable": "Table I.B1.2a.1",
+			"expectedYears": [2006, 2009, 2012, 2015, 2018, 2022, 2025],
+			"title": "PISA-Punktzahl Naturwissenschaften",
+			"description": "Mittlere PISA-Punktzahl der 15-jährigen Schülerinnen und Schüler in Naturwissenschaften nach OECD. Dargestellt werden nur tatsächlich veröffentlichte PISA-Zyklen; Zwischenjahre werden nicht interpoliert.",
+			"unit": {"id": "pisa-points", "label": "PISA-Punkte"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [300, 350, 400, 450, 500, 550]},
+			"valueRange": [200, 700],
+			"minAreasWithAnyValue": 85,
+			"minAreasInDefaultYear": 85,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:JPN", "country:SGP"]
+		},
+		{
+			"id": "education.pisa-reading-mean-score",
+			"slug": "education-pisa-reading-mean-score",
+			"sourceIndicator": "Table I.B1.2a.37",
+			"currentTable": "Table I.B1.2a.2",
+			"expectedYears": [2000, 2003, 2006, 2009, 2012, 2015, 2018, 2022, 2025],
+			"title": "PISA-Punktzahl Lesen",
+			"description": "Mittlere PISA-Punktzahl der 15-jährigen Schülerinnen und Schüler im Lesen nach OECD. Dargestellt werden nur tatsächlich veröffentlichte PISA-Zyklen; Zwischenjahre werden nicht interpoliert.",
+			"unit": {"id": "pisa-points", "label": "PISA-Punkte"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [300, 350, 400, 450, 500, 550]},
+			"valueRange": [200, 700],
+			"minAreasWithAnyValue": 85,
+			"minAreasInDefaultYear": 84,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:JPN", "country:SGP"]
+		},
+		{
+			"id": "education.pisa-mathematics-mean-score",
+			"slug": "education-pisa-mathematics-mean-score",
+			"sourceIndicator": "Table I.B1.2a.38",
+			"currentTable": "Table I.B1.2a.3",
+			"expectedYears": [2003, 2006, 2009, 2012, 2015, 2018, 2022, 2025],
+			"title": "PISA-Punktzahl Mathematik",
+			"description": "Mittlere PISA-Punktzahl der 15-jährigen Schülerinnen und Schüler in Mathematik nach OECD. Dargestellt werden nur tatsächlich veröffentlichte PISA-Zyklen; Zwischenjahre werden nicht interpoliert.",
+			"unit": {"id": "pisa-points", "label": "PISA-Punkte"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [300, 350, 400, 450, 500, 550]},
+			"valueRange": [200, 700],
+			"minAreasWithAnyValue": 85,
+			"minAreasInDefaultYear": 84,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:JPN", "country:SGP"]
+		}
+	]
+}
