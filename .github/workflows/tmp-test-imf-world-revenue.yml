@@ -30,6 +30,36 @@ jobs:
           python -m json.tool config/statistics-providers.json >/dev/null
           python -m json.tool config/imf-world-revenue-indicators.json >/dev/null
 
+      - name: Audit selected value extrema
+        run: |
+          python - <<'PY'
+          import json
+          import math
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, "scripts")
+          import build_imf_world_revenue as world
+
+          config = world.validate_config(json.loads(Path("config/imf-world-revenue-indicators.json").read_text(encoding="utf-8")))
+          raw, _ = world.fetch_workbook(config["workbookUrl"], 120)
+          rows, metadata = world.parse_workbook(raw, config)
+          print(f"rows={metadata['sourceRows']} countries={metadata['sourceCountries']} years={metadata['firstYear']}-{metadata['latestYear']}")
+          for indicator in config["indicators"]:
+          	name = indicator["sourceIndicator"]
+          	observations = []
+          	for row in rows:
+          		value_text = row.get(name, "").strip()
+          		if not value_text:
+          			continue
+          		value = float(value_text)
+          		if math.isfinite(value):
+          			observations.append((value, row["ISO3"], row["year"]))
+          	minimum = min(observations)
+          	maximum = max(observations)
+          	print(f"{name}: min={minimum[0]:.12g} {minimum[1]} {minimum[2]} max={maximum[0]:.12g} {maximum[1]} {maximum[2]} n={len(observations)}")
+          PY
+
       - name: Build IMF WoRLD statistics
         shell: bash
         run: |
