@@ -1,0 +1,300 @@
+name: Audit WDI climate sources 2026
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/audit-wdi-climate-sources-2026.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download audit inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          curl --fail --silent --show-error --location \
+            --connect-timeout 15 --max-time 120 --retry 2 --retry-delay 2 --retry-all-errors \
+            --output diagnostics/gcb-fossil-2025.csv \
+            'https://zenodo.org/records/17417124/files/GCB2025v15_MtCO2_flat.csv?download=1'
+          curl --fail --silent --show-error --location \
+            --connect-timeout 15 --max-time 120 --retry 2 --retry-delay 2 --retry-all-errors \
+            --output diagnostics/gcb-percapita-2025.csv \
+            'https://zenodo.org/records/17417124/files/GCB2025v15_percapita_flat.csv?download=1'
+          curl --fail --silent --show-error --location \
+            --connect-timeout 15 --max-time 120 --retry 2 --retry-delay 2 --retry-all-errors \
+            --output diagnostics/edgar-2026.html \
+            'https://edgar.jrc.ec.europa.eu/report_2026'
+          curl --fail --silent --show-error --location \
+            --connect-timeout 15 --max-time 120 --retry 2 --retry-delay 2 --retry-all-errors \
+            --output diagnostics/country-registry.json \
+            'https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json'
+          sha256sum diagnostics/gcb-fossil-2025.csv diagnostics/gcb-percapita-2025.csv | tee diagnostics/input-sha256.txt
+          grep -F 'CC BY-NC-ND 4.0' diagnostics/edgar-2026.html >/dev/null
+          grep -F 'IEA-EDGAR CO' diagnostics/edgar-2026.html >/dev/null
+          echo 'EDGAR 2026 IEA-EDGAR licence marker confirmed.'
+
+      - name: Compare WDI lineage and Global Carbon Budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' | tee diagnostics/audit.txt
+          from __future__ import annotations
+
+          import csv
+          import json
+          import math
+          import statistics
+          import urllib.parse
+          import urllib.request
+          from collections import defaultdict
+          from pathlib import Path
+
+          USER_AGENT = "kartensammlung-area-statistics-builds/1"
+          WDI_BASE = "https://api.worldbank.org/v2"
+          WDI_CODES = {
+          	"co2_total": "EN.GHG.CO2.MT.CE.AR5",
+          	"co2_per_capita": "EN.GHG.CO2.PC.CE.AR5",
+          	"ghg_total": "EN.GHG.ALL.MT.CE.AR5",
+          	"ghg_per_capita": "EN.GHG.ALL.PC.CE.AR5",
+          	"co2_intensity": "EN.GHG.CO2.RT.GDP.PP.KD",
+          	"ghg_with_lulucf": "EN.GHG.ALL.LU.MT.CE.AR5",
+          	"co2_lulucf": "EN.GHG.CO2.LU.MT.CE.AR5",
+          	"population": "SP.POP.TOTL",
+          	"gdp_ppp_constant": "NY.GDP.MKTP.PP.KD",
+          }
+
+          def fetch_json(url: str):
+          	request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+          	with urllib.request.urlopen(request, timeout=120) as response:
+          		return json.load(response)
+
+          registry = json.loads(Path("diagnostics/country-registry.json").read_text(encoding="utf-8"))
+          area_by_iso3 = {}
+          for area in registry.get("areas", []):
+          	if area.get("level") != "country":
+          		continue
+          	iso3 = str((area.get("codes") or {}).get("iso3") or "").strip().upper()
+          	area_id = str(area.get("area_id") or "").strip()
+          	if len(iso3) == 3 and area_id:
+          		area_by_iso3[iso3] = area_id
+          assert len(area_by_iso3) == 250, len(area_by_iso3)
+          print(f"registry_countries={len(area_by_iso3)}")
+
+          def fetch_wdi(code: str):
+          	query = urllib.parse.urlencode({
+          		"format": "json",
+          		"source": "2",
+          		"per_page": "20000",
+          		"page": "1",
+          	})
+          	url = f"{WDI_BASE}/country/all/indicator/{code}?{query}"
+          	payload = fetch_json(url)
+          	if not isinstance(payload, list) or len(payload) != 2:
+          		raise RuntimeError(f"Unexpected WDI response for {code}")
+          	metadata, records = payload
+          	if int(metadata.get("pages", 1)) != 1:
+          		raise RuntimeError(f"Unexpected WDI pagination for {code}: {metadata}")
+          	values = {}
+          	for record in records or []:
+          		value = record.get("value")
+          		iso3 = str(record.get("countryiso3code") or "").strip().upper()
+          		year_text = str(record.get("date") or "").strip()
+          		if value is None or iso3 not in area_by_iso3 or not year_text.isdigit():
+          			continue
+          		year = int(year_text)
+          		number = float(value)
+          		if not math.isfinite(number):
+          			continue
+          		values[(iso3, year)] = number
+          	return values
+
+          wdi = {}
+          for label, code in WDI_CODES.items():
+          	values = fetch_wdi(code)
+          	wdi[label] = values
+          	years = sorted({year for _, year in values})
+          	print(
+          		f"WDI {label} {code}: observations={len(values)} "
+          		f"countries={len({iso3 for iso3, _ in values})} "
+          		f"years={years[0] if years else None}-{years[-1] if years else None}"
+          	)
+
+          def compare_formula(name: str, actual: dict, calculator):
+          	differences = []
+          	for key, value in actual.items():
+          		expected = calculator(key)
+          		if expected is None or not math.isfinite(expected):
+          			continue
+          		differences.append(abs(value - expected))
+          	if not differences:
+          		raise RuntimeError(f"No overlap for formula {name}")
+          	print(
+          		f"FORMULA {name}: overlap={len(differences)} "
+          		f"<=1e-12={sum(diff <= 1e-12 for diff in differences)} "
+          		f"<=1e-9={sum(diff <= 1e-9 for diff in differences)} "
+          		f"max_abs={max(differences):.12g}"
+          	)
+
+          compare_formula(
+          	"co2_per_capita",
+          	wdi["co2_per_capita"],
+          	lambda key: (
+          		wdi["co2_total"][key] * 1_000_000 / wdi["population"][key]
+          		if key in wdi["co2_total"] and key in wdi["population"] and wdi["population"][key] != 0
+          		else None
+          	),
+          )
+          compare_formula(
+          	"ghg_per_capita",
+          	wdi["ghg_per_capita"],
+          	lambda key: (
+          		wdi["ghg_total"][key] * 1_000_000 / wdi["population"][key]
+          		if key in wdi["ghg_total"] and key in wdi["population"] and wdi["population"][key] != 0
+          		else None
+          	),
+          )
+          compare_formula(
+          	"co2_intensity",
+          	wdi["co2_intensity"],
+          	lambda key: (
+          		wdi["co2_total"][key] * 1_000_000_000 / wdi["gdp_ppp_constant"][key]
+          		if key in wdi["co2_total"] and key in wdi["gdp_ppp_constant"] and wdi["gdp_ppp_constant"][key] != 0
+          		else None
+          	),
+          )
+          compare_formula(
+          	"ghg_with_lulucf",
+          	wdi["ghg_with_lulucf"],
+          	lambda key: (
+          		wdi["ghg_total"][key] + wdi["co2_lulucf"][key]
+          		if key in wdi["ghg_total"] and key in wdi["co2_lulucf"]
+          		else None
+          	),
+          )
+
+          def inspect_csv(path: str):
+          	with open(path, newline="", encoding="utf-8-sig") as handle:
+          		reader = csv.DictReader(handle)
+          		rows = list(reader)
+          	print(f"CSV {path}: fields={reader.fieldnames}")
+          	for row in rows[:3]:
+          		print(f"CSV sample: {row}")
+          	return reader.fieldnames or [], rows
+
+          fossil_fields, fossil_rows = inspect_csv("diagnostics/gcb-fossil-2025.csv")
+          percap_fields, percap_rows = inspect_csv("diagnostics/gcb-percapita-2025.csv")
+
+          def find_field(fields, exact_candidates):
+          	by_lower = {field.strip().lower(): field for field in fields}
+          	for candidate in exact_candidates:
+          		field = by_lower.get(candidate.lower())
+          		if field:
+          			return field
+          	return None
+
+          iso_field = find_field(fossil_fields, ["ISO 3166-1 alpha-3", "ISO3", "iso_code"])
+          year_field = find_field(fossil_fields, ["Year", "year"])
+          total_field = find_field(fossil_fields, ["Total", "total"])
+          pc_iso_field = find_field(percap_fields, ["ISO 3166-1 alpha-3", "ISO3", "iso_code"])
+          pc_year_field = find_field(percap_fields, ["Year", "year"])
+          pc_value_field = find_field(percap_fields, ["Per Capita", "per capita", "Per capita", "Value", "value"])
+
+          print(
+          	"GCB detected fields: "
+          	f"iso={iso_field!r} year={year_field!r} total={total_field!r} "
+          	f"pc_iso={pc_iso_field!r} pc_year={pc_year_field!r} pc_value={pc_value_field!r}"
+          )
+          if not all((iso_field, year_field, total_field, pc_iso_field, pc_year_field, pc_value_field)):
+          	raise RuntimeError("Could not identify GCB CSV fields; inspect audit output.")
+
+          def parse_gcb(rows, iso_name, year_name, value_name):
+          	values = {}
+          	for row in rows:
+          		iso3 = str(row.get(iso_name) or "").strip().upper()
+          		year_text = str(row.get(year_name) or "").strip()
+          		value_text = str(row.get(value_name) or "").strip()
+          		if iso3 not in area_by_iso3 or not year_text.isdigit() or not value_text:
+          			continue
+          		try:
+          			value = float(value_text)
+          		except ValueError:
+          			continue
+          		if math.isfinite(value):
+          			values[(iso3, int(year_text))] = value
+          	return values
+
+          gcb_total = parse_gcb(fossil_rows, iso_field, year_field, total_field)
+          gcb_pc = parse_gcb(percap_rows, pc_iso_field, pc_year_field, pc_value_field)
+          for label, values in (("total", gcb_total), ("percapita", gcb_pc)):
+          	years = sorted({year for _, year in values})
+          	print(
+          		f"GCB {label}: observations={len(values)} countries={len({iso3 for iso3, _ in values})} "
+          		f"years={years[0] if years else None}-{years[-1] if years else None}"
+          	)
+
+          def compare_series(name, left, right, relative_scale=1.0):
+          	overlaps = sorted(set(left) & set(right))
+          	if not overlaps:
+          		raise RuntimeError(f"No overlap for {name}")
+          	relative = []
+          	absolute = []
+          	exact_1pct = 0
+          	exact_5pct = 0
+          	exact_10pct = 0
+          	large = []
+          	for key in overlaps:
+          		a = left[key]
+          		b = right[key] * relative_scale
+          		diff = a - b
+          		absolute.append(abs(diff))
+          		denominator = max(abs(a), abs(b), 1e-12)
+          		rel = abs(diff) / denominator
+          		relative.append(rel)
+          		if rel <= 0.01:
+          			exact_1pct += 1
+          		if rel <= 0.05:
+          			exact_5pct += 1
+          		if rel <= 0.10:
+          			exact_10pct += 1
+          		if rel > 0.25:
+          			large.append((rel, key, a, b))
+          	large.sort(reverse=True)
+          	print(
+          		f"SERIES {name}: overlap={len(overlaps)} <=1%={exact_1pct} ({exact_1pct/len(overlaps):.2%}) "
+          		f"<=5%={exact_5pct} ({exact_5pct/len(overlaps):.2%}) "
+          		f"<=10%={exact_10pct} ({exact_10pct/len(overlaps):.2%}) "
+          		f"median_rel={statistics.median(relative):.3%} mean_rel={statistics.fmean(relative):.3%} "
+          		f"max_rel={max(relative):.3%}"
+          	)
+          	print(f"SERIES {name} largest relative differences:")
+          	for rel, key, a, b in large[:20]:
+          		print(f"  {key[0]} {key[1]}: WDI={a:.9g} GCB={b:.9g} rel={rel:.3%}")
+
+          compare_series("WDI_CO2_total_vs_GCB_total", wdi["co2_total"], gcb_total)
+          compare_series("WDI_CO2_percapita_vs_GCB_percapita", wdi["co2_per_capita"], gcb_pc)
+          PY
+
+      - name: Upload audit diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wdi-climate-sources-2026-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 14
