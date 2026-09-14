@@ -16,48 +16,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Audit stable Data Catalog resource endpoints
+      - name: Audit KNOMAD dataset metadata endpoint
         run: |
           python - <<'PY'
-          import hashlib
           import json
           from urllib.request import Request, urlopen
 
-          RESOURCES = {
-          	"DR0095569": "d7963387e786e54d4a5a4566294855e0563e3f09cc75b98c2e470599d4a75ddb",
-          	"DR0095570": "50e5ea5ca1be529914eae315ad361721f4a2c5ec2347cc17691b4273f958e28e",
-          }
-          BASE = "https://ddh-openapi.worldbank.org"
-
-          def fetch(url, accept="*/*"):
-          	request = Request(url, headers={
-          		"Accept": accept,
-          		"User-Agent": "kartensammlung-area-statistics-builds/1",
-          	})
-          	with urlopen(request, timeout=120) as response:
-          		return response.read(), response.geturl(), response.headers.get("Content-Type", "")
-
-          for resource_id, expected_sha256 in RESOURCES.items():
-          	metadata_bytes, metadata_url, metadata_type = fetch(
-          		f"{BASE}/resources/{resource_id}",
-          		"application/json",
-          	)
-          	metadata = json.loads(metadata_bytes.decode("utf-8"))
-          	print(f"resource={resource_id}")
-          	print(f"metadataUrl={metadata_url}")
-          	print(f"metadataType={metadata_type}")
-          	print("metadata=" + json.dumps(metadata, ensure_ascii=False, sort_keys=True)[:5000])
-
-          	data, download_url, content_type = fetch(
-          		f"{BASE}/resources/{resource_id}/download",
-          		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*",
-          	)
-          	digest = hashlib.sha256(data).hexdigest()
-          	print(f"downloadUrl={download_url}")
-          	print(f"contentType={content_type}")
-          	print(f"bytes={len(data)} sha256={digest}")
-          	if digest != expected_sha256:
-          		raise RuntimeError(
-          			f"Stable download differs for {resource_id}: {digest} != {expected_sha256}"
-          		)
+          url = "https://ddh-openapi.worldbank.org/datasets/0066146"
+          request = Request(url, headers={
+          	"Accept": "application/json",
+          	"User-Agent": "kartensammlung-area-statistics-builds/1",
+          })
+          with urlopen(request, timeout=120) as response:
+          	payload = json.load(response)
+          print(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2)[:30000])
           PY
