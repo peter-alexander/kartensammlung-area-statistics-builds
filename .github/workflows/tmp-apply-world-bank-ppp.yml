@@ -1,0 +1,103 @@
+name: Apply World Bank PPP GDP indicators
+
+on:
+  push:
+    branches:
+      - feature/world-bank-ppp
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/world-bank-ppp
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Add PPP indicators without reformatting config
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("config/world-bank-indicators.json")
+          text = path.read_text(encoding="utf-8")
+          entries = [
+          	'\t\t{"id":"gdp.ppp-current-intl-usd","slug":"gdp-ppp-current-intl-usd","sourceIndicator":"NY.GDP.MKTP.PP.CD","title":"BIP (kaufkraftbereinigt, PPP)","description":"Bruttoinlandsprodukt kaufkraftbereinigt in aktuellen internationalen Dollar. PPPs gleichen Preisniveauunterschiede zwischen Ländern aus; die Reihe eignet sich für den Vergleich der Wirtschaftsleistung in einem bestimmten Jahr.","unit":{"id":"current-international-dollar","label":"Internationaler Dollar (aktuell, PPP)","symbol":"Intl-$"},"classification":{"type":"fixed","scale":"logarithmic","breaks":[1000000000,10000000000,100000000000,500000000000,2000000000000,10000000000000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":2,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},\n',
+          	'\t\t{"id":"gdp-per-capita.ppp-current-intl-usd","slug":"gdp-per-capita-ppp-current-intl-usd","sourceIndicator":"NY.GDP.PCAP.PP.CD","title":"BIP pro Kopf (kaufkraftbereinigt, PPP)","description":"Bruttoinlandsprodukt pro Einwohner kaufkraftbereinigt in aktuellen internationalen Dollar. PPPs gleichen Preisniveauunterschiede zwischen Ländern aus und machen materielle Wohlstandsniveaus international besser vergleichbar als marktwechselkursbasierte US-Dollar-Werte.","unit":{"id":"current-international-dollar-per-person","label":"Internationaler Dollar pro Einwohner (aktuell, PPP)","symbol":"Intl-$/Einw."},"classification":{"type":"fixed","scale":"logarithmic","breaks":[5000,10000,20000,40000,70000,100000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":2,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},\n',
+          	'\t\t{"id":"gdp.ppp-constant-2021-intl-usd","slug":"gdp-ppp-constant-2021-intl-usd","sourceIndicator":"NY.GDP.MKTP.PP.KD","title":"BIP (PPP, konstant 2021)","description":"Bruttoinlandsprodukt kaufkraftbereinigt und preisbereinigt in konstanten internationalen Dollar von 2021. Diese Reihe ist besonders für reale Vergleiche der Wirtschaftsleistung über die Zeit geeignet.","unit":{"id":"constant-2021-international-dollar","label":"Internationaler Dollar (konstant 2021, PPP)","symbol":"2021 Intl-$"},"classification":{"type":"fixed","scale":"logarithmic","breaks":[1000000000,10000000000,100000000000,500000000000,2000000000000,10000000000000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":2,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},\n',
+          	'\t\t{"id":"gdp-per-capita.ppp-constant-2021-intl-usd","slug":"gdp-per-capita-ppp-constant-2021-intl-usd","sourceIndicator":"NY.GDP.PCAP.PP.KD","title":"BIP pro Kopf (PPP, konstant 2021)","description":"Reales Bruttoinlandsprodukt pro Einwohner, kaufkraftbereinigt und preisbereinigt in konstanten internationalen Dollar von 2021. Die Reihe eignet sich für Wohlstandsvergleiche über die Zeit ohne Verzerrung durch allgemeine Preisänderungen.","unit":{"id":"constant-2021-international-dollar-per-person","label":"Internationaler Dollar pro Einwohner (konstant 2021, PPP)","symbol":"2021 Intl-$/Einw."},"classification":{"type":"fixed","scale":"logarithmic","breaks":[5000,10000,20000,40000,70000,100000]},"minAreasWithAnyValue":180,"maxDefaultYearAge":2,"requiredAreas":["country:AUT","country:DEU","country:USA","country:IND"]},\n',
+          ]
+          source_codes = ["NY.GDP.MKTP.PP.CD", "NY.GDP.PCAP.PP.CD", "NY.GDP.MKTP.PP.KD", "NY.GDP.PCAP.PP.KD"]
+          present = [code for code in source_codes if f'"sourceIndicator":"{code}"' in text]
+          if present:
+          	assert set(present) == set(source_codes), present
+          else:
+          	anchor = '\t\t{"id":"gni-per-capita.atlas-current-usd"'
+          	assert anchor in text
+          	text = text.replace(anchor, "".join(entries) + anchor, 1)
+          	path.write_text(text, encoding="utf-8")
+
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          by_code = {item["sourceIndicator"]: item for item in payload["indicators"]}
+          assert all(code in by_code for code in source_codes)
+          assert len({item["id"] for item in payload["indicators"]}) == len(payload["indicators"])
+          PY
+          python -m json.tool config/world-bank-indicators.json >/dev/null
+          python -m py_compile scripts/build_world_bank.py
+          git diff --check
+
+      - name: Test full WDI build
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/world-bank-ppp-test
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_world_bank.py \
+          	--registry "$REGISTRY_URL" \
+          	--output-dir /tmp/world-bank-ppp-test
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("/tmp/world-bank-ppp-test/world-bank")
+          index = json.loads((root / "index.json").read_text(encoding="utf-8"))
+          expected = {
+          	"gdp.ppp-current-intl-usd",
+          	"gdp-per-capita.ppp-current-intl-usd",
+          	"gdp.ppp-constant-2021-intl-usd",
+          	"gdp-per-capita.ppp-constant-2021-intl-usd",
+          }
+          items = {item["id"]: item for item in index["indicators"]}
+          assert expected <= set(items)
+          for indicator_id in sorted(expected):
+          	item = items[indicator_id]
+          	assert item["coverage"]["areasWithAnyValue"] >= 180
+          	assert item["defaultYear"] >= 2024
+          	payload = json.loads((root / item["path"]).read_text(encoding="utf-8"))
+          	for area_id in ("country:AUT", "country:DEU", "country:USA", "country:IND"):
+          		assert area_id in payload["values"][str(item["defaultYear"])], (indicator_id, area_id)
+          	print(
+          		f"{indicator_id}: years={item['availableYears'][0]}-{item['availableYears'][-1]} "
+          		f"default={item['defaultYear']} coverage={item['coverage']['areasInDefaultYear']}"
+          	)
+          print(f"snapshot={index['activeSnapshot']}")
+          PY
+
+      - name: Commit config when needed
+        shell: bash
+        run: |
+          git add config/world-bank-indicators.json
+          if git diff --cached --quiet; then
+          	echo "PPP indicators already applied."
+          	exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Add World Bank PPP GDP indicators"
+          git push origin HEAD:feature/world-bank-ppp
