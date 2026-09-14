@@ -1,0 +1,71 @@
+name: Audit DLR Global SnowPack
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/dlr-global-snowpack
+    paths:
+      - ".github/workflows/audit-dlr-global-snowpack.yml"
+      - "scripts/audit_dlr_global_snowpack.py"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install GDAL tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gdal-bin
+
+      - name: Validate audit script
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/audit_dlr_global_snowpack.py
+          git diff --check
+
+      - name: Audit DLR Global SnowPack STAC and COGs
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          python scripts/audit_dlr_global_snowpack.py --probe-gdal \
+            2>&1 | tee diagnostics/dlr-global-snowpack-audit.log
+
+      - name: Show audit summary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("diagnostics/dlr-global-snowpack-audit.json").read_text(encoding="utf-8"))
+          for collection_id, entry in payload["collections"].items():
+              latest = entry["latestItem"]
+              print(
+                  f"{collection_id}: items={entry['itemCount']} "
+                  f"first={entry['firstItem']['id']} latest={latest['id']}"
+              )
+              for probe in entry["probeResults"]:
+                  print(f"  {probe['assetKey']}: http={probe['http']} gdal={probe.get('gdal')}")
+          PY
+
+      - name: Upload audit diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: dlr-global-snowpack-audit-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
