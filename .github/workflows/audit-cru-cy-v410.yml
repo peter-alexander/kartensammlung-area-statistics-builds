@@ -5,7 +5,9 @@ on:
     branches:
       - audit/cru-cy-v410
     paths:
+      - "config/cru-cy-v410-country-map.json"
       - "scripts/audit_cru_cy_v410.py"
+      - "scripts/audit_cru_cy_v410_values.py"
       - ".github/workflows/audit-cru-cy-v410.yml"
   workflow_dispatch:
 
@@ -15,7 +17,7 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -26,17 +28,23 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Validate audit script
+      - name: Validate audit scripts
         run: |
           set -euo pipefail
-          python -m py_compile scripts/audit_cru_cy_v410.py
+          python -m py_compile scripts/audit_cru_cy_v410.py scripts/audit_cru_cy_v410_values.py
+          python -m json.tool config/cru-cy-v410-country-map.json >/dev/null
           git diff --check
 
-      - name: Audit CRU-CY v4.10
+      - name: Audit CRU-CY v4.10 structure
         run: |
           set -o pipefail
           mkdir -p diagnostics
           python scripts/audit_cru_cy_v410.py 2>&1 | tee diagnostics/cru-cy-v410-audit.log
+
+      - name: Audit mapped CRU-CY v4.10 values
+        run: |
+          set -o pipefail
+          python scripts/audit_cru_cy_v410_values.py 2>&1 | tee diagnostics/cru-cy-v410-values-audit.log
 
       - name: Upload diagnostics
         if: always()
