@@ -2,6 +2,7 @@
 
 import html.parser
 import json
+from pathlib import Path
 import re
 import unicodedata
 import urllib.request
@@ -106,10 +107,16 @@ def inspect_country_file(variable, country="Austria"):
 
 
 def main():
+	outdir = Path("diagnostics/cru-cy-v410")
+	outdir.mkdir(parents=True, exist_ok=True)
 	status, _, registry = fetch_json(REGISTRY_URL)
 	areas = registry.get("areas") or []
 	print(f"registry_http={status} schema={registry.get('schema')} areas={len(areas)}")
 	print("registry_sample=" + json.dumps(areas[:3], ensure_ascii=False, sort_keys=True))
+	(outdir / "registry.json").write_text(
+		json.dumps(registry, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+		encoding="utf-8",
+	)
 
 	registry_by_normalized = {}
 	area_name_summary = {}
@@ -123,14 +130,25 @@ def main():
 			registry_by_normalized.setdefault(normalize_name(name), set()).add(area_id)
 
 	all_sets = {}
+	file_info = {}
 	for variable in VARIABLES:
 		names = source_names(variable)
 		all_sets[variable] = set(names)
 		info = inspect_country_file(variable)
+		file_info[variable] = info
 		print(f"variable={variable} source_files={len(names)}")
 		print("file_info=" + json.dumps(info, ensure_ascii=False, sort_keys=True))
 
 	base_names = all_sets["tmp"]
+	(outdir / "source-names.json").write_text(
+		json.dumps(sorted(base_names), ensure_ascii=False, indent=2) + "\n",
+		encoding="utf-8",
+	)
+	(outdir / "variable-file-info.json").write_text(
+		json.dumps(file_info, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+		encoding="utf-8",
+	)
+
 	for variable in VARIABLES[1:]:
 		missing = sorted(base_names - all_sets[variable])
 		extra = sorted(all_sets[variable] - base_names)
