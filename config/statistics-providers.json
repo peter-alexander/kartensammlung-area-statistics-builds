@@ -22,6 +22,11 @@
 			"index": "world-bank-cckp-era5/index.json"
 		},
 		{
+			"id": "world-bank-spei",
+			"name": "Weltbank – Dürre (SPEI)",
+			"index": "world-bank-spei/index.json"
+		},
+		{
 			"id": "cru-cy",
 			"name": "CRU – Klima & Wetter (CRU-CY)",
 			"index": "cru-cy/index.json"
