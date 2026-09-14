@@ -1,0 +1,282 @@
+name: Build CRU-CY climate statistics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 9 26 * *"
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "config/cru-cy-indicators.json"
+      - "config/cru-cy-country-map.json"
+      - "scripts/download_cru_cy.py"
+      - "scripts/build_cru_cy.py"
+      - "scripts/build_world_bank.py"
+      - "docs/cru-cy-source-policy.md"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-cru-cy-statistics.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "config/statistics-providers.json"
+      - "config/cru-cy-indicators.json"
+      - "config/cru-cy-country-map.json"
+      - "scripts/download_cru_cy.py"
+      - "scripts/build_cru_cy.py"
+      - "scripts/build_world_bank.py"
+      - "docs/cru-cy-source-policy.md"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-cru-cy-statistics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-cru-cy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate scripts and configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n .github/scripts/deploy-world-bank-statistics.sh
+          python -m py_compile scripts/download_cru_cy.py scripts/build_cru_cy.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/cru-cy-indicators.json >/dev/null
+          python -m json.tool config/cru-cy-country-map.json >/dev/null
+          git diff --check
+
+      - name: Check current CRU-CY release
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          python scripts/download_cru_cy.py --check-only \
+            2>&1 | tee diagnostics/cru-cy-release-check.log
+
+      - name: Download CRU-CY climate data
+        if: github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p raw/cru-cy diagnostics
+          python scripts/download_cru_cy.py \
+            --output-json raw/cru-cy/data.json \
+            --metadata-json raw/cru-cy/download-metadata.json \
+            --workers 8 \
+            2>&1 | tee diagnostics/cru-cy-download.log
+
+      - name: Build CRU-CY climate statistics
+        if: github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -o pipefail
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_cru_cy.py \
+            --registry "$REGISTRY_URL" \
+            --input-json raw/cru-cy/data.json \
+            --input-metadata raw/cru-cy/download-metadata.json \
+            2>&1 | tee diagnostics/cru-cy-build.log
+
+      - name: Validate CRU-CY output
+        if: github.event_name != 'schedule'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import math
+          from pathlib import Path
+
+          config = json.loads(Path("config/cru-cy-indicators.json").read_text(encoding="utf-8"))
+          mapping = json.loads(Path("config/cru-cy-country-map.json").read_text(encoding="utf-8"))
+          provider = json.loads(Path("dist/statistics/cru-cy/index.json").read_text(encoding="utf-8"))
+          global_index = json.loads(Path("dist/statistics/index.json").read_text(encoding="utf-8"))
+
+          assert provider["provider"]["id"] == "cru-cy"
+          assert provider["provider"]["name"] == "CRU – Klima & Wetter (CRU-CY)"
+          assert provider["provider"]["license"] == "ODbL 1.0"
+          assert provider["dataset"]["sourceVersion"] == "4.10"
+          assert provider["dataset"]["sourceRun"] == "2606161920"
+          assert provider["dataset"]["sourceYearRange"] == [1901, 2025]
+          assert provider["dataset"]["sourceAreaCount"] == 292
+          assert provider["dataset"]["mappedAreas"] == 218
+          assert provider["dataset"]["excludedSourceAreaCount"] == 73
+          assert provider["dataset"]["registryMissingIso3"] == mapping["expectedMissingRegistryIso3"]
+          assert provider["dataset"]["inputFile"]["bytes"] > 1_000_000
+          assert len(provider["dataset"]["inputFile"]["sha256"]) == 64
+          assert len(provider["indicators"]) == len(config["indicators"]) == 10
+          assert any(item["id"] == "cru-cy" for item in global_index["providers"])
+
+          expected_austria = {
+            "tmp": 8.4,
+            "tmx": 13.2,
+            "tmn": 3.7,
+            "pre": 870.1,
+            "dtr": 9.5,
+            "frs": 133.5,
+            "wet": 148.1,
+            "pet": 2.1,
+            "cld": 59.4,
+            "vap": 8.5,
+          }
+          expected_pet_missing = {
+            "country:BMU", "country:CCK", "country:COK", "country:CXR", "country:IOT",
+            "country:KIR", "country:LCA", "country:MDV", "country:MHL", "country:NFK",
+            "country:NRU", "country:TKL", "country:TUV",
+          }
+
+          configured = {item["id"]: item for item in config["indicators"]}
+          payloads = {}
+          for item in provider["indicators"]:
+            cfg = configured[item["id"]]
+            variable = cfg["sourceVariable"]
+            expected_coverage = 205 if variable == "pet" else 218
+            assert item["sourceVariable"] == variable
+            assert item["availableYears"] == list(range(1901, 2026))
+            assert item["defaultYear"] == 2025
+            assert item["coverage"]["registryAreas"] == 250
+            assert item["coverage"]["areasWithAnyValue"] == expected_coverage
+            assert item["coverage"]["areasInLatestYear"] == expected_coverage
+            assert item["coverage"]["areasInDefaultYear"] == expected_coverage
+
+            payload = json.loads(Path("dist/statistics/cru-cy", item["path"]).read_text(encoding="utf-8"))
+            payloads[variable] = payload
+            assert payload["source"]["providerId"] == "cru-cy"
+            assert payload["source"]["license"] == "ODbL 1.0"
+            assert payload["source"]["sourceVersion"] == "4.10"
+            assert payload["source"]["sourceRun"] == "2606161920"
+            assert payload["source"]["sourceVariable"] == variable
+            assert payload["availableYears"] == list(range(1901, 2026))
+            assert payload["defaultYear"] == 2025
+            assert len(payload["values"]) == 125
+            for year_values in payload["values"].values():
+              assert len(year_values) == expected_coverage
+              for value in year_values.values():
+                assert math.isfinite(value)
+            for required in config["requiredAreas"]:
+              assert required in payload["values"]["2025"]
+            if variable == "pet":
+              assert expected_pet_missing.isdisjoint(payload["values"]["2025"])
+
+          for variable, expected in expected_austria.items():
+            actual = payloads[variable]["values"]["2025"]["country:AUT"]
+            assert abs(actual - expected) <= 1e-9, (variable, actual, expected)
+
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"retrievedAt={provider['retrievedAt']}")
+          print(f"sourceYearRange={provider['dataset']['sourceYearRange']}")
+          print(f"mappedAreas={provider['dataset']['mappedAreas']}")
+          for item in provider["indicators"]:
+            print(
+              f"{item['id']}: defaultYear={item['defaultYear']} "
+              f"coverage={item['coverage']['areasInDefaultYear']} "
+              f"years={item['availableYears'][0]}-{item['availableYears'][-1]}"
+            )
+          PY
+          du -h raw/cru-cy/data.json
+          du -h dist/statistics/cru-cy/index.json
+          du -ch dist/statistics/cru-cy/releases/*/*.json | tail -n 1
+
+      - name: Upload statistics artifacts
+        if: github.event_name != 'schedule'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cru-cy-statistics-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.event_name != 'schedule' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Deploy to tiles.radlobby.at
+        if: github.event_name != 'pull_request' && github.event_name != 'schedule' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          PROVIDER_ID: cru-cy
+        run: |
+          chmod +x .github/scripts/deploy-world-bank-statistics.sh
+          .github/scripts/deploy-world-bank-statistics.sh dist/statistics
+
+      - name: Verify browser access and public statistics
+        if: github.event_name != 'pull_request' && github.event_name != 'schedule' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          check_file() {
+            local url="$1"
+            local local_file="$2"
+            local output="$3"
+            local headers
+            local allow_origin
+            headers="$(mktemp)"
+            curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+              --header "Origin: ${BROWSER_ORIGIN}" --dump-header "$headers" \
+              --output "$output" "${url}?${CACHE_BUST}"
+            cmp "$local_file" "$output"
+            allow_origin="$(awk '
+              BEGIN { IGNORECASE = 1 }
+              tolower($1) == "access-control-allow-origin:" {
+                value = $0
+                sub(/^[^:]+:[[:space:]]*/, "", value)
+                gsub(/\r/, "", value)
+                print value
+              }
+            ' "$headers" | tail -n 1)"
+            rm -f "$headers"
+            if [ "$allow_origin" != "*" ] && [ "$allow_origin" != "$BROWSER_ORIGIN" ]; then
+              echo "CORS check failed for ${url}: Access-Control-Allow-Origin='${allow_origin:-<missing>}'" >&2
+              exit 1
+            fi
+          }
+
+          check_file "${PUBLIC_BASE}/index.json" "dist/statistics/index.json" /tmp/public-statistics-index.json
+          check_file "${PUBLIC_BASE}/cru-cy/index.json" "dist/statistics/cru-cy/index.json" /tmp/public-cru-cy-index.json
+          while IFS= read -r path; do
+            mkdir -p "/tmp/public-cru-cy/$(dirname "$path")"
+            check_file \
+              "${PUBLIC_BASE}/cru-cy/${path}" \
+              "dist/statistics/cru-cy/${path}" \
+              "/tmp/public-cru-cy/${path}"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/cru-cy/index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+            print(indicator["path"])
+          PY
+          )
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cru-cy-statistics-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
