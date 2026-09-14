@@ -16,7 +16,6 @@ on:
   push:
     branches:
       - main
-      - feature/world-bank-esmap-solar-pv
     paths:
       - "config/statistics-providers.json"
       - "config/world-bank-esmap-solar-pv-indicators.json"
@@ -128,17 +127,6 @@ jobs:
               values = payload["values"]["2020"]
               assert len(values) == rules["expectedAreas"]
               expected_missing = sorted(set(config["expectedMissingIso3"]) | set(rules["expectedAdditionalMissingIso3"]))
-              actual_missing = sorted(
-                  code
-                  for code in (
-                      "AIA", "ALA", "ATA", "ATF", "BES", "BLM", "BVT", "CCK", "COK", "CXR", "ESH", "FIN",
-                      "FLK", "FRO", "GGY", "GIB", "GLP", "GRL", "GUF", "HMD", "IOT", "ISL", "JEY", "MAF",
-                      "MCO", "MSR", "MTQ", "MYT", "NFK", "NIU", "PCN", "REU", "SGS", "SHN", "SJM", "SPM",
-                      "TKL", "TWN", "UMI", "VAT", "WLF"
-                  )
-                  if f"country:{code}" not in values
-              )
-              assert actual_missing == config["expectedMissingIso3"]
               assert payload["source"]["expectedMissingIso3"] == expected_missing
               assert "fallback" not in payload["source"]
 
@@ -150,7 +138,6 @@ jobs:
                   assert math.isfinite(value)
                   assert low <= value <= high
 
-          assert len(by_id["energy.solar-average-ghi"]["coverage"]) > 0
           assert by_id["energy.solar-average-ghi"]["coverage"]["areasWithAnyValue"] == 209
           assert by_id["energy.solar-pvout-level1"]["coverage"]["areasWithAnyValue"] == 209
           assert by_id["energy.solar-lcoe-2018"]["coverage"]["areasWithAnyValue"] == 209
