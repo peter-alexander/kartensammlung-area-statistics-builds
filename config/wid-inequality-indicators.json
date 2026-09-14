@@ -1,0 +1,91 @@
+{
+	"schema": "kartensammlung.wid-inequality-statistics/v1",
+	"sourcePage": "https://wid.world/data/",
+	"methodologyPage": "https://wid.world/methodology/",
+	"codesDictionaryUrl": "https://wid.world/codes-dictionary/",
+	"packagePage": "https://CRAN.R-project.org/package=wid",
+	"expectedPackageVersion": "0.0.3",
+	"expectedStartYear": 1980,
+	"minimumLatestYear": 2024,
+	"minimumQuality": 1,
+	"ageCode": "992",
+	"populationCode": "j",
+	"provider": {
+		"id": "wid-inequality",
+		"name": "World Inequality Database (WID.world)",
+		"dataset": "WID.world – Distributional National Accounts (DINA)",
+		"license": "WID.world Open Access",
+		"licenseUrl": "https://wid.world/",
+		"attribution": "World Inequality Database (WID.world)"
+	},
+	"areaAliases": {
+		"KS": "XKX"
+	},
+	"ignoredAreaCodes": [
+		"CN-RU",
+		"CN-UR",
+		"DD"
+	],
+	"ignoredAreaSuffixes": [
+		"-MER",
+		"-PPP"
+	],
+	"indicators": [
+		{
+			"id": "income-inequality.pretax-bottom50-share-percent",
+			"slug": "income-inequality-pretax-bottom50-share-percent",
+			"sourceIndicator": "sptinc",
+			"sourceVariable": "sptinc992j",
+			"percentile": "p0p50",
+			"title": "Einkommensanteil der unteren 50 % (vor Steuern)",
+			"description": "Anteil des gesamten Vorsteuer-Nationaleinkommens, der auf die einkommensschwächere Hälfte der erwachsenen Bevölkerung ab 20 Jahren entfällt. WID Equal-Split: Ressourcen von Paaren werden gleich auf beide Erwachsene verteilt.",
+			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [8, 10, 12.5, 15, 17.5, 20]},
+			"minAreasWithAnyValue": 150,
+			"minAreasInDefaultYear": 150,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND", "country:CHN", "country:ZAF", "country:XKX"]
+		},
+		{
+			"id": "income-inequality.pretax-top10-share-percent",
+			"slug": "income-inequality-pretax-top10-share-percent",
+			"sourceIndicator": "sptinc",
+			"sourceVariable": "sptinc992j",
+			"percentile": "p90p100",
+			"title": "Einkommensanteil der obersten 10 % (vor Steuern)",
+			"description": "Anteil des gesamten Vorsteuer-Nationaleinkommens, der auf die einkommensstärksten 10 % der erwachsenen Bevölkerung ab 20 Jahren entfällt. WID Equal-Split: Ressourcen von Paaren werden gleich auf beide Erwachsene verteilt.",
+			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [30, 35, 40, 45, 50, 60]},
+			"minAreasWithAnyValue": 150,
+			"minAreasInDefaultYear": 150,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND", "country:CHN", "country:ZAF", "country:XKX"]
+		},
+		{
+			"id": "income-inequality.pretax-top1-share-percent",
+			"slug": "income-inequality-pretax-top1-share-percent",
+			"sourceIndicator": "sptinc",
+			"sourceVariable": "sptinc992j",
+			"percentile": "p99p100",
+			"title": "Einkommensanteil des obersten 1 % (vor Steuern)",
+			"description": "Anteil des gesamten Vorsteuer-Nationaleinkommens, der auf das einkommensstärkste 1 % der erwachsenen Bevölkerung ab 20 Jahren entfällt. WID Equal-Split: Ressourcen von Paaren werden gleich auf beide Erwachsene verteilt.",
+			"unit": {"id": "percent", "label": "Prozent", "symbol": "%"},
+			"classification": {"type": "fixed", "breaks": [8, 10, 12.5, 15, 20, 25]},
+			"minAreasWithAnyValue": 150,
+			"minAreasInDefaultYear": 150,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND", "country:CHN", "country:ZAF", "country:XKX"]
+		},
+		{
+			"id": "income-inequality.pretax-gini",
+			"slug": "income-inequality-pretax-gini",
+			"sourceIndicator": "gptinc",
+			"sourceVariable": "gptinc992j",
+			"percentile": "p0p100",
+			"title": "Gini-Koeffizient des Einkommens vor Steuern",
+			"description": "Gini-Koeffizient des Vorsteuer-Nationaleinkommens der erwachsenen Bevölkerung ab 20 Jahren. 0 bedeutet vollständige Gleichverteilung, 100 maximale Ungleichverteilung. WID Equal-Split: Ressourcen von Paaren werden gleich auf beide Erwachsene verteilt.",
+			"unit": {"id": "gini-0-100", "label": "Gini-Koeffizient (0–100)"},
+			"classification": {"type": "fixed", "breaks": [35, 40, 45, 50, 60, 70]},
+			"minAreasWithAnyValue": 150,
+			"minAreasInDefaultYear": 150,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND", "country:CHN", "country:ZAF", "country:XKX"]
+		}
+	]
+}
