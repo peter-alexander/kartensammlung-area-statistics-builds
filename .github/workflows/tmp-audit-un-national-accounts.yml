@@ -18,29 +18,214 @@ jobs:
           python-version: '3.12'
       - name: Install dependencies
         run: python -m pip install --quiet pandas openpyxl requests
-      - name: Inspect UNSD AMA workbooks
+      - name: Compare UNSD AMA with WDI
         shell: bash
         run: |
           python - <<'PY'
           import io
-          import requests
-          import pandas as pd
+          import math
+          import statistics
+          from collections import defaultdict
 
-          resources = {
-          	"gdp_usd": "https://unstats.un.org/unsd/amaapi/api/file/2",
-          	"gdp_pc_usd": "https://unstats.un.org/unsd/amaapi/api/file/9",
-          	"gni_usd": "https://unstats.un.org/unsd/amaapi/api/file/24",
-          	"gni_pc_usd": "https://unstats.un.org/unsd/amaapi/api/file/27",
+          import pandas as pd
+          import requests
+
+          REGISTRY_URL = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+          WDI_BASE = "https://api.worldbank.org/v2/country/all/indicator"
+          START_YEAR = 1970
+          END_YEAR = 2024
+
+          SERIES = {
+          	"gdp": {
+          		"un_url": "https://unstats.un.org/unsd/amaapi/api/file/2",
+          		"un_indicator": "Gross Domestic Product (GDP)",
+          		"wdi": "NY.GDP.MKTP.CD",
+          	},
+          	"gdp_per_capita": {
+          		"un_url": "https://unstats.un.org/unsd/amaapi/api/file/9",
+          		"un_indicator": None,
+          		"wdi": "NY.GDP.PCAP.CD",
+          	},
+          	"gni": {
+          		"un_url": "https://unstats.un.org/unsd/amaapi/api/file/24",
+          		"un_indicator": None,
+          		"wdi": "NY.GNP.MKTP.CD",
+          	},
+          	"gni_per_capita_vs_atlas": {
+          		"un_url": "https://unstats.un.org/unsd/amaapi/api/file/27",
+          		"un_indicator": None,
+          		"wdi": "NY.GNP.PCAP.CD",
+          	},
           }
 
-          for name, url in resources.items():
-          	response = requests.get(url, timeout=120)
+          session = requests.Session()
+          session.headers.update({"User-Agent": "kartensammlung-area-statistics-builds/1"})
+
+          registry = session.get(REGISTRY_URL, timeout=60)
+          registry.raise_for_status()
+          registry_payload = registry.json()
+          areas = registry_payload["areas"]
+          m49_to_area = {}
+          iso3_to_area = {}
+          area_names = {}
+          for area in areas:
+          	area_id = area["area_id"]
+          	codes = area.get("codes", {})
+          	if codes.get("m49"):
+          		m49_to_area[str(codes["m49"]).zfill(3)] = area_id
+          	if codes.get("iso3"):
+          		iso3_to_area[str(codes["iso3"]).upper()] = area_id
+          	area_names[area_id] = area.get("name", {}).get("default", area_id)
+
+          print(f"REGISTRY areas={len(areas)} m49={len(m49_to_area)} iso3={len(iso3_to_area)}")
+          print(f"REGISTRY Kosovo={iso3_to_area.get('XKX')} m49_412={m49_to_area.get('412')}")
+
+          def numeric(value):
+          	if value is None or pd.isna(value):
+          		return None
+          	try:
+          		result = float(value)
+          	except (TypeError, ValueError):
+          		return None
+          	return result if math.isfinite(result) else None
+
+          def read_un(spec):
+          	response = session.get(spec["un_url"], timeout=120)
           	response.raise_for_status()
-          	print(f"RESOURCE {name}: bytes={len(response.content)} content_type={response.headers.get('content-type')} disposition={response.headers.get('content-disposition')}")
-          	book = pd.ExcelFile(io.BytesIO(response.content), engine="openpyxl")
-          	print(f"SHEETS {name}: {book.sheet_names}")
-          	for sheet in book.sheet_names[:2]:
-          		frame = pd.read_excel(book, sheet_name=sheet, header=None, nrows=16)
-          		print(f"--- {name} / {sheet} shape={frame.shape} ---")
-          		print(frame.to_string(index=False, header=False))
+          	frame = pd.read_excel(io.BytesIO(response.content), sheet_name=0, header=2, engine="openpyxl")
+          	if spec["un_indicator"] is not None:
+          		frame = frame[frame["IndicatorName"].astype(str).str.strip() == spec["un_indicator"]]
+          	values = {}
+          	unmapped = []
+          	duplicate_areas = []
+          	seen_areas = set()
+          	for _, row in frame.iterrows():
+          		raw_id = numeric(row.get("CountryID"))
+          		if raw_id is None:
+          			continue
+          		m49 = f"{int(raw_id):03d}"
+          		area_id = m49_to_area.get(m49)
+          		row_values = {}
+          		for year in range(START_YEAR, END_YEAR + 1):
+          			value = numeric(row.get(year))
+          			if value is not None:
+          				row_values[year] = value
+          		if not row_values:
+          			continue
+          		if area_id is None:
+          			unmapped.append((m49, str(row.get("Country", "")).strip(), min(row_values), max(row_values), row_values.get(END_YEAR)))
+          			continue
+          		if area_id in seen_areas:
+          			duplicate_areas.append(area_id)
+          			continue
+          		seen_areas.add(area_id)
+          		for year, value in row_values.items():
+          			values[(area_id, year)] = value
+          	return values, unmapped, duplicate_areas, len(response.content)
+
+          def read_wdi(code):
+          	url = f"{WDI_BASE}/{code}"
+          	params = {
+          		"format": "json",
+          		"per_page": 20000,
+          		"date": f"{START_YEAR}:{END_YEAR}",
+          		"source": 2,
+          	}
+          	response = session.get(url, params=params, timeout=120)
+          	response.raise_for_status()
+          	payload = response.json()
+          	if not isinstance(payload, list) or len(payload) < 2:
+          		raise RuntimeError(f"Unexpected WDI payload for {code}")
+          	values = {}
+          	for row in payload[1] or []:
+          		iso3 = str(row.get("countryiso3code") or "").upper()
+          		area_id = iso3_to_area.get(iso3)
+          		if area_id is None:
+          			continue
+          		try:
+          			year = int(row["date"])
+          		except (TypeError, ValueError, KeyError):
+          			continue
+          		value = numeric(row.get("value"))
+          		if value is not None:
+          			values[(area_id, year)] = value
+          	return values
+
+          def percentile(sorted_values, fraction):
+          	if not sorted_values:
+          		return float("nan")
+          	position = (len(sorted_values) - 1) * fraction
+          	lower = math.floor(position)
+          	upper = math.ceil(position)
+          	if lower == upper:
+          		return sorted_values[lower]
+          	weight = position - lower
+          	return sorted_values[lower] * (1 - weight) + sorted_values[upper] * weight
+
+          def report(name, un_values, wdi_values):
+          	common = sorted(set(un_values) & set(wdi_values))
+          	diffs = []
+          	for key in common:
+          		u = un_values[key]
+          		w = wdi_values[key]
+          		if w == 0:
+          			if u == 0:
+          				rel = 0.0
+          			else:
+          				continue
+          		else:
+          			rel = abs(u - w) / abs(w)
+          		diffs.append((rel, key, u, w))
+          	diffs.sort(key=lambda item: item[0])
+          	rels = [item[0] for item in diffs]
+
+          	un_areas = {area for area, _ in un_values}
+          	wdi_areas = {area for area, _ in wdi_values}
+          	un_2024 = {area for area, year in un_values if year == END_YEAR}
+          	wdi_2024 = {area for area, year in wdi_values if year == END_YEAR}
+          	common_2024 = un_2024 & wdi_2024
+          	print(f"\n=== {name} ===")
+          	print(f"UN values={len(un_values)} areas={len(un_areas)} 2024={len(un_2024)}")
+          	print(f"WDI values={len(wdi_values)} areas={len(wdi_areas)} 2024={len(wdi_2024)}")
+          	print(f"overlap values={len(common)} areas2024={len(common_2024)}")
+          	print(f"2024 UN-only={sorted(un_2024 - wdi_2024)}")
+          	print(f"2024 WDI-only={sorted(wdi_2024 - un_2024)}")
+          	if rels:
+          		for threshold in (0.001, 0.01, 0.05):
+          			within = sum(value <= threshold for value in rels)
+          			print(f"within {threshold * 100:.1f}%: {within}/{len(rels)} = {within / len(rels) * 100:.2f}%")
+          		print(
+          			"relative-diff "
+          			f"median={statistics.median(rels) * 100:.4f}% "
+          			f"p90={percentile(rels, 0.90) * 100:.4f}% "
+          			f"p95={percentile(rels, 0.95) * 100:.4f}% "
+          			f"p99={percentile(rels, 0.99) * 100:.4f}% "
+          			f"max={rels[-1] * 100:.4f}%"
+          		)
+          		print("largest differences:")
+          		for rel, (area_id, year), u, w in reversed(diffs[-12:]):
+          			print(f"  {area_id} {area_names.get(area_id, '')} {year}: UN={u:.12g} WDI={w:.12g} diff={rel * 100:.4f}%")
+
+          	latest_diffs = []
+          	for area_id in sorted(common_2024):
+          		u = un_values[(area_id, END_YEAR)]
+          		w = wdi_values[(area_id, END_YEAR)]
+          		if w != 0:
+          			latest_diffs.append((abs(u - w) / abs(w), area_id, u, w))
+          	latest_diffs.sort()
+          	if latest_diffs:
+          		latest_rels = [item[0] for item in latest_diffs]
+          		print(
+          			f"2024 relative-diff median={statistics.median(latest_rels) * 100:.4f}% "
+          			f"p95={percentile(latest_rels, 0.95) * 100:.4f}% "
+          			f"max={latest_rels[-1] * 100:.4f}%"
+          		)
+
+          for name, spec in SERIES.items():
+          	un_values, unmapped, duplicates, byte_count = read_un(spec)
+          	wdi_values = read_wdi(spec["wdi"])
+          	print(f"\nSOURCE {name}: bytes={byte_count} unmappedRows={len(unmapped)} duplicateAreas={duplicates}")
+          	for row in unmapped:
+          		print(f"UNMAPPED m49={row[0]} country={row[1]!r} years={row[2]}-{row[3]} value2024={row[4]}")
+          	report(name, un_values, wdi_values)
           PY
