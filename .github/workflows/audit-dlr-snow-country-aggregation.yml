@@ -1,0 +1,115 @@
+name: Audit DLR snow country aggregation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/dlr-global-snowpack
+    paths:
+      - ".github/workflows/audit-dlr-snow-country-aggregation.yml"
+      - "scripts/audit_dlr_snow_country_aggregation.py"
+      - "scripts/build_countries.py"
+      - "config/country-code-overrides.json"
+      - "config/country-compositions.json"
+      - "config/overture-excluded-country-codes.json"
+      - "requirements.txt"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          pip install --requirement requirements.txt
+          pip install rasterio==1.4.3 shapely==2.1.1
+
+      - name: Validate scripts
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            scripts/build_countries.py \
+            scripts/audit_dlr_snow_country_aggregation.py
+          git diff --check
+
+      - name: Build exact Overture land geometries
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          python scripts/build_countries.py \
+            --release latest \
+            --skip-tiles \
+            --output-dir build/snow-country-geometry/dist \
+            --work-dir build/snow-country-geometry/work \
+            2>&1 | tee diagnostics/dlr-snow-country-geometry.log
+
+      - name: Aggregate 2024 DLR snow duration for prototype countries
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/audit_dlr_snow_country_aggregation.py \
+            --geometry build/snow-country-geometry/work/country.geojsonseq \
+            --registry build/snow-country-geometry/dist/area-registry-countries.json \
+            --output diagnostics/dlr-snow-country-aggregation-2024.json \
+            2>&1 | tee diagnostics/dlr-snow-country-aggregation-2024.log
+
+      - name: Validate aggregation diagnostics
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import math
+          from pathlib import Path
+
+          payload = json.loads(
+              Path("diagnostics/dlr-snow-country-aggregation-2024.json").read_text(encoding="utf-8")
+          )
+          expected = {
+              "AUT", "DEU", "FIN", "NOR", "CAN", "USA", "CHL", "ARG", "JPN",
+              "NZL", "ISL", "ZAF", "XKX", "SGP", "MLT", "MCO", "VAT",
+          }
+          assert set(payload["countries"]) == expected
+          assert payload["source"]["year"] == 2024
+          assert payload["source"]["documentedValueRangeDays"] == [0, 365]
+          assert payload["benchmark"]["sourceBlocksRead"] > 0
+          assert payload["benchmark"]["sourceBlocksTotal"] > payload["benchmark"]["sourceBlocksRead"]
+
+          for iso3, entry in payload["countries"].items():
+              center = entry["centerPixel"]
+              touched = entry["allTouched"]
+              assert center["pixelCount"] > 0, iso3
+              assert touched["pixelCount"] >= center["pixelCount"], iso3
+              assert center["minimum"] >= 0, iso3
+              assert center["maximum"] <= 366, iso3
+              assert math.isfinite(center["meanSnowCoverDays"]), iso3
+              assert center["rasterizedAreaKm2"] > 0, iso3
+              assert center["areaRatioVsRegistry"] > 0, iso3
+              assert touched["areaRatioVsRegistry"] > 0, iso3
+              print(
+                  f"{iso3}: mean={center['meanSnowCoverDays']:.3f} "
+                  f"pixels={center['pixelCount']} areaRatio={center['areaRatioVsRegistry']:.5f} "
+                  f"allTouchedDelta={entry['boundarySensitivityDays']:.3f}"
+              )
+          PY
+
+      - name: Upload aggregation diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: dlr-snow-country-aggregation-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
