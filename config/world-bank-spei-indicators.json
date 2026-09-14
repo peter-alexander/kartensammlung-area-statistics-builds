@@ -11,6 +11,9 @@
 	"expectedMissingIso3": [
 		"ABW", "AIA", "ALA", "ASM", "ATA", "ATF", "BES", "BLM", "BMU", "BVT", "CCK", "COK", "CUW", "CXR", "CYM", "ESH", "FLK", "FRO", "GGY", "GIB", "GLP", "GRL", "GUF", "GUM", "HKG", "HMD", "IMN", "IOT", "JEY", "MAC", "MAF", "MDV", "MHL", "MNP", "MSR", "MTQ", "MYT", "NCL", "NFK", "NIU", "NRU", "PCN", "PRI", "PSE", "PYF", "REU", "SGS", "SHN", "SJM", "SPM", "SXM", "TCA", "TKL", "TUV", "TWN", "UMI", "VAT", "VGB", "VIR", "WLF", "XKX"
 	],
+	"expectedAdditionalMissingByYear": {
+		"1961": ["VUT"]
+	},
 	"requiredAreas": [
 		"country:AUT",
 		"country:CHN",
