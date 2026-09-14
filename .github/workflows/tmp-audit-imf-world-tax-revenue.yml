@@ -23,10 +23,14 @@ jobs:
           	--output /tmp/world-imf2026.xlsx
           ls -lh /tmp/world-imf2026.xlsx
 
-      - name: Inspect workbook structure
+      - name: Compare WoRLD TaxRev with WDI
         run: |
           python - <<'PY'
+          import json
+          import math
           import re
+          import statistics
+          import urllib.request
           import zipfile
           import xml.etree.ElementTree as ET
 
@@ -34,7 +38,6 @@ jobs:
           ns = {
           	"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
           	"r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-          	"p": "http://schemas.openxmlformats.org/package/2006/relationships",
           }
 
           def col_index(ref):
@@ -44,7 +47,17 @@ jobs:
           		value = value * 26 + ord(letter) - 64
           	return value - 1
 
-          with zipfile.ZipFile(path) as archive:
+          def cell_value(cell, shared):
+          	cell_type = cell.attrib.get("t")
+          	value_node = cell.find("m:v", ns)
+          	value = "" if value_node is None else value_node.text or ""
+          	if cell_type == "s" and value:
+          		return shared[int(value)]
+          	if cell_type == "inlineStr":
+          		return "".join(node.text or "" for node in cell.iterfind(".//m:t", ns))
+          	return value
+
+          def sheet_rows(archive, sheet_name):
           	shared = []
           	if "xl/sharedStrings.xml" in archive.namelist():
           		root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
@@ -54,32 +67,93 @@ jobs:
           	workbook = ET.fromstring(archive.read("xl/workbook.xml"))
           	rels = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
           	rel_map = {rel.attrib["Id"]: rel.attrib["Target"] for rel in rels}
-          	print("SHEETS")
+          	target = None
           	for sheet in workbook.find("m:sheets", ns):
-          		name = sheet.attrib["name"]
-          		target = rel_map[sheet.attrib[f"{{{ns['r']}}}id"]]
-          		if not target.startswith("/"):
-          			target = "xl/" + target.lstrip("/")
-          		else:
-          			target = target.lstrip("/")
-          		print(f"- {name}: {target}")
+          		if sheet.attrib["name"] == sheet_name:
+          			target = rel_map[sheet.attrib[f"{{{ns['r']}}}id"]]
+          			break
+          	if target is None:
+          		raise RuntimeError(f"Missing sheet {sheet_name}")
+          	if not target.startswith("/"):
+          		target = "xl/" + target.lstrip("/")
+          	else:
+          		target = target.lstrip("/")
 
-          		root = ET.fromstring(archive.read(target))
-          		rows = root.findall(".//m:sheetData/m:row", ns)
-          		print(f"  rows={len(rows)}")
-          		for row in rows[:20]:
-          			values = []
-          			for cell in row.findall("m:c", ns):
-          				ref = cell.attrib.get("r", "A1")
-          				while len(values) <= col_index(ref):
-          					values.append("")
-          				cell_type = cell.attrib.get("t")
-          				value_node = cell.find("m:v", ns)
-          				value = "" if value_node is None else value_node.text or ""
-          				if cell_type == "s" and value:
-          					value = shared[int(value)]
-          				elif cell_type == "inlineStr":
-          					value = "".join(node.text or "" for node in cell.iterfind(".//m:t", ns))
-          				values[col_index(ref)] = value
-          			print("  ", values[:25])
+          	root = ET.fromstring(archive.read(target))
+          	result = []
+          	for row in root.findall(".//m:sheetData/m:row", ns):
+          		values = []
+          		for cell in row.findall("m:c", ns):
+          			idx = col_index(cell.attrib.get("r", "A1"))
+          			while len(values) <= idx:
+          				values.append("")
+          			values[idx] = cell_value(cell, shared)
+          		result.append(values)
+          	return result
+
+          with zipfile.ZipFile(path) as archive:
+          	rows = sheet_rows(archive, "Data")
+
+          header = rows[0]
+          print(f"columns={len(header)}")
+          print("headers=", header)
+          required = {"year", "ISO3", "TaxRev"}
+          missing = required - set(header)
+          if missing:
+          	raise RuntimeError(f"Missing WoRLD columns: {sorted(missing)}")
+          idx = {name: header.index(name) for name in required}
+
+          world = {}
+          for row in rows[1:]:
+          	if len(row) <= max(idx.values()):
+          		continue
+          	iso3 = row[idx["ISO3"]].strip().upper()
+          	year_text = row[idx["year"]].strip()
+          	value_text = row[idx["TaxRev"]].strip()
+          	if len(iso3) != 3 or not iso3.isalpha() or not year_text.isdigit() or not value_text:
+          		continue
+          	value = float(value_text)
+          	if math.isfinite(value):
+          		world[(iso3, int(year_text))] = value
+
+          url = "https://api.worldbank.org/v2/country/all/indicator/GC.TAX.TOTL.GD.ZS?format=json&per_page=20000&date=1980:2024"
+          request = urllib.request.Request(url, headers={"User-Agent": "Kartensammlung-Audit/1.0"})
+          with urllib.request.urlopen(request, timeout=60) as response:
+          	payload = json.load(response)
+          wdi = {}
+          for item in payload[1]:
+          	iso3 = str(item.get("countryiso3code") or "").strip().upper()
+          	year_text = str(item.get("date") or "")
+          	value = item.get("value")
+          	if len(iso3) != 3 or not iso3.isalpha() or not year_text.isdigit() or value is None:
+          		continue
+          	value = float(value)
+          	if math.isfinite(value):
+          		wdi[(iso3, int(year_text))] = value
+
+          overlap = sorted(set(world) & set(wdi))
+          diffs = [abs(world[key] - wdi[key]) for key in overlap]
+          signed = [world[key] - wdi[key] for key in overlap]
+          print(f"world observations={len(world)} countries={len({key[0] for key in world})}")
+          print(f"wdi observations={len(wdi)} countries={len({key[0] for key in wdi})}")
+          print(f"overlap observations={len(overlap)} countries={len({key[0] for key in overlap})}")
+          print(f"mean abs diff={statistics.fmean(diffs):.6f}")
+          print(f"median abs diff={statistics.median(diffs):.6f}")
+          print(f"mean signed WoRLD-WDI={statistics.fmean(signed):.6f}")
+          for threshold in (0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0):
+          	count = sum(diff <= threshold for diff in diffs)
+          	print(f"absdiff<={threshold:g}: {count}/{len(diffs)} = {100 * count / len(diffs):.2f}%")
+
+          for year in (2022, 2023, 2024):
+          	world_year = {iso3 for (iso3, y), value in world.items() if y == year}
+          	wdi_year = {iso3 for (iso3, y), value in wdi.items() if y == year}
+          	print(f"{year}: WoRLD={len(world_year)} WDI={len(wdi_year)} overlap={len(world_year & wdi_year)} worldOnly={len(world_year - wdi_year)} wdiOnly={len(wdi_year - world_year)}")
+          	if world_year - wdi_year:
+          		print("  WoRLD only:", sorted(world_year - wdi_year))
+          	if wdi_year - world_year:
+          		print("  WDI only:", sorted(wdi_year - world_year))
+
+          print("largest overlapping differences")
+          for key in sorted(overlap, key=lambda item: abs(world[item] - wdi[item]), reverse=True)[:30]:
+          	print(f"{key[0]} {key[1]} WoRLD={world[key]:.6f} WDI={wdi[key]:.6f} diff={world[key] - wdi[key]:+.6f}")
           PY
