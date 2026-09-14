@@ -144,6 +144,7 @@ def numeric_summary(values: list[float]) -> str:
 	ordered = sorted(values)
 	if not ordered:
 		return "no numeric values"
+
 	def percentile(fraction: float) -> float:
 		if len(ordered) == 1:
 			return ordered[0]
@@ -154,6 +155,7 @@ def numeric_summary(values: list[float]) -> str:
 			return ordered[lower]
 		weight = position - lower
 		return ordered[lower] * (1 - weight) + ordered[upper] * weight
+
 	return (
 		f"n={len(ordered)} min={ordered[0]:.6g} p05={percentile(0.05):.6g} "
 		f"p25={percentile(0.25):.6g} median={statistics.median(ordered):.6g} "
@@ -259,6 +261,19 @@ def main() -> None:
 			f"COLUMN {column}: present={present}/{len(data_rows)} numeric={len(numeric)} "
 			f"summary=({numeric_summary(numeric)}) textSamples={text_samples}"
 		)
+
+	for column in (11, 12, 13, 14, 15):
+		missing_source_codes = sorted(
+			source_code
+			for _, source_code, values in data_rows
+			if values.get(column) in (None, "", "#N/A")
+		)
+		missing_registry_codes = sorted(
+			set(missing_registry)
+			| {ALIASES.get(source_code, source_code) for source_code in missing_source_codes}
+		)
+		print(f"SOLAR_COLUMN {column}: missingSourceCodes={missing_source_codes}")
+		print(f"SOLAR_COLUMN {column}: missingRegistryIso3={missing_registry_codes}")
 
 	for iso3 in ("AUT", "DEU", "USA", "IND", "CHN", "ZAF", "NAM", "XKX"):
 		source_code = mapped.get(iso3)
