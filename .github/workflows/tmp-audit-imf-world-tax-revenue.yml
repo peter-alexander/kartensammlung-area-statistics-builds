@@ -1,0 +1,85 @@
+name: Temporary IMF WoRLD tax revenue audit
+
+on:
+  push:
+    branches:
+      - audit/imf-world-tax-revenue
+    paths:
+      - ".github/workflows/tmp-audit-imf-world-tax-revenue.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download IMF WoRLD 2026 workbook
+        run: |
+          curl --fail --location --retry 3 --retry-all-errors \
+          	"https://www.imf.org/-/media/files/topics/fiscal/world-revenue-longitudinal-database/world-imf2026.xlsx" \
+          	--output /tmp/world-imf2026.xlsx
+          ls -lh /tmp/world-imf2026.xlsx
+
+      - name: Inspect workbook structure
+        run: |
+          python - <<'PY'
+          import re
+          import zipfile
+          import xml.etree.ElementTree as ET
+
+          path = "/tmp/world-imf2026.xlsx"
+          ns = {
+          	"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+          	"r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+          	"p": "http://schemas.openxmlformats.org/package/2006/relationships",
+          }
+
+          def col_index(ref):
+          	letters = re.match(r"[A-Z]+", ref).group(0)
+          	value = 0
+          	for letter in letters:
+          		value = value * 26 + ord(letter) - 64
+          	return value - 1
+
+          with zipfile.ZipFile(path) as archive:
+          	shared = []
+          	if "xl/sharedStrings.xml" in archive.namelist():
+          		root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+          		for item in root.findall("m:si", ns):
+          			shared.append("".join(node.text or "" for node in item.iterfind(".//m:t", ns)))
+
+          	workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+          	rels = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+          	rel_map = {rel.attrib["Id"]: rel.attrib["Target"] for rel in rels}
+          	print("SHEETS")
+          	for sheet in workbook.find("m:sheets", ns):
+          		name = sheet.attrib["name"]
+          		target = rel_map[sheet.attrib[f"{{{ns['r']}}}id"]]
+          		if not target.startswith("/"):
+          			target = "xl/" + target.lstrip("/")
+          		else:
+          			target = target.lstrip("/")
+          		print(f"- {name}: {target}")
+
+          		root = ET.fromstring(archive.read(target))
+          		rows = root.findall(".//m:sheetData/m:row", ns)
+          		print(f"  rows={len(rows)}")
+          		for row in rows[:20]:
+          			values = []
+          			for cell in row.findall("m:c", ns):
+          				ref = cell.attrib.get("r", "A1")
+          				while len(values) <= col_index(ref):
+          					values.append("")
+          				cell_type = cell.attrib.get("t")
+          				value_node = cell.find("m:v", ns)
+          				value = "" if value_node is None else value_node.text or ""
+          				if cell_type == "s" and value:
+          					value = shared[int(value)]
+          				elif cell_type == "inlineStr":
+          					value = "".join(node.text or "" for node in cell.iterfind(".//m:t", ns))
+          				values[col_index(ref)] = value
+          			print("  ", values[:25])
+          PY
