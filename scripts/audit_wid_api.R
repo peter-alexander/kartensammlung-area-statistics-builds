@@ -6,6 +6,8 @@ suppressPackageStartupMessages(library(jsonlite))
 indicators <- c("sptinc", "shweal")
 percentiles <- c("p0p50", "p50p90", "p90p100", "p99p100")
 registry_url <- "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+wid_countries_url <- "https://wid.world/bulk_download/WID_countries.csv"
+
 registry <- fromJSON(registry_url, simplifyVector=FALSE)
 registry_codes <- sort(unique(vapply(
 	registry$areas,
@@ -22,15 +24,29 @@ if (length(registry_codes) != 250) {
 	stop(paste("Expected 250 two-letter registry country codes, got", length(registry_codes)))
 }
 
+wid_countries <- read.csv(wid_countries_url, sep=";", stringsAsFactors=FALSE, check.names=FALSE)
+if (!("alpha2" %in% names(wid_countries))) {
+	stop("WID_countries.csv has no alpha2 column")
+}
+wid_codes <- sort(unique(toupper(trimws(wid_countries$alpha2))))
+wid_codes <- wid_codes[grepl("^[A-Z]{2}$", wid_codes)]
+query_codes <- intersect(registry_codes, wid_codes)
+if (length(query_codes) != 232) {
+	stop(paste("Expected 232 WID/registry ISO2 overlaps, got", length(query_codes)))
+}
+
 cat("===== WID targeted API audit =====\n")
 cat("indicators=", paste(indicators, collapse=","), "\n", sep="")
 cat("percentiles=", paste(percentiles, collapse=","), "\n", sep="")
 cat("registryCountries=", length(registry_codes), "\n", sep="")
+cat("widTwoLetterCodes=", length(wid_codes), "\n", sep="")
+cat("queryCountries=", length(query_codes), "\n", sep="")
+cat("registryWithoutWIDCode=", paste(setdiff(registry_codes, wid_codes), collapse=","), "\n", sep="")
 
 fetch <- function(include_extrapolations) {
 	download_wid(
 		indicators=indicators,
-		areas="all",
+		areas=query_codes,
 		perc=percentiles,
 		years="all",
 		ages=992,
@@ -42,7 +58,7 @@ fetch <- function(include_extrapolations) {
 }
 
 registry_rows <- function(data) {
-	data[data$country %in% registry_codes, , drop=FALSE]
+	data[data$country %in% query_codes, , drop=FALSE]
 }
 
 summarize_data <- function(data, label) {
@@ -51,14 +67,13 @@ summarize_data <- function(data, label) {
 		stop(paste("No WID data returned for", label))
 	}
 	cat("columns=", paste(names(data), collapse=","), "\n", sep="")
-	cat("rowsAllAreas=", nrow(data), "\n", sep="")
+	cat("rows=", nrow(data), "\n", sep="")
 	cat("variables=", paste(sort(unique(data$variable)), collapse=","), "\n", sep="")
 	cat("percentiles=", paste(sort(unique(data$percentile)), collapse=","), "\n", sep="")
-	all_two_letter <- sort(unique(data$country[grepl("^[A-Z]{2}$", data$country)]))
 	country_rows <- registry_rows(data)
-	cat("allTwoLetterAreas=", length(all_two_letter), "\n", sep="")
-	cat("mappedRegistryCountries=", length(unique(country_rows$country)), "\n", sep="")
-	cat("twoLetterButNotRegistry=", paste(setdiff(all_two_letter, registry_codes), collapse=","), "\n", sep="")
+	returned_codes <- sort(unique(country_rows$country))
+	cat("mappedRegistryCountries=", length(returned_codes), "\n", sep="")
+	cat("queriedButNoTargetData=", paste(setdiff(query_codes, returned_codes), collapse=","), "\n", sep="")
 
 	for (variable in sort(unique(country_rows$variable))) {
 		for (percentile in percentiles) {
