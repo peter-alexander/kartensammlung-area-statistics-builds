@@ -37,6 +37,11 @@
 			"index": "world-bank-pip/index.json"
 		},
 		{
+			"id": "wid-inequality",
+			"name": "WID – Einkommensverteilung & Ungleichheit",
+			"index": "wid-inequality/index.json"
+		},
+		{
 			"id": "world-bank-remittances",
 			"name": "Weltbank/KNOMAD – Rücküberweisungen",
 			"index": "world-bank-remittances/index.json"
