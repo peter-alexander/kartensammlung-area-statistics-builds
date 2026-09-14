@@ -121,10 +121,11 @@ jobs:
           	assert item["sourceMeasure"] == rules["measure"]
           	assert item["sourceThreshold"] == rules["threshold"]
           	assert item["availableYears"][0] == rules["first"]
-          	assert item["availableYears"][-1] >= 2024
+          	assert item["availableYears"][-1] == item["defaultYear"]
+          	assert item["defaultYear"] >= 2024
           	assert item["coverage"]["registryAreas"] == 250
           	assert item["coverage"]["areasWithAnyValue"] == rules["any"]
-          	assert item["defaultYear"] >= 2024
+          	assert item["coverage"]["areasInLatestYear"] == item["coverage"]["areasInDefaultYear"]
           	assert item["coverage"]["areasInDefaultYear"] >= rules["in2024"]
 
           	payload = json.loads((provider_dir / item["path"]).read_text(encoding="utf-8"))
@@ -135,7 +136,9 @@ jobs:
           	assert payload["source"]["dimensionFilters"]["UNIT_MEASURE"] == "D_Y"
           	assert payload["source"]["dimensionFilters"]["DURATION"] == "_Z"
           	assert payload["source"]["mapping"] == {"XKV": "XKX"}
-          	assert payload["source"]["fallback"] is None
+          	assert "fallback" not in payload["source"]
+          	assert payload["source"]["sourceLatestYear"] >= payload["defaultYear"]
+          	assert all(year > payload["defaultYear"] for year in payload["source"]["excludedTrailingYears"])
           	assert len(payload["values"]["2024"]) == rules["in2024"]
           	for iso3, expected_value in rules["values"].items():
           		actual = payload["values"]["2024"][f"country:{iso3}"]
@@ -147,12 +150,13 @@ jobs:
 
           print(f"snapshot={provider['activeSnapshot']}")
           print(f"retrievedAt={provider['retrievedAt']}")
-          print(f"statuses={ {key: item for key, item in provider['dataset']['sourceRows'].items()} }")
           for item in provider["indicators"]:
+          	payload = json.loads((provider_dir / item["path"]).read_text(encoding="utf-8"))
           	print(
-          		f"{item['id']}: defaultYear={item['defaultYear']} "
-          		f"coverage={item['coverage']['areasInDefaultYear']}/{item['coverage']['registryAreas']} "
-          		f"years={item['availableYears'][0]}-{item['availableYears'][-1]}"
+          		f"{item['id']}: published={item['availableYears'][0]}-{item['availableYears'][-1]} "
+          		f"sourceLatest={payload['source']['sourceLatestYear']} "
+          		f"excludedTrailing={payload['source']['excludedTrailingYears']} "
+          		f"coverage={item['coverage']['areasInDefaultYear']}/{item['coverage']['registryAreas']}"
           	)
           PY
           du -h dist/statistics/oecd-extreme-temperature/index.json
