@@ -27,12 +27,17 @@
 			"index": "cru-cy/index.json"
 		},
 		{
+			"id": "oecd-extreme-temperature",
+			"name": "OECD – Hitze & Temperaturbelastung",
+			"index": "oecd-extreme-temperature/index.json"
+		},
+		{
 			"id": "edgar",
 			"name": "EDGAR (EU/JRC) – Treibhausgasemissionen",
 			"index": "edgar/index.json"
 		},
 		{
-			"id": "jrc-lulucf",
+			"id": "jrc-lulcf",
 			"name": "JRC – Landnutzung & LULUCF",
 			"index": "jrc-lulucf/index.json"
 		},
