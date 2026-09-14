@@ -1,0 +1,54 @@
+name: Temporary UNESCO UIS R&D audit
+
+on:
+  push:
+    branches:
+      - feature/unesco-uis-rd
+    paths:
+      - ".github/workflows/tmp-audit-unesco-uis-rd.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Audit UIS R&D dataset
+        run: |
+          python - <<'PY'
+          import csv
+          import io
+          from collections import defaultdict
+          from urllib.request import Request, urlopen
+
+          url = (
+          	"https://data.unesco.org/api/explore/v2.1/catalog/datasets/uis004/exports/csv"
+          	"?select=indicator_id,country_id,year,value,magnitude,qualifier,indicator_label_en,country_name_en,footnotes"
+          	"&delimiter=%2C"
+          )
+          request = Request(url, headers={"Accept": "text/csv,*/*", "User-Agent": "kartensammlung-area-statistics-builds/1"})
+          with urlopen(request, timeout=180) as response:
+          	raw = response.read()
+          rows = list(csv.DictReader(io.StringIO(raw.decode("utf-8-sig"))))
+          print(f"bytes={len(raw)} rows={len(rows)}")
+
+          by_indicator = defaultdict(list)
+          for row in rows:
+          	by_indicator[row["indicator_id"]].append(row)
+
+          for indicator_id in sorted(by_indicator):
+          	items = by_indicator[indicator_id]
+          	labels = sorted({row["indicator_label_en"] for row in items})
+          	years = sorted({int(row["year"]) for row in items if row["year"].isdigit() and row["value"].strip()})
+          	countries = {row["country_id"] for row in items if row["country_id"] and row["value"].strip()}
+          	qualifiers = sorted({row["qualifier"] for row in items if row["qualifier"].strip()})
+          	print(f"indicator={indicator_id}")
+          	print(f"  labels={labels}")
+          	print(f"  years={years[0] if years else None}-{years[-1] if years else None} countries={len(countries)} qualifiers={qualifiers}")
+          	for year in years[-8:]:
+          		coverage = len({row["country_id"] for row in items if row["year"] == str(year) and row["value"].strip() and row["country_id"]})
+          		print(f"  {year}: {coverage}")
+          PY
