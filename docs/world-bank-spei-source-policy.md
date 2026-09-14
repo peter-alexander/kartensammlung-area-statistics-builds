@@ -17,23 +17,30 @@ SPEI kombiniert Niederschlag und potenzielle Evapotranspiration. Negative standa
 
 ## Zeitraum und Abdeckung
 
-Der am 14. September 2026 vollständig geprüfte Quellstand umfasst 1960–2023.
+Der am 14. September 2026 vollständig geprüfte Quellstand umfasst 1960–2023 und damit 64 lückenlose Kalenderjahre.
 
-Für jedes der 64 Jahre liegen exakt **189** Werte für unsere Registry mit 250 Ländern/Gebieten vor. Es gibt keine zeitlichen Lücken innerhalb dieses Zeitraums.
+Über den gesamten Zeitraum kommen **189** unserer 250 Registry-Gebiete mindestens einmal vor. In **63 der 64 Jahre** liegen für alle diese 189 Gebiete Werte vor. Die einzige historische Einzeljahreslücke ist **Vanuatu (`VUT`) im Jahr 1961**; dieses Jahr hat daher 188 statt 189 Werte. Vanuatu besitzt in allen übrigen 63 Jahren einen Wert. Diese Quelllücke wird unverändert als fehlender Wert erhalten und nicht interpoliert.
 
-Die 61 dauerhaft fehlenden Registry-Codes sind:
+Die 61 über den gesamten Zeitraum dauerhaft fehlenden Registry-Codes sind:
 
 `ABW, AIA, ALA, ASM, ATA, ATF, BES, BLM, BMU, BVT, CCK, COK, CUW, CXR, CYM, ESH, FLK, FRO, GGY, GIB, GLP, GRL, GUF, GUM, HKG, HMD, IMN, IOT, JEY, MAC, MAF, MDV, MHL, MNP, MSR, MTQ, MYT, NCL, NFK, NIU, NRU, PCN, PRI, PSE, PYF, REU, SGS, SHN, SJM, SPM, SXM, TCA, TKL, TUV, TWN, UMI, VAT, VGB, VIR, WLF, XKX`.
 
 Es wird **kein** fehlendes Gebiet aus anderen Datenquellen ergänzt und insbesondere Kosovo (`XKX`) nicht synthetisch erzeugt.
 
+## Historische Coverage-Regeln
+
+Der Build prüft die historische Reihe 1960–2023 jahrgenau:
+
+- 1960 sowie 1962–2023: exakt 189 Gebiete und exakt die dauerhaft fehlenden 61 Registry-Codes,
+- 1961: exakt 188 Gebiete; zusätzlich zu den dauerhaft fehlenden Codes muss ausschließlich `VUT` fehlen.
+
+Jede weitere historische Lücke oder das unerwartete Auftauchen eines dauerhaft fehlenden Gebiets ist ein harter Fehler und verlangt einen neuen Quellen-Audit.
+
 ## Umgang mit neuen Jahren
 
-Die historisch geprüfte Reihe 1960–2023 muss weiterhin vollständig und lückenlos bleiben.
+Ein Jahr nach 2023 wird nur veröffentlicht, wenn es die normale geprüfte Abdeckung von 189 Registry-Gebieten besitzt und dieselbe dauerhafte 61-Gebiete-Fehlmenge beibehält. Ein noch unvollständig publiziertes nachlaufendes Jahr darf in der Weltbank-API bereits vorhanden sein, wird aber nur in den Quelldiagnosen als `sourceLatestYear` bzw. `excludedTrailingYears` geführt und noch nicht in `availableYears` übernommen.
 
-Ein neueres Jahr wird nur veröffentlicht, wenn es dieselbe geprüfte Abdeckung von 189 Registry-Gebieten besitzt und dieselbe 61-Gebiete-Fehlmenge beibehält. Ein noch unvollständig publiziertes nachlaufendes Jahr darf in der Weltbank-API bereits vorhanden sein, wird aber nur in den Quelldiagnosen als `sourceLatestYear` bzw. `excludedTrailingYears` geführt und noch nicht in `availableYears` übernommen.
-
-Ändert sich die Gebietskulisse selbst – etwa weil ein bisher fehlendes Gebiet erstmals Werte erhält – schlägt der Build bewusst fehl und verlangt einen neuen Quellen-Audit.
+Ändert sich die Gebietskulisse selbst – etwa weil ein bisher dauerhaft fehlendes Gebiet erstmals Werte erhält – schlägt der Build bewusst fehl und verlangt einen neuen Quellen-Audit.
 
 ## Datenverarbeitung
 
