@@ -117,9 +117,9 @@ jobs:
           		year_columns = {}
           		for index, value in enumerate(header[1:], start=1):
           			try:
-          			year = int(value)
+          				year = int(value)
           			except (TypeError, ValueError):
-          			continue
+          				continue
           			if 1900 <= year <= 2200:
           				year_columns[year] = index
           		print(f"years={sorted(year_columns)}")
