@@ -35,7 +35,7 @@ def text_name(node: ET.Element) -> str:
 
 
 def audit_oecd() -> None:
-	raw = fetch(OECD_STRUCTURE, "application/vnd.sdmx.structure+xml;version=2.0")
+	raw = fetch(OECD_STRUCTURE, "application/vnd.sdmx.structure+xml;version=2.1")
 	print(f"OECD structure bytes={len(raw)}")
 	root = ET.fromstring(raw)
 
