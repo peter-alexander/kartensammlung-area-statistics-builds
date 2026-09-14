@@ -16,7 +16,6 @@ on:
   push:
     branches:
       - main
-      - feature/world-bank-spei
     paths:
       - "config/statistics-providers.json"
       - "config/world-bank-spei-indicators.json"
