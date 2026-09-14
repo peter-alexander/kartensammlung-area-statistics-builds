@@ -1,0 +1,48 @@
+name: Audit CRU-CY v4.10
+
+on:
+  push:
+    branches:
+      - audit/cru-cy-v410
+    paths:
+      - "scripts/audit_cru_cy_v410.py"
+      - ".github/workflows/audit-cru-cy-v410.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate audit script
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/audit_cru_cy_v410.py
+          git diff --check
+
+      - name: Audit CRU-CY v4.10
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          python scripts/audit_cru_cy_v410.py 2>&1 | tee diagnostics/cru-cy-v410-audit.log
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cru-cy-v410-audit-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 14
