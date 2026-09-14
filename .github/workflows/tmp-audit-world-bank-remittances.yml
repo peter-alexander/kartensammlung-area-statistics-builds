@@ -1,0 +1,96 @@
+name: Temporary World Bank remittances audit
+
+on:
+  push:
+    branches:
+      - feature/world-bank-remittances
+    paths:
+      - ".github/workflows/tmp-audit-world-bank-remittances.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install audit dependency
+        run: python -m pip install --disable-pip-version-check openpyxl==3.1.5
+
+      - name: Audit current KNOMAD remittance workbooks
+        run: |
+          python - <<'PY'
+          import hashlib
+          import io
+          import json
+          import math
+          import statistics
+          import sys
+          from collections import Counter
+          from urllib.request import Request, urlopen
+
+          from openpyxl import load_workbook
+
+          sys.path.insert(0, "scripts")
+          import build_world_bank as common
+
+          SOURCES = {
+          	"inward": "https://datacatalogfiles.worldbank.org/ddh-published/0066146/DR0095569/Inward_remittance_flows_%28September_2025%29.xlsx",
+          	"outward": "https://datacatalogfiles.worldbank.org/ddh-published/0066146/DR0095570/Outward_remittance_flows_%28September_2025%29.xlsx",
+          }
+          registry_url = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
+          area_by_iso3, _ = common.load_registry(registry_url, 60)
+          print(f"registryIso3={len(area_by_iso3)}")
+
+          def fetch(url):
+          	request = Request(url, headers={"User-Agent": "kartensammlung-area-statistics-builds/1", "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*"})
+          	with urlopen(request, timeout=180) as response:
+          		data = response.read()
+          	return data
+
+          def clean(value):
+          	if value is None:
+          		return ""
+          	return str(value).strip()
+
+          def percentile(values, fraction):
+          	ordered = sorted(values)
+          	if not ordered:
+          		return None
+          	position = (len(ordered) - 1) * fraction
+          	lo = math.floor(position)
+          	hi = math.ceil(position)
+          	if lo == hi:
+          		return ordered[lo]
+          	return ordered[lo] + (ordered[hi] - ordered[lo]) * (position - lo)
+
+          for source_name, url in SOURCES.items():
+          	data = fetch(url)
+          	print(f"\n=== {source_name.upper()} ===")
+          	print(f"url={url}")
+          	print(f"bytes={len(data)} sha256={hashlib.sha256(data).hexdigest()}")
+          	workbook = load_workbook(io.BytesIO(data), data_only=True, read_only=True)
+          	print(f"sheets={workbook.sheetnames}")
+          	for sheet in workbook.worksheets:
+          		print(f"sheet={sheet.title!r} max_row={sheet.max_row} max_column={sheet.max_column}")
+          		preview = []
+          		for row_index, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+          			values = [clean(value) for value in row]
+          			if any(values):
+          				preview.append((row_index, values[:20]))
+          			if len(preview) >= 15:
+          				break
+          		for row_index, values in preview:
+          			print(f"row{row_index}={json.dumps(values, ensure_ascii=False)}")
+          	workbook.close()
+          PY
