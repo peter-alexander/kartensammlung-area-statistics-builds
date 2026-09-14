@@ -1,0 +1,106 @@
+name: Audit OECD PISA 2025 Annex B1
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/audit-oecd-pisa-2025-annex.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install audit dependency
+        run: python -m pip install --disable-pip-version-check openpyxl==3.1.5
+
+      - name: Download official Annex B1 performance tables
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics-annex
+          curl --fail --silent --show-error --location \
+            --connect-timeout 15 --max-time 120 --retry 2 --retry-delay 2 --retry-all-errors \
+            --dump-header diagnostics-annex/statlink-headers.txt \
+            --output diagnostics-annex/pisa-2025-annex-b1a.xlsx \
+            --write-out 'effective_url=%{url_effective}\ncontent_type=%{content_type}\nhttp_code=%{http_code}\nsize_download=%{size_download}\n' \
+            'https://stat.link/mrq53f' | tee diagnostics-annex/statlink-transfer.txt
+          file diagnostics-annex/pisa-2025-annex-b1a.xlsx | tee diagnostics-annex/file-type.txt
+          sha256sum diagnostics-annex/pisa-2025-annex-b1a.xlsx | tee diagnostics-annex/sha256.txt
+          cat diagnostics-annex/statlink-headers.txt
+
+      - name: Inspect target tables
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' | tee diagnostics-annex/structure.txt
+          from pathlib import Path
+
+          from openpyxl import load_workbook
+
+          path = Path("diagnostics-annex/pisa-2025-annex-b1a.xlsx")
+          workbook = load_workbook(path, read_only=True, data_only=True)
+
+          targets = (
+          	"I.B1.2a.1",
+          	"I.B1.2a.2",
+          	"I.B1.2a.3",
+          	"I.B1.2a.36",
+          	"I.B1.2a.37",
+          	"I.B1.2a.38",
+          )
+
+          print(f"sheets={len(workbook.sheetnames)}")
+          for name in workbook.sheetnames:
+          	print(f"sheet={name!r}")
+
+          selected = []
+          for sheet in workbook.worksheets:
+          	matched = any(target.lower() in sheet.title.lower() for target in targets)
+          	if not matched:
+          		for row in sheet.iter_rows(min_row=1, max_row=min(sheet.max_row, 12), values_only=True):
+          			text = " | ".join(str(value) for value in row if value is not None)
+          			if any(target.lower() in text.lower() for target in targets):
+          				matched = True
+          				break
+          	if matched:
+          		selected.append(sheet.title)
+
+          print("\nselected_target_sheets=")
+          for name in selected:
+          	print(name)
+
+          print("\n--- target sheet excerpts ---")
+          for name in selected:
+          	print(f"\n[{name}]")
+          	sheet = workbook[name]
+          	for row_index, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+          		values = ["" if value is None else str(value) for value in row[:28]]
+          		if any(values):
+          			print(f"{row_index}: " + "\t".join(values))
+          		if row_index >= 125:
+          			break
+
+          workbook.close()
+          PY
+
+      - name: Upload audit diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oecd-pisa-2025-annex-audit-${{ github.sha }}
+          path: diagnostics-annex/
+          if-no-files-found: error
+          retention-days: 14
