@@ -6,6 +6,7 @@ on:
       - audit/wid-world-inequality
     paths:
       - scripts/audit_wid_probe.py
+      - scripts/audit_wid_country_mapping.py
       - scripts/audit_wid_api.R
       - .github/workflows/audit-wid-world-inequality.yml
   workflow_dispatch:
@@ -24,11 +25,15 @@ jobs:
           python-version: "3.12"
       - name: Probe official WID bulk files
         run: python scripts/audit_wid_probe.py | tee wid-probe.txt
+      - name: Audit WID country mapping
+        run: python scripts/audit_wid_country_mapping.py | tee wid-country-mapping.txt
       - name: Upload audit output
         uses: actions/upload-artifact@v4
         with:
           name: wid-source-probe
-          path: wid-probe.txt
+          path: |
+            wid-probe.txt
+            wid-country-mapping.txt
           if-no-files-found: error
           retention-days: 7
 
