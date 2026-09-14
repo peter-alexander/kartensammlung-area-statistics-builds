@@ -1,0 +1,27 @@
+name: Audit PISA additional domains
+
+on:
+  push:
+    branches:
+      - audit/pisa-additional-domains
+    paths:
+      - scripts/audit_pisa_additional_domains.py
+      - .github/workflows/audit-pisa-additional-domains.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install audit dependencies
+        run: python -m pip install --disable-pip-version-check openpyxl==3.1.5
+      - name: Audit official OECD sources
+        run: python scripts/audit_pisa_additional_domains.py
