@@ -60,11 +60,13 @@ jobs:
           expected = {
           	"migration.remittance-inflows-current-usd-million": {
           		"resourceId": "DR0095569",
+          		"anyCoverage": 200,
           		"sum2024": 891154.0,
           		"minimumZeroes": 15,
           	},
           	"migration.remittance-outflows-current-usd-million": {
           		"resourceId": "DR0095570",
+          		"anyCoverage": 201,
           		"sum2024": 598446.0,
           		"minimumZeroes": 20,
           	},
@@ -80,7 +82,7 @@ jobs:
           	assert coverage["mappedSourceRows"] == 213
           	assert coverage["areasInLatestYear"] == 200
           	assert coverage["areasInDefaultYear"] == 200
-          	assert coverage["areasWithAnyValue"] == 200
+          	assert coverage["areasWithAnyValue"] == expected_item["anyCoverage"]
           	payload = json.loads((root / item["path"]).read_text(encoding="utf-8"))
           	assert payload["source"]["resourceId"] == expected_item["resourceId"]
           	assert payload["source"]["ignoredSourceNames"] == ["Channel Islands"]
