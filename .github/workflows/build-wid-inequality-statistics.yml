@@ -1,0 +1,276 @@
+name: Build WID inequality statistics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "47 7 24 * *"
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "config/wid-inequality-indicators.json"
+      - "scripts/download_wid_inequality.R"
+      - "scripts/build_wid_inequality.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-wid-inequality-statistics.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "config/statistics-providers.json"
+      - "config/wid-inequality-indicators.json"
+      - "scripts/download_wid_inequality.R"
+      - "scripts/build_wid_inequality.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-wid-inequality-statistics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-wid-inequality-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install R and WID package
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes r-base r-cran-httr r-cran-base64enc r-cran-plyr r-cran-jsonlite
+          mkdir -p /tmp/Rlib
+          R_LIBS_USER=/tmp/Rlib Rscript -e 'install.packages("wid", repos="https://cloud.r-project.org", dependencies=FALSE)'
+
+      - name: Validate scripts and configuration
+        shell: bash
+        run: |
+          bash -n .github/scripts/deploy-world-bank-statistics.sh
+          python -m py_compile scripts/build_wid_inequality.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/wid-inequality-indicators.json >/dev/null
+          Rscript -e 'parse(file="scripts/download_wid_inequality.R")' >/dev/null
+          git diff --check
+
+      - name: Download WID inequality data
+        shell: bash
+        env:
+          R_LIBS_USER: /tmp/Rlib
+        run: |
+          set -euo pipefail
+          mkdir -p raw/wid diagnostics
+          START_YEAR="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path("config/wid-inequality-indicators.json").read_text(encoding="utf-8"))["expectedStartYear"])
+          PY
+          )"
+          EXPECTED_VERSION="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path("config/wid-inequality-indicators.json").read_text(encoding="utf-8"))["expectedPackageVersion"])
+          PY
+          )"
+          END_YEAR="$(date -u +%Y)"
+          Rscript scripts/download_wid_inequality.R \
+          	raw/wid/inequality.csv \
+          	raw/wid/download-metadata.json \
+          	"$START_YEAR" "$END_YEAR" "$EXPECTED_VERSION" \
+          	2>&1 | tee diagnostics/wid-download.log
+
+      - name: Build WID inequality statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_wid_inequality.py \
+          	--registry "$REGISTRY_URL" \
+          	--input-csv raw/wid/inequality.csv \
+          	--input-metadata raw/wid/download-metadata.json \
+          	2>&1 | tee diagnostics/wid-build.log
+
+      - name: Validate WID inequality output
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path("config/wid-inequality-indicators.json").read_text(encoding="utf-8"))
+          provider = json.loads(Path("dist/statistics/wid-inequality/index.json").read_text(encoding="utf-8"))
+          global_index = json.loads(Path("dist/statistics/index.json").read_text(encoding="utf-8"))
+
+          assert provider["provider"]["id"] == "wid-inequality"
+          assert len(provider["indicators"]) == len(config["indicators"]) == 4
+          assert any(item["id"] == "wid-inequality" for item in global_index["providers"])
+          assert provider["dataset"]["minimumDataQuality"] == 1
+          assert provider["dataset"]["package"]["name"] == "wid"
+          assert provider["dataset"]["package"]["version"] == config["expectedPackageVersion"] == "0.0.3"
+          assert provider["dataset"]["qualityCounts"]["0"] > 0
+          assert "0" not in provider["dataset"]["retainedQualityCounts"]
+          assert provider["dataset"]["inputFile"]["bytes"] > 100_000
+          assert len(provider["dataset"]["inputFile"]["sha256"]) == 64
+          assert provider["dataset"]["excludedLowQualityRows"]
+          assert provider["dataset"]["ignoredAreaCounts"]["DD"] > 0
+          assert provider["dataset"]["ignoredAreaCounts"]["CN-RU"] > 0
+          assert provider["dataset"]["ignoredAreaCounts"]["CN-UR"] > 0
+
+          configured = {item["id"]: item for item in config["indicators"]}
+          payloads = {}
+          for item in provider["indicators"]:
+          	cfg = configured[item["id"]]
+          	coverage = item["coverage"]
+          	assert item["sourceIndicator"] == cfg["sourceIndicator"]
+          	assert item["sourceVariable"] == cfg["sourceVariable"]
+          	assert item["sourcePercentile"] == cfg["percentile"]
+          	assert item["availableYears"][0] == 1980
+          	assert item["availableYears"][-1] >= 2024
+          	assert item["defaultYear"] >= 2024
+          	assert coverage["areasWithAnyValue"] >= cfg["minAreasWithAnyValue"]
+          	assert coverage["areasInDefaultYear"] >= cfg["minAreasInDefaultYear"]
+          	assert coverage["areasInDefaultYear"] >= 156
+
+          	payload = json.loads(Path("dist/statistics/wid-inequality", item["path"]).read_text(encoding="utf-8"))
+          	payloads[item["id"]] = payload
+          	assert payload["source"]["providerId"] == "wid-inequality"
+          	assert payload["source"]["minimumDataQuality"] == 1
+          	assert payload["source"]["mappingAliases"] == {"KS": "XKX"}
+          	assert payload["source"]["ageCode"] == "992"
+          	assert payload["source"]["populationCode"] == "j"
+          	values = [value for year_values in payload["values"].values() for value in year_values.values()]
+          	assert values and min(values) >= 0 and max(values) <= 100
+          	for required in cfg["requiredAreas"]:
+          		assert required in payload["values"][str(item["defaultYear"])]
+
+          bottom = payloads["income-inequality.pretax-bottom50-share-percent"]
+          top10 = payloads["income-inequality.pretax-top10-share-percent"]
+          top1 = payloads["income-inequality.pretax-top1-share-percent"]
+          gini = payloads["income-inequality.pretax-gini"]
+          for area in ("country:AUT", "country:DEU", "country:USA", "country:IND", "country:CHN", "country:ZAF", "country:XKX"):
+          	assert area in bottom["values"]["2024"]
+          	assert area in top10["values"]["2024"]
+          	assert area in top1["values"]["2024"]
+          	assert area in gini["values"]["2024"]
+          	assert bottom["values"]["2024"][area] + top10["values"]["2024"][area] <= 100.000001
+          	assert top1["values"]["2024"][area] <= top10["values"]["2024"][area]
+
+          assert 20 < bottom["values"]["2024"]["country:AUT"] < 25
+          assert 30 < top10["values"]["2024"]["country:AUT"] < 35
+          assert 8 < top1["values"]["2024"]["country:AUT"] < 10
+          assert 40 < gini["values"]["2024"]["country:AUT"] < 45
+          assert 70 < gini["values"]["2024"]["country:ZAF"] < 80
+
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"retrievedAt={provider['retrievedAt']}")
+          print(f"qualityCounts={provider['dataset']['qualityCounts']}")
+          for item in provider["indicators"]:
+          	coverage = item["coverage"]
+          	print(
+          		f"{item['id']}: defaultYear={item['defaultYear']} "
+          		f"areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+          		f"years={item['availableYears'][0]}-{item['availableYears'][-1]} "
+          		f"anyCoverage={coverage['areasWithAnyValue']}"
+          	)
+          PY
+          du -h dist/statistics/wid-inequality/index.json
+          du -ch dist/statistics/wid-inequality/releases/*/*.json | tail -n 1
+
+      - name: Upload statistics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wid-inequality-statistics-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Deploy to tiles.radlobby.at
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          PROVIDER_ID: wid-inequality
+        run: |
+          chmod +x .github/scripts/deploy-world-bank-statistics.sh
+          .github/scripts/deploy-world-bank-statistics.sh dist/statistics
+
+      - name: Verify browser access and public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          check_file() {
+          	local url="$1"
+          	local local_file="$2"
+          	local output="$3"
+          	local headers
+          	local allow_origin
+          	headers="$(mktemp)"
+          	curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          		--header "Origin: ${BROWSER_ORIGIN}" --dump-header "$headers" \
+          		--output "$output" "${url}?${CACHE_BUST}"
+          	cmp "$local_file" "$output"
+          	allow_origin="$(awk '
+          		BEGIN { IGNORECASE = 1 }
+          		tolower($1) == "access-control-allow-origin:" {
+          			value = $0
+          			sub(/^[^:]+:[[:space:]]*/, "", value)
+          			gsub(/\r/, "", value)
+          			print value
+          		}
+          	' "$headers" | tail -n 1)"
+          	rm -f "$headers"
+          	if [ "$allow_origin" != "*" ] && [ "$allow_origin" != "$BROWSER_ORIGIN" ]; then
+          		echo "CORS check failed for ${url}: Access-Control-Allow-Origin='${allow_origin:-<missing>}'" >&2
+          		exit 1
+          	fi
+          }
+
+          check_file "${PUBLIC_BASE}/index.json" "dist/statistics/index.json" /tmp/public-statistics-index.json
+          check_file "${PUBLIC_BASE}/wid-inequality/index.json" "dist/statistics/wid-inequality/index.json" /tmp/public-wid-inequality-index.json
+          while IFS= read -r path; do
+          	mkdir -p "/tmp/public-wid-inequality/$(dirname "$path")"
+          	check_file \
+          		"${PUBLIC_BASE}/wid-inequality/${path}" \
+          		"dist/statistics/wid-inequality/${path}" \
+          		"/tmp/public-wid-inequality/${path}"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/wid-inequality/index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
+          PY
+          )
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wid-inequality-statistics-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
