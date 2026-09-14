@@ -6,6 +6,7 @@ import io
 import zipfile
 from urllib.request import Request, urlopen
 
+import xlrd
 from openpyxl import load_workbook
 
 # Temporary source audit. Remove this file before the production PR.
@@ -16,8 +17,19 @@ SOURCES = {
 	"pisa-2018-global-competence": "https://doi.org/10.1787/888934171229",
 	"pisa-2015-collaborative-problem-solving": "https://doi.org/10.1787/888933616769",
 	"pisa-2012-creative-problem-solving": "https://doi.org/10.1787/888933003573",
-	"pisa-2009-digital-reading": "https://doi.org/10.1787/888932436689",
+	"pisa-2009-digital-reading": "https://doi.org/10.1787/888932436556",
 	"pisa-2003-cross-curricular-problem-solving": "https://doi.org/10.1787/402381481733",
+}
+
+TITLE_PATTERNS = {
+	"pisa-2025-core-and-digital": ("mean score and variation in computational problem-solving performance",),
+	"pisa-2022-financial-literacy": ("mean financial literacy scores in 2012, 2015, 2018 and 2022",),
+	"pisa-2022-creative-thinking": ("mean score and variation in creative thinking performance",),
+	"pisa-2018-global-competence": ("performance on the global competence test",),
+	"pisa-2015-collaborative-problem-solving": ("mean score and variation in collaborative problem-solving performance",),
+	"pisa-2012-creative-problem-solving": ("mean score", "problem solving"),
+	"pisa-2009-digital-reading": ("mean score", "digital", "reading"),
+	"pisa-2003-cross-curricular-problem-solving": ("problem-solving",),
 }
 
 
@@ -27,21 +39,55 @@ def fetch(url: str) -> tuple[bytes, str, str]:
 		return response.read(), response.geturl(), response.headers.get("Content-Type", "")
 
 
-def preview_xlsx(raw: bytes) -> None:
+def normalized_text(value: object) -> str:
+	return " ".join(str(value).replace("\n", " ").split()).lower()
+
+
+def xlsx_rows(raw: bytes) -> dict[str, list[list[object]]]:
 	workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-	print("sheets:")
-	for sheet_name in workbook.sheetnames:
-		sheet = workbook[sheet_name]
-		print(f"  - {sheet_name!r}: {sheet.max_row}x{sheet.max_column}")
-		shown = 0
-		for row_number, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+	return {
+		sheet_name: [list(row) for row in workbook[sheet_name].iter_rows(values_only=True)]
+		for sheet_name in workbook.sheetnames
+	}
+
+
+def xls_rows(raw: bytes) -> dict[str, list[list[object]]]:
+	workbook = xlrd.open_workbook(file_contents=raw, on_demand=True)
+	result: dict[str, list[list[object]]] = {}
+	for sheet_name in workbook.sheet_names():
+		sheet = workbook.sheet_by_name(sheet_name)
+		result[sheet_name] = [sheet.row_values(row_index) for row_index in range(sheet.nrows)]
+	return result
+
+
+def find_target_sheets(name: str, sheets: dict[str, list[list[object]]]) -> list[str]:
+	patterns = TITLE_PATTERNS[name]
+	matches: list[str] = []
+	for sheet_name, rows in sheets.items():
+		search_text = " ".join(
+			normalized_text(value)
+			for row in rows[:25]
+			for value in row
+			if value not in (None, "")
+		)
+		if all(pattern in search_text for pattern in patterns):
+			matches.append(sheet_name)
+	return matches
+
+
+def print_target_table(name: str, sheets: dict[str, list[list[object]]]) -> None:
+	print(f"sheet names: {list(sheets)}")
+	matches = find_target_sheets(name, sheets)
+	print(f"target sheets: {matches}")
+	for sheet_name in matches:
+		print(f"--- {sheet_name} ---")
+		rows = sheets[sheet_name]
+		for row_number, row in enumerate(rows, start=1):
 			values = [value for value in row if value not in (None, "")]
 			if not values:
 				continue
-			print(f"      row {row_number}: {values[:12]!r}")
-			shown += 1
-			if shown >= 8:
-				break
+			if row_number <= 20 or isinstance(values[0], str):
+				print(f"row {row_number}: {values[:32]!r}")
 
 
 def main() -> None:
@@ -58,13 +104,17 @@ def main() -> None:
 		print(f"bytes: {len(raw)}")
 		print(f"sha256: {hashlib.sha256(raw).hexdigest()}")
 		print(f"magic: {raw[:16]!r}")
-		if raw.startswith(b"PK") and zipfile.is_zipfile(io.BytesIO(raw)):
-			try:
-				preview_xlsx(raw)
-			except Exception as error:
-				print(f"XLSX ERROR: {type(error).__name__}: {error}")
-		else:
-			print(f"text-preview: {raw[:500]!r}")
+		try:
+			if raw.startswith(b"PK") and zipfile.is_zipfile(io.BytesIO(raw)):
+				sheets = xlsx_rows(raw)
+			elif raw.startswith(b"\xd0\xcf\x11\xe0"):
+				sheets = xls_rows(raw)
+			else:
+				print(f"unsupported source preview: {raw[:500]!r}")
+				continue
+			print_target_table(name, sheets)
+		except Exception as error:
+			print(f"PARSE ERROR: {type(error).__name__}: {error}")
 
 
 if __name__ == "__main__":
