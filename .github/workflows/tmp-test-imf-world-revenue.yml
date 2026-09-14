@@ -1,0 +1,93 @@
+name: Temporary IMF WoRLD provider test
+
+on:
+  push:
+    branches:
+      - feature/imf-world-revenue
+    paths:
+      - ".github/workflows/tmp-test-imf-world-revenue.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate sources
+        run: |
+          python -m py_compile scripts/build_imf_world_revenue.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/imf-world-revenue-indicators.json >/dev/null
+
+      - name: Build IMF WoRLD statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_imf_world_revenue.py --registry "$REGISTRY_URL"
+
+      - name: Validate generated provider
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("dist/statistics/imf-world-revenue")
+          provider = json.loads((root / "index.json").read_text(encoding="utf-8"))
+          assert provider["provider"]["id"] == "imf-world-revenue"
+          assert len(provider["indicators"]) == 14, len(provider["indicators"])
+          assert provider["dataset"]["sourceRelease"] == "2026"
+          assert provider["dataset"]["sourceRows"] >= 8500
+          assert provider["dataset"]["sourceCountries"] >= 195
+          assert provider["dataset"]["latestYear"] == 2024
+          assert provider["dataset"]["excludedResidualColumns"] == ["NonTaxOth", "TaxIncO", "TaxOth", "TaxSalUnal"]
+
+          by_id = {item["id"]: item for item in provider["indicators"]}
+          expected_ids = {
+          	"fiscal.imf-world-total-revenue-percent-gdp",
+          	"fiscal.imf-world-tax-revenue-percent-gdp",
+          	"fiscal.imf-world-income-profit-taxes-percent-gdp",
+          	"fiscal.imf-world-personal-income-taxes-percent-gdp",
+          	"fiscal.imf-world-corporate-income-taxes-percent-gdp",
+          	"fiscal.imf-world-property-taxes-percent-gdp",
+          	"fiscal.imf-world-sales-production-taxes-percent-gdp",
+          	"fiscal.imf-world-general-sales-taxes-percent-gdp",
+          	"fiscal.imf-world-excise-taxes-percent-gdp",
+          	"fiscal.imf-world-trade-taxes-percent-gdp",
+          	"fiscal.imf-world-social-contributions-percent-gdp",
+          	"fiscal.imf-world-grants-percent-gdp",
+          	"fiscal.imf-world-other-revenue-percent-gdp",
+          	"fiscal.imf-world-extractive-nontax-revenue-percent-gdp",
+          }
+          assert set(by_id) == expected_ids
+          for item in by_id.values():
+          	assert item["defaultYear"] == 2024, (item["id"], item["defaultYear"])
+          	assert item["availableYears"][-1] == 2024, item["id"]
+          	assert item["unit"]["id"] == "percent-of-gdp"
+          	assert item["classification"]["type"] == "fixed"
+          	payload = json.loads((root / item["path"]).read_text(encoding="utf-8"))
+          	assert payload["source"]["providerId"] == "imf-world-revenue"
+          	assert "fallback" not in payload["source"]
+
+          tax = json.loads((root / by_id["fiscal.imf-world-tax-revenue-percent-gdp"]["path"]).read_text(encoding="utf-8"))
+          for area_id in ("country:AUT", "country:DEU", "country:USA", "country:IND"):
+          	assert area_id in tax["values"]["2024"], area_id
+          social = json.loads((root / by_id["fiscal.imf-world-social-contributions-percent-gdp"]["path"]).read_text(encoding="utf-8"))
+          assert social["values"]["2024"]["country:IND"] == 0
+
+          print(f"snapshot={provider['activeSnapshot']}")
+          for item in provider["indicators"]:
+          	c = item["coverage"]
+          	print(f"{item['id']}: {item['availableYears'][0]}-2024, areas2024={c['areasInDefaultYear']}, observations={c['observations']}")
+          PY
