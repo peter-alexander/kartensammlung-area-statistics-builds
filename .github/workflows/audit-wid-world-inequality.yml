@@ -1,0 +1,32 @@
+name: Audit WID world inequality
+
+on:
+  push:
+    branches:
+      - audit/wid-world-inequality
+    paths:
+      - scripts/audit_wid_probe.py
+      - .github/workflows/audit-wid-world-inequality.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Probe official WID bulk files
+        run: python scripts/audit_wid_probe.py | tee wid-probe.txt
+      - name: Upload audit output
+        uses: actions/upload-artifact@v4
+        with:
+          name: wid-source-probe
+          path: wid-probe.txt
+          if-no-files-found: error
+          retention-days: 7
