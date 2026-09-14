@@ -16,7 +16,6 @@ on:
   push:
     branches:
       - main
-      - feature/oecd-extreme-temperature
     paths:
       - "config/statistics-providers.json"
       - "config/oecd-extreme-temperature-indicators.json"
