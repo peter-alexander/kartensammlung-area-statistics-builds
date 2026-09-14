@@ -2,7 +2,7 @@
 	"schema": "kartensammlung.cckp-era5-statistics/v1",
 	"apiBaseUrl": "https://cckpapi.worldbank.org/cckp/v1",
 	"sourcePage": "https://climateknowledgeportal.worldbank.org/",
-	"metadataPage": "https://climateknowledgeportal.worldbank.org/metadata",
+	"metadataPage": "https://climateknowledgeportal.worldbank.org/index.php/metadata",
 	"documentationPage": "https://worldbank.github.io/climateknowledgeportal/docs/collections/era5-x0.25.html",
 	"dataReferenceDoi": "https://doi.org/10.57966/128g-6s70",
 	"licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
@@ -73,7 +73,7 @@
 			"title": "Frosttage",
 			"description": "Jährliche Zahl der Tage mit einer täglichen Tiefsttemperatur unter 0 °C (ERA5-Index FD), räumlich über das Land gemittelt. Deshalb können auch Dezimalwerte auftreten.",
 			"unit": {"id": "days-per-year", "label": "Tage pro Jahr", "symbol": "Tage"},
-			"classification": {"type": "fixed", "breaks": [0, 10, 30, 60, 100, 180]},
+			"classification": {"type": "fixed", "breaks": [1, 10, 30, 60, 100, 180]},
 			"sanityRange": [0, 366]
 		},
 		{
@@ -83,7 +83,7 @@
 			"title": "Tropennächte",
 			"description": "Jährliche Zahl der Tage mit einer täglichen Tiefsttemperatur über 20 °C (ERA5-Index TR), räumlich über das Land gemittelt. Deshalb können auch Dezimalwerte auftreten.",
 			"unit": {"id": "days-per-year", "label": "Tage pro Jahr", "symbol": "Tage"},
-			"classification": {"type": "fixed", "breaks": [0, 30, 90, 180, 270, 350]},
+			"classification": {"type": "fixed", "breaks": [1, 30, 90, 180, 270, 350]},
 			"sanityRange": [0, 366]
 		},
 		{
