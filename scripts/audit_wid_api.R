@@ -44,17 +44,31 @@ cat("queryCountries=", length(query_codes), "\n", sep="")
 cat("registryWithoutWIDCode=", paste(setdiff(registry_codes, wid_codes), collapse=","), "\n", sep="")
 
 fetch <- function(include_extrapolations) {
-	download_wid(
-		indicators=indicators,
-		areas=query_codes,
-		perc=percentiles,
-		years="all",
-		ages=992,
-		pop="j",
-		metadata=FALSE,
-		include_extrapolations=include_extrapolations,
-		verbose=TRUE
-	)
+	chunks <- split(query_codes, ceiling(seq_along(query_codes) / 40))
+	pieces <- vector("list", length(chunks))
+	for (index in seq_along(chunks)) {
+		codes <- chunks[[index]]
+		cat(
+			"API chunk ", index, "/", length(chunks),
+			" countries=", length(codes),
+			" includeExtrapolations=", include_extrapolations,
+			"\n", sep=""
+		)
+		pieces[[index]] <- download_wid(
+			indicators=indicators,
+			areas=codes,
+			perc=percentiles,
+			years="all",
+			ages=992,
+			pop="j",
+			metadata=FALSE,
+			include_extrapolations=include_extrapolations,
+			verbose=FALSE
+		)
+	}
+	pieces <- pieces[!vapply(pieces, is.null, logical(1))]
+	if (length(pieces) == 0) return(NULL)
+	do.call(rbind, pieces)
 }
 
 registry_rows <- function(data) {
