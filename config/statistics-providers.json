@@ -47,6 +47,11 @@
 			"index": "imf-fiscal-monitor/index.json"
 		},
 		{
+			"id": "imf-world-revenue",
+			"name": "IWF WoRLD – Staatseinnahmen & Steuern",
+			"index": "imf-world-revenue/index.json"
+		},
+		{
 			"id": "imf-cpi",
 			"name": "IWF – Verbraucherpreise & Inflation",
 			"index": "imf-cpi/index.json"
