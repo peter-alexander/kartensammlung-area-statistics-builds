@@ -1,0 +1,252 @@
+name: Audit DLR SnowPack series
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/dlr-global-snowpack
+    paths:
+      - ".github/workflows/audit-dlr-snowpack-series.yml"
+      - "scripts/audit_dlr_snowpack_exactextract.py"
+      - "scripts/build_countries.py"
+      - "config/country-code-overrides.json"
+      - "config/country-compositions.json"
+      - "config/overture-excluded-country-codes.json"
+      - "requirements.txt"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-dlr-snowpack-series-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install country-build dependencies
+        run: pip install --requirement requirements.txt
+
+      - name: Validate scripts
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/build_countries.py
+          python -m py_compile scripts/audit_dlr_snowpack_exactextract.py
+          git diff --check
+
+      - name: Build Overture land country geometry
+        run: |
+          set -euo pipefail
+          python scripts/build_countries.py --release latest --skip-tiles
+          test -s build/country-geometry/country.geojsonseq
+
+      - name: Upload country geometry
+        uses: actions/upload-artifact@v4
+        with:
+          name: dlr-snowpack-country-geometry
+          path: build/country-geometry/country.geojsonseq
+          if-no-files-found: error
+          retention-days: 7
+
+  year:
+    needs: geometry
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        year:
+          - 2001
+          - 2002
+          - 2003
+          - 2004
+          - 2005
+          - 2006
+          - 2007
+          - 2008
+          - 2009
+          - 2010
+          - 2011
+          - 2012
+          - 2013
+          - 2014
+          - 2015
+          - 2016
+          - 2017
+          - 2018
+          - 2019
+          - 2020
+          - 2021
+          - 2022
+          - 2023
+          - 2024
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install extraction dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes aria2 gdal-bin
+          pip install exactextract==0.3.0 rasterio pyproj numpy
+
+      - name: Download country geometry
+        uses: actions/download-artifact@v4
+        with:
+          name: dlr-snowpack-country-geometry
+          path: build/country-geometry
+
+      - name: Download DLR SnowPack SCD ${{ matrix.year }}
+        env:
+          YEAR: ${{ matrix.year }}
+        run: |
+          set -euo pipefail
+          aria2c \
+            --allow-overwrite=true \
+            --auto-file-renaming=false \
+            --continue=true \
+            --file-allocation=none \
+            --max-connection-per-server=2 \
+            --max-tries=5 \
+            --min-split-size=16M \
+            --retry-wait=5 \
+            --split=2 \
+            --dir=/tmp \
+            --out="${YEAR}_SCD_full_wgs84.tif" \
+            "https://download.geoservice.dlr.de/GSP/files/yearly/SCD/${YEAR}/${YEAR}_SCD_full_wgs84.tif"
+          test -s "/tmp/${YEAR}_SCD_full_wgs84.tif"
+          stat --format='bytes=%s' "/tmp/${YEAR}_SCD_full_wgs84.tif"
+          sha256sum "/tmp/${YEAR}_SCD_full_wgs84.tif"
+
+      - name: Aggregate ${{ matrix.year }} on native SnowPack grid
+        env:
+          YEAR: ${{ matrix.year }}
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          python scripts/audit_dlr_snowpack_exactextract.py \
+            --source "/tmp/${YEAR}_SCD_full_wgs84.tif" \
+            --output "diagnostics/${YEAR}.json" \
+            --work-dir "/tmp/dlr-snowpack-${YEAR}" \
+            2>&1 | tee "diagnostics/${YEAR}.log"
+
+      - name: Upload year diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: dlr-snowpack-year-${{ matrix.year }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
+
+  summary:
+    needs: year
+    if: ${{ always() && needs.year.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Download all year diagnostics
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dlr-snowpack-year-*
+          path: all-years
+          merge-multiple: true
+
+      - name: Validate and summarize full series
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          expected_years = list(range(2001, 2025))
+          files = sorted(Path("all-years").rglob("*.json"))
+          by_year = {}
+          country_keys = None
+
+          for path in files:
+              payload = json.loads(path.read_text(encoding="utf-8"))
+              try:
+                  year = int(path.stem)
+              except ValueError:
+                  continue
+              if year in by_year:
+                  raise SystemExit(f"Duplicate JSON for {year}: {path}")
+              if payload.get("countryCount") != 250:
+                  raise SystemExit(f"{year}: expected 250 countries, got {payload.get('countryCount')}")
+              values = payload.get("values") or {}
+              keys = tuple(sorted(values))
+              if country_keys is None:
+                  country_keys = keys
+              elif keys != country_keys:
+                  raise SystemExit(f"{year}: country key set differs from other years")
+              for iso3, entry in values.items():
+                  mean = float(entry["weightedMeanDays"])
+                  minimum = float(entry["minimumDays"])
+                  maximum = float(entry["maximumDays"])
+                  if not (0.0 <= mean <= 366.001):
+                      raise SystemExit(f"{year} {iso3}: invalid mean {mean}")
+                  if not (0.0 <= minimum <= 366.001):
+                      raise SystemExit(f"{year} {iso3}: invalid minimum {minimum}")
+                  if not (0.0 <= maximum <= 366.001):
+                      raise SystemExit(f"{year} {iso3}: invalid maximum {maximum}")
+              by_year[year] = payload
+
+          actual_years = sorted(by_year)
+          if actual_years != expected_years:
+              raise SystemExit(f"Year coverage mismatch: expected={expected_years}, actual={actual_years}")
+
+          extract_seconds = {str(year): float(by_year[year]["extractSeconds"]) for year in expected_years}
+          representatives = {}
+          for iso3 in ("AUT", "NOR", "USA", "CAN", "NAM", "IND", "XKX", "VAT"):
+              representatives[iso3] = {
+                  str(year): float(by_year[year]["values"][iso3]["weightedMeanDays"])
+                  for year in expected_years
+              }
+
+          summary = {
+              "years": expected_years,
+              "yearCount": len(expected_years),
+              "countryCount": len(country_keys or ()),
+              "valueCount": len(expected_years) * len(country_keys or ()),
+              "extractSeconds": extract_seconds,
+              "totalExtractSeconds": round(sum(extract_seconds.values()), 3),
+              "minimumExtractSeconds": round(min(extract_seconds.values()), 3),
+              "maximumExtractSeconds": round(max(extract_seconds.values()), 3),
+              "meanExtractSeconds": round(sum(extract_seconds.values()) / len(extract_seconds), 3),
+              "representativeSeries": representatives,
+          }
+          Path("diagnostics/dlr-snowpack-series-summary.json").write_text(
+              json.dumps(summary, ensure_ascii=False, indent="\t") + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(summary, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Upload full-series summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: dlr-snowpack-series-summary-${{ github.sha }}
+          path: diagnostics/dlr-snowpack-series-summary.json
+          if-no-files-found: error
+          retention-days: 30
