@@ -1,0 +1,48 @@
+name: Audit World Bank ESMAP solar PV data
+
+on:
+  push:
+    branches:
+      - audit/world-bank-solar-pv
+    paths:
+      - scripts/audit_world_bank_solar_pv.py
+      - scripts/build_world_bank.py
+      - .github/workflows/audit-world-bank-solar-pv.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate audit script
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/audit_world_bank_solar_pv.py scripts/build_world_bank.py
+          git diff --check
+
+      - name: Audit World Bank ESMAP solar PV workbook
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          python scripts/audit_world_bank_solar_pv.py 2>&1 | tee diagnostics/world-bank-solar-pv-audit.log
+
+      - name: Upload audit diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-bank-solar-pv-audit-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
