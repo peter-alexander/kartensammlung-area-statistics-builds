@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCD_URL = "https://download.geoservice.dlr.de/GSP/files/yearly/SCD/2024/2024_SCD_full_wgs84.tif"
-DEFAULT_COUNTRIES = ("AUT", "NOR", "USA", "CAN", "NAM", "IND", "XKX", "VAT")
+DEFAULT_COUNTRIES = ("AUT", "NOR", "CAN", "NAM", "IND", "XKX", "VAT")
 DEFAULT_FINE_COUNTRIES = ("AUT", "NOR", "XKX", "VAT")
 
 
@@ -113,6 +113,8 @@ def warp_country(cutline: Path, output_path: Path, resolution_m: int) -> float:
 		"-tap",
 		"-r",
 		"average",
+		"-ovr",
+		"NONE",
 		"-srcnodata",
 		"None",
 		"-dstnodata",
@@ -181,6 +183,15 @@ def aggregate_country(feature: dict, iso3: str, resolution_m: int, work_dir: Pat
 	seconds = warp_country(cutline, output_path, resolution_m)
 	stats = raster_stats(output_path)
 	stats["warpSeconds"] = round(seconds, 3)
+	minimum = stats.get("minimum")
+	maximum = stats.get("maximum")
+	if minimum is None or maximum is None:
+		raise RuntimeError(f"Missing raster statistics for {iso3} at {resolution_m} m")
+	if minimum < -0.001 or maximum > 366.001:
+		raise RuntimeError(
+			f"Snow-cover duration range violation for {iso3} at {resolution_m} m: "
+			f"min={minimum}, max={maximum}"
+		)
 	return stats
 
 
@@ -216,10 +227,12 @@ def main() -> int:
 			"countryGeometry": "Overture Maps division_area with is_land = TRUE",
 			"targetProjection": "EPSG:6933",
 			"resampling": "average",
+			"sourceOverviewPolicy": "NONE; always aggregate from the native 1/240 degree source raster",
 			"sourceNoDataOverride": "None",
 			"outputNoData": -9999,
 			"coarseResolutionM": 1000,
 			"fineResolutionM": 500,
+			"validRangeDays": [0, 366],
 		},
 		"countries": {},
 	}
