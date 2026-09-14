@@ -9,7 +9,10 @@ on:
       - "requirements.txt"
       - "config/statistics-providers.json"
       - "config/oecd-pisa-indicators.json"
+      - "config/oecd-pisa-additional-indicators.json"
       - "scripts/build_oecd_pisa.py"
+      - "scripts/build_oecd_pisa_additional.py"
+      - "scripts/build_oecd_pisa_extended.py"
       - "scripts/build_world_bank.py"
       - "docs/oecd-pisa-source-policy.md"
       - ".github/scripts/deploy-world-bank-statistics.sh"
@@ -21,7 +24,10 @@ on:
       - "requirements.txt"
       - "config/statistics-providers.json"
       - "config/oecd-pisa-indicators.json"
+      - "config/oecd-pisa-additional-indicators.json"
       - "scripts/build_oecd_pisa.py"
+      - "scripts/build_oecd_pisa_additional.py"
+      - "scripts/build_oecd_pisa_extended.py"
       - "scripts/build_world_bank.py"
       - "docs/oecd-pisa-source-policy.md"
       - ".github/scripts/deploy-world-bank-statistics.sh"
@@ -37,7 +43,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -54,9 +60,14 @@ jobs:
       - name: Validate scripts and configuration
         run: |
           bash -n .github/scripts/deploy-world-bank-statistics.sh
-          python -m py_compile scripts/build_oecd_pisa.py scripts/build_world_bank.py
+          python -m py_compile \
+          	scripts/build_oecd_pisa.py \
+          	scripts/build_oecd_pisa_additional.py \
+          	scripts/build_oecd_pisa_extended.py \
+          	scripts/build_world_bank.py
           python -m json.tool config/statistics-providers.json >/dev/null
           python -m json.tool config/oecd-pisa-indicators.json >/dev/null
+          python -m json.tool config/oecd-pisa-additional-indicators.json >/dev/null
           git diff --check
 
       - name: Build OECD PISA statistics
@@ -65,7 +76,7 @@ jobs:
           set -o pipefail
           mkdir -p diagnostics
           REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          python scripts/build_oecd_pisa.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/oecd-pisa.log
+          python scripts/build_oecd_pisa_extended.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/oecd-pisa.log
 
       - name: Validate OECD PISA statistics
         run: |
@@ -78,98 +89,77 @@ jobs:
           provider_dir = Path("dist/statistics/oecd-pisa")
           provider = json.loads((provider_dir / "index.json").read_text(encoding="utf-8"))
           assert provider["provider"]["id"] == "oecd-pisa"
-          assert provider["provider"]["license"] == "CC BY 4.0"
-          assert len(provider["indicators"]) == 3, len(provider["indicators"])
+          assert provider["provider"]["license"] == "OECD-Nutzungsbedingungen / CC BY 4.0 (quellenabhängig)"
+          assert len(provider["indicators"]) == 12, len(provider["indicators"])
           assert provider["dataset"]["publicationDate"] == "2026-09-08"
           assert provider["dataset"]["sourceEntities"] == 91, provider["dataset"]
           assert provider["dataset"]["mappedEntities"] == 87, provider["dataset"]
-          assert provider["dataset"]["excludedPartialEntities"] == [
-          	"B-S-J-Z (China)",
-          	"Dushanbe (Tajikistan)",
-          	"Kurdistan Region (Iraq)",
-          	"Ukrainian regions (17 of 27)",
-          ]
-          assert provider["dataset"]["samplingCautionEntities2025"] == [
-          	"Albania",
-          	"Canada",
-          	"Netherlands",
-          	"New Zealand",
-          	"Norway",
-          	"United States",
-          ]
+          assert len(provider["dataset"]["sources"]) == 9, len(provider["dataset"]["sources"])
           assert re.fullmatch(r"[0-9a-f]{64}", provider["dataset"]["sourceFileSha256"])
           assert provider["dataset"]["sourceFileBytes"] > 1_000_000
 
           expected = {
-          	"education.pisa-science-mean-score": {
-          		"years": [2006, 2009, 2012, 2015, 2018, 2022, 2025],
-          		"areas2025": 87,
-          		"observations": 474,
-          		"sourceObservations": 480,
-          		"austria2025": 496.91267,
-          		"table": "Table I.B1.2a.36",
-          		"currentTable": "Table I.B1.2a.1",
-          	},
-          	"education.pisa-reading-mean-score": {
-          		"years": [2000, 2003, 2006, 2009, 2012, 2015, 2018, 2022, 2025],
-          		"areas2025": 86,
-          		"observations": 547,
-          		"sourceObservations": 553,
-          		"austria2025": 467.21167,
-          		"table": "Table I.B1.2a.37",
-          		"currentTable": "Table I.B1.2a.2",
-          	},
-          	"education.pisa-mathematics-mean-score": {
-          		"years": [2003, 2006, 2009, 2012, 2015, 2018, 2022, 2025],
-          		"areas2025": 86,
-          		"observations": 514,
-          		"sourceObservations": 520,
-          		"austria2025": 477.19387,
-          		"table": "Table I.B1.2a.38",
-          		"currentTable": "Table I.B1.2a.3",
-          	},
+          	"education.pisa-science-mean-score": ([2006, 2009, 2012, 2015, 2018, 2022, 2025], 87, 87, 2025),
+          	"education.pisa-reading-mean-score": ([2000, 2003, 2006, 2009, 2012, 2015, 2018, 2022, 2025], 87, 86, 2025),
+          	"education.pisa-mathematics-mean-score": ([2003, 2006, 2009, 2012, 2015, 2018, 2022, 2025], 87, 86, 2025),
+          	"education.pisa-cross-curricular-problem-solving-mean-score": ([2003], 29, 29, 2003),
+          	"education.pisa-digital-reading-mean-score": ([2009, 2012], 33, 31, 2012),
+          	"education.pisa-computer-based-mathematics-mean-score": ([2012], 31, 31, 2012),
+          	"education.pisa-problem-solving-mean-score": ([2012], 42, 42, 2012),
+          	"education.pisa-financial-literacy-mean-score": ([2012, 2015, 2018, 2022], 18, 18, 2022),
+          	"education.pisa-collaborative-problem-solving-mean-score": ([2015], 51, 51, 2015),
+          	"education.pisa-global-competence-mean-score": ([2018], 25, 25, 2018),
+          	"education.pisa-creative-thinking-mean-score": ([2022], 62, 62, 2022),
+          	"education.pisa-computational-problem-solving-mean-score": ([2025], 83, 83, 2025),
           }
           by_id = {item["id"]: item for item in provider["indicators"]}
           assert set(by_id) == set(expected), set(by_id)
-
-          for indicator_id, rules in expected.items():
+          for indicator_id, (years, areas_any, areas_latest, default_year) in expected.items():
           	item = by_id[indicator_id]
           	assert item["frequency"] == "pisa-cycle"
-          	assert item["unit"]["id"] == "pisa-points"
-          	assert item["classification"] == {
-          		"type": "fixed",
-          		"scale": "linear",
-          		"breaks": [300, 350, 400, 450, 500, 550],
-          	}
-          	assert item["availableYears"] == rules["years"]
-          	assert item["defaultYear"] == 2025
+          	assert item["availableYears"] == years, (indicator_id, item["availableYears"])
+          	assert item["defaultYear"] == default_year
           	assert item["coverage"]["registryAreas"] == 250
-          	assert item["coverage"]["areasWithAnyValue"] == 87
-          	assert item["coverage"]["areasInDefaultYear"] == rules["areas2025"]
-          	assert item["coverage"]["areasInLatestYear"] == rules["areas2025"]
-          	assert item["coverage"]["observations"] == rules["observations"]
+          	assert item["coverage"]["areasWithAnyValue"] == areas_any
+          	assert item["coverage"]["areasInLatestYear"] == areas_latest
+          	assert item["coverage"]["areasInDefaultYear"] == areas_latest
 
-          	payload = json.loads((provider_dir / item["path"]).read_text(encoding="utf-8"))
-          	assert payload["source"]["indicator"] == rules["table"]
-          	assert payload["source"]["currentTable"] == rules["currentTable"]
-          	assert payload["source"]["sourceObservations"] == rules["sourceObservations"]
-          	assert payload["source"]["retainedObservations"] == rules["observations"]
-          	assert payload["source"]["excludedPartialEntities"] == provider["dataset"]["excludedPartialEntities"]
-          	assert len(payload["source"]["samplingCautionAreas2025"]) == 6
-          	assert math.isclose(
-          		float(payload["values"]["2025"]["country:AUT"]),
-          		rules["austria2025"],
-          		rel_tol=0,
-          		abs_tol=1e-8,
-          	)
-          	for area_id in ("country:AUT", "country:DEU", "country:USA", "country:JPN", "country:SGP"):
-          		assert area_id in payload["values"]["2025"], (indicator_id, area_id)
-          	for area_id in ("country:HKG", "country:MAC", "country:TWN", "country:PSE", "country:XKX"):
-          		assert area_id in {
-          			area
-          			for values in payload["values"].values()
-          			for area in values
-          		}, (indicator_id, area_id)
+          def load(indicator_id):
+          	item = by_id[indicator_id]
+          	return json.loads((provider_dir / item["path"]).read_text(encoding="utf-8"))
+
+          spot_checks = [
+          	("education.pisa-science-mean-score", 2025, "country:AUT", 496.91267),
+          	("education.pisa-reading-mean-score", 2025, "country:AUT", 467.21167),
+          	("education.pisa-mathematics-mean-score", 2025, "country:AUT", 477.19387),
+          	("education.pisa-cross-curricular-problem-solving-mean-score", 2003, "country:AUT", 506.11050),
+          	("education.pisa-digital-reading-mean-score", 2009, "country:AUT", 458.57501),
+          	("education.pisa-digital-reading-mean-score", 2012, "country:AUT", 480.01077),
+          	("education.pisa-computer-based-mathematics-mean-score", 2012, "country:AUT", 507.34009),
+          	("education.pisa-problem-solving-mean-score", 2012, "country:AUT", 506.36673),
+          	("education.pisa-financial-literacy-mean-score", 2022, "country:AUT", 506.22108),
+          	("education.pisa-collaborative-problem-solving-mean-score", 2015, "country:AUT", 509.38040),
+          	("education.pisa-global-competence-mean-score", 2018, "country:CAN", 553.77395),
+          	("education.pisa-creative-thinking-mean-score", 2022, "country:DEU", 32.52509),
+          	("education.pisa-computational-problem-solving-mean-score", 2025, "country:AUT", 509.45378),
+          ]
+          for indicator_id, year, area_id, expected_value in spot_checks:
+          	payload = load(indicator_id)
+          	actual = float(payload["values"][str(year)][area_id])
+          	assert math.isclose(actual, expected_value, rel_tol=0, abs_tol=1e-5), (indicator_id, year, area_id, actual)
+
+          creative = load("education.pisa-creative-thinking-mean-score")
+          assert creative["indicator"]["unit"] == {"id": "pisa-creative-thinking-points", "label": "Punkte (0–60)"}
+          assert "country:AUT" not in creative["values"]["2022"]
+          assert creative["source"]["license"] == "OECD Terms & Conditions"
+          assert len(creative["source"]["scaleLinkageCautionAreasByYear"]["2022"]) == 2
+
+          computational = load("education.pisa-computational-problem-solving-mean-score")
+          assert computational["source"]["license"] == "CC BY 4.0"
+          assert len(computational["source"]["samplingCautionAreasByYear"]["2025"]) == 6
+
+          financial = load("education.pisa-financial-literacy-mean-score")
+          assert [len(financial["values"][str(year)]) for year in [2012, 2015, 2018, 2022]] == [5, 7, 8, 18]
 
           global_index = json.loads(Path("dist/statistics/index.json").read_text(encoding="utf-8"))
           catalog_entry = next(item for item in global_index["providers"] if item["id"] == "oecd-pisa")
@@ -177,18 +167,42 @@ jobs:
           assert catalog_entry["index"] == "oecd-pisa/index.json"
 
           print(f"snapshot={provider['activeSnapshot']}")
-          print(f"retrievedAt={provider['retrievedAt']}")
-          print(f"sourceSha256={provider['dataset']['sourceFileSha256']}")
           for item in provider["indicators"]:
-          	coverage = item["coverage"]
-          	print(
-          		f"{item['id']}: years={item['availableYears']} "
-          		f"default={item['defaultYear']} areas={coverage['areasInDefaultYear']}/250 "
-          		f"observations={coverage['observations']}"
-          	)
+          	print(f"{item['id']}: years={item['availableYears']} default={item['defaultYear']} coverage={item['coverage']['areasInDefaultYear']}/250")
           PY
           du -h dist/statistics/oecd-pisa/index.json
           du -ch dist/statistics/oecd-pisa/releases/*/*.json | tail -n 1
+
+      - name: Verify unchanged core PISA payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics/oecd-pisa"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+          curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          	"${PUBLIC_BASE}/index.json?regression=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+          	--output /tmp/production-oecd-pisa-index.json
+          python - <<'PY' >/tmp/core-pisa-paths.tsv
+          import json
+          from pathlib import Path
+          old = json.loads(Path("/tmp/production-oecd-pisa-index.json").read_text(encoding="utf-8"))
+          new = json.loads(Path("dist/statistics/oecd-pisa/index.json").read_text(encoding="utf-8"))
+          old_by_id = {item["id"]: item for item in old["indicators"]}
+          new_by_id = {item["id"]: item for item in new["indicators"]}
+          for indicator_id in (
+          	"education.pisa-science-mean-score",
+          	"education.pisa-reading-mean-score",
+          	"education.pisa-mathematics-mean-score",
+          ):
+          	print(indicator_id, old_by_id[indicator_id]["path"], new_by_id[indicator_id]["path"], sep="\t")
+          PY
+          while IFS=$'\t' read -r indicator_id old_path new_path; do
+          	curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          		"${PUBLIC_BASE}/${old_path}?regression=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+          		--output "/tmp/${indicator_id}.json"
+          	cmp "/tmp/${indicator_id}.json" "dist/statistics/oecd-pisa/${new_path}"
+          	echo "Core payload unchanged: ${indicator_id}"
+          done </tmp/core-pisa-paths.tsv
 
       - name: Upload statistics artifacts
         uses: actions/upload-artifact@v4
