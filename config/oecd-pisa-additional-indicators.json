@@ -255,7 +255,7 @@
 			"expectedYears": [2025],
 			"expectedAreasByYear": {"2025": 83},
 			"expectedAreasWithAnyValue": 83,
-			"excludedEntities": ["B-S-J-Z (China)", "Dushanbe (Tajikistan)", "Kurdistan Region (Iraq)", "Ukrainian regions (17 of 27)"],
+			"excludedEntities": ["B-S-J-Z (China)", "Ukrainian regions (17 of 27)"],
 			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:JPN", "country:SGP"],
 			"inputs": [
 				{"source": "pisa-2025-volume-i", "sheet": "Table I.B1.2a.4", "parser": "single-mean", "year": 2025}
