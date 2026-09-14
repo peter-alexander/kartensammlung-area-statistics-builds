@@ -8,8 +8,11 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from urllib.request import Request, urlopen
 
+import build_world_bank as common
+
 USER_AGENT = "kartensammlung-area-statistics-builds/1"
 OECD_STRUCTURE = "https://sdmx.oecd.org/public/rest/dataflow/OECD.ENV.EPI/DSD_ECH@EXT_TEMP_H/2.0?references=all"
+OECD_DATA_BASE = "https://sdmx.oecd.org/public/rest/data/OECD.ENV.EPI,DSD_ECH@EXT_TEMP_H,2.0"
 SPEI_URL = "https://api.worldbank.org/v2/country/all/indicator/EN.CLC.SPEI.XD?format=json&per_page=20000&date=1960:2026"
 REGISTRY_URL = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
 
@@ -34,7 +37,7 @@ def text_name(node: ET.Element) -> str:
 	return ""
 
 
-def audit_oecd() -> None:
+def audit_oecd_structure() -> None:
 	raw = fetch(OECD_STRUCTURE, "application/vnd.sdmx.structure+xml;version=2.1")
 	print(f"OECD structure bytes={len(raw)}")
 	root = ET.fromstring(raw)
@@ -57,23 +60,12 @@ def audit_oecd() -> None:
 		codelists[(agency, codelist_id)] = codes
 
 	structures = [node for node in root.iter() if local_name(node.tag) == "DataStructure"]
-	print("OECD data structures=" + ", ".join(
-		f"{node.attrib.get('agencyID', '')}:{node.attrib.get('id', '')}({node.attrib.get('version', '')})"
-		for node in structures
-	))
-	candidates = [
-		node for node in structures
-		if node.attrib.get("id") in {"DSD_ECH", "DSD_ECH@EXT_TEMP_H"}
-		or "ECH" in str(node.attrib.get("id", ""))
-	]
+	candidates = [node for node in structures if node.attrib.get("id") == "DSD_ECH"]
 	if len(candidates) != 1:
-		raise RuntimeError(
-			"Could not uniquely resolve OECD extreme-temperature data structure: "
-			+ ", ".join(str(node.attrib.get("id", "")) for node in candidates)
-		)
+		raise RuntimeError("Could not resolve OECD data structure DSD_ECH")
 	structure = candidates[0]
 	print(
-		"OECD selected data structure="
+		"OECD data structure="
 		+ f"{structure.attrib.get('agencyID', '')}:{structure.attrib.get('id', '')}"
 		+ f"({structure.attrib.get('version', '')})"
 	)
@@ -95,50 +87,83 @@ def audit_oecd() -> None:
 			ref_agency = ref.attrib.get("agencyID", "")
 			if ref_id:
 				refs.append((ref_agency, ref_id, ref_class))
-		print(f"  pos={position} id={dimension_id} refs={refs}")
+		print(f"  pos={position} id={dimension_id}")
 		for ref_agency, ref_id, ref_class in refs:
 			if ref_class != "Codelist":
 				continue
-			codes = codelists.get((ref_agency, ref_id)) or codelists.get(("", ref_id))
+			codes = codelists.get((ref_agency, ref_id))
 			if not codes:
 				matches = [value for (agency, cid), value in codelists.items() if cid == ref_id]
 				codes = matches[0] if len(matches) == 1 else None
 			if not codes:
 				continue
-			interesting = {
-				code: label
-				for code, label in codes.items()
-				if any(term in label.lower() for term in (
-					"hot day", "heat stress", "utci", "tropical night", "icing", "temperature",
-					"day", "annual", "population-weighted", "area-weighted", "35", "32", "38", "46",
-				))
-			}
-			if dimension_id in {"MEASURE", "UNIT_MEASURE", "FREQ", "DURATION", "HEAT_STRESS_THRESHOLD", "TEMPERATURE_THRESHOLD", "THRESHOLD"}:
-				print(f"    codelist={ref_id} total={len(codes)}")
-				for code, label in list(codes.items())[:80]:
-					print(f"      {code}: {label}")
-			elif interesting:
-				print(f"    interesting codes in {ref_id}:")
-				for code, label in interesting.items():
-					print(f"      {code}: {label}")
+			if dimension_id == "MEASURE":
+				for code in ("HD", "HD_POP_EXP", "HD_PW_EXP", "UTCI_PW_EXP", "TN", "TN_PW_EXP", "ID_PW_EXP"):
+					if code in codes:
+						print(f"    {code}: {codes[code]}")
+			elif dimension_id == "TEMP_THRESHOLD":
+				for code in ("H_20", "H_30", "H_32", "H_35", "H_38", "H_40", "H_46"):
+					if code in codes:
+						print(f"    {code}: {codes[code]}")
+			elif dimension_id == "DURATION":
+				for code, label in codes.items():
+					print(f"    {code}: {label}")
 
 
-def audit_spei() -> None:
-	registry_raw = fetch(REGISTRY_URL, "application/json")
-	registry = json.loads(registry_raw)
-	areas = registry.get("areas") if isinstance(registry, dict) else registry
-	if not isinstance(areas, list):
-		raise RuntimeError("Unexpected registry schema")
-	registry_iso3 = {}
-	for area in areas:
-		if not isinstance(area, dict):
-			continue
-		area_id = str(area.get("id") or "")
-		iso3 = str(area.get("iso3") or "").upper()
-		if area_id.startswith("country:") and iso3:
-			registry_iso3[iso3] = area_id
-	print(f"Registry ISO3 areas={len(registry_iso3)}")
+def audit_oecd_data(area_by_iso3: dict[str, str]) -> None:
+	queries = {
+		"HD_PW_EXP": f"{OECD_DATA_BASE}/.A.HD_PW_EXP...H_35......?startPeriod=1979&endPeriod=2024&dimensionAtObservation=AllDimensions",
+		"UTCI_PW_EXP": f"{OECD_DATA_BASE}/.A.UTCI_PW_EXP...H_32+H_38+H_46......?startPeriod=1979&endPeriod=2024&dimensionAtObservation=AllDimensions",
+	}
+	alias = {"XKV": "XKX"}
+	for measure, url in queries.items():
+		raw = fetch(url, "text/csv")
+		reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+		fields = set(reader.fieldnames or [])
+		required = {"REF_AREA", "FREQ", "MEASURE", "UNIT_MEASURE", "DURATION", "TEMP_THRESHOLD", "TIME_PERIOD", "OBS_VALUE"}
+		missing = sorted(required - fields)
+		if missing:
+			raise RuntimeError(f"OECD {measure} response missing fields: {missing}")
+		by_threshold: dict[str, dict[int, dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
+		units: set[str] = set()
+		durations: set[str] = set()
+		unmapped: set[str] = set()
+		row_count = 0
+		for row in reader:
+			row_count += 1
+			if str(row.get("FREQ") or "") != "A" or str(row.get("MEASURE") or "") != measure:
+				raise RuntimeError(f"Unexpected OECD {measure} row dimensions")
+			iso3 = str(row.get("REF_AREA") or "").upper()
+			iso3 = alias.get(iso3, iso3)
+			threshold = str(row.get("TEMP_THRESHOLD") or "")
+			year_text = str(row.get("TIME_PERIOD") or "")
+			value_text = str(row.get("OBS_VALUE") or "")
+			units.add(str(row.get("UNIT_MEASURE") or ""))
+			durations.add(str(row.get("DURATION") or ""))
+			if len(iso3) != 3 or not year_text.isdigit() or not value_text:
+				continue
+			area_id = area_by_iso3.get(iso3)
+			if area_id is None:
+				unmapped.add(iso3)
+				continue
+			by_threshold[threshold][int(year_text)][area_id] = float(value_text)
+		print(f"OECD {measure}: bytes={len(raw)} rows={row_count} units={sorted(units)} durations={sorted(durations)}")
+		for threshold in sorted(by_threshold):
+			by_year = by_threshold[threshold]
+			years = sorted(by_year)
+			all_areas = set().union(*(set(values) for values in by_year.values()))
+			print(
+				f"  threshold={threshold or '<blank>'} years={years[0]}-{years[-1]} "
+				f"areasWithAny={len(all_areas)} latestCoverage={len(by_year[years[-1]])}"
+			)
+			for iso3 in ("AUT", "DEU", "USA", "IND", "CHN", "ZAF", "NAM", "XKX"):
+				area_id = area_by_iso3[iso3]
+				series = [(year, by_year[year][area_id]) for year in years if area_id in by_year[year]]
+				print(f"    {iso3}: latest={series[-1] if series else None} count={len(series)}")
+		print(f"  unmapped source codes={sorted(unmapped)}")
 
+
+def audit_spei(area_by_iso3: dict[str, str]) -> None:
 	raw = fetch(SPEI_URL, "application/json")
 	payload = json.loads(raw)
 	if not isinstance(payload, list) or len(payload) != 2:
@@ -146,7 +171,7 @@ def audit_spei() -> None:
 	meta, rows = payload
 	print(f"SPEI API bytes={len(raw)} pages={meta.get('pages')} total={meta.get('total')}")
 	by_year: dict[int, dict[str, float]] = defaultdict(dict)
-	unmapped = set()
+	unmapped: set[str] = set()
 	for row in rows:
 		country = row.get("country") or {}
 		iso3 = str(country.get("id") or "").upper()
@@ -154,7 +179,7 @@ def audit_spei() -> None:
 		value = row.get("value")
 		if len(iso3) != 3 or not year_text.isdigit() or value is None:
 			continue
-		area_id = registry_iso3.get(iso3)
+		area_id = area_by_iso3.get(iso3)
 		if area_id is None:
 			unmapped.add(iso3)
 			continue
@@ -168,14 +193,17 @@ def audit_spei() -> None:
 	all_areas = set().union(*(set(values) for values in by_year.values()))
 	print(f"SPEI areasWithAnyValue={len(all_areas)} unmapped={sorted(unmapped)}")
 	for iso3 in ("AUT", "DEU", "USA", "IND", "CHN", "ZAF", "NAM", "XKX"):
-		area_id = registry_iso3.get(iso3)
-		series = [(year, by_year[year][area_id]) for year in available_years if area_id in by_year[year]] if area_id else []
+		area_id = area_by_iso3[iso3]
+		series = [(year, by_year[year][area_id]) for year in available_years if area_id in by_year[year]]
 		print(f"  {iso3}: latest={series[-1] if series else None} count={len(series)}")
 
 
 def main() -> None:
-	audit_oecd()
-	audit_spei()
+	area_by_iso3, _ = common.load_registry(REGISTRY_URL, 120)
+	print(f"Registry ISO3 areas={len(area_by_iso3)}")
+	audit_oecd_structure()
+	audit_oecd_data(area_by_iso3)
+	audit_spei(area_by_iso3)
 
 
 if __name__ == "__main__":
