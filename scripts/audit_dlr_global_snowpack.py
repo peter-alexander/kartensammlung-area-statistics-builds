@@ -114,10 +114,11 @@ def http_probe(url: str) -> dict:
 
 
 def gdal_probe(url: str) -> dict:
+	# Intentionally do not request -stats here. Statistics would force a scan of
+	# the global raster and defeat this first-stage metadata/COG-access audit.
 	command = [
 		"gdalinfo",
 		"-json",
-		"-stats",
 		f"/vsicurl/{url}",
 	]
 	completed = subprocess.run(
@@ -135,27 +136,29 @@ def gdal_probe(url: str) -> dict:
 	if completed.returncode == 0:
 		try:
 			payload = json.loads(completed.stdout)
-			result["driverShortName"] = payload.get("driverShortName")
-			result["size"] = payload.get("size")
-			result["coordinateSystem"] = payload.get("coordinateSystem", {}).get("wkt")
-			result["geoTransform"] = payload.get("geoTransform")
-			bands = []
-			for band in payload.get("bands", []):
-				bands.append(
-					{
-						"band": band.get("band"),
-						"type": band.get("type"),
-						"noDataValue": band.get("noDataValue"),
-						"minimum": band.get("minimum"),
-						"maximum": band.get("maximum"),
-						"mean": band.get("mean"),
-						"stdDev": band.get("stdDev"),
-						"overviews": band.get("overviews"),
-					}
-				)
-			result["bands"] = bands
-			except json.JSONDecodeError:
+		except json.JSONDecodeError:
 			result["stdout"] = completed.stdout[-4000:]
+			return result
+
+		result["driverShortName"] = payload.get("driverShortName")
+		result["size"] = payload.get("size")
+		result["coordinateSystem"] = payload.get("coordinateSystem", {}).get("wkt")
+		result["geoTransform"] = payload.get("geoTransform")
+		bands = []
+		for band in payload.get("bands", []):
+			bands.append(
+				{
+					"band": band.get("band"),
+					"type": band.get("type"),
+					"noDataValue": band.get("noDataValue"),
+					"minimum": band.get("minimum"),
+					"maximum": band.get("maximum"),
+					"mean": band.get("mean"),
+					"stdDev": band.get("stdDev"),
+					"overviews": band.get("overviews"),
+				}
+			)
+		result["bands"] = bands
 	else:
 		result["stdout"] = completed.stdout[-4000:]
 	return result
