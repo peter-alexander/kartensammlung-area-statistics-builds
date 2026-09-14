@@ -48,6 +48,7 @@ jobs:
       - name: Install official WID R client
         shell: bash
         run: |
+          Rscript -e 'install.packages(c("httr", "base64enc", "plyr", "jsonlite"), repos="https://cloud.r-project.org")'
           git clone --depth 1 https://github.com/world-inequality-database/wid-r-tool.git /tmp/wid-r-tool
           R CMD INSTALL /tmp/wid-r-tool
       - name: Audit target WID distribution series
