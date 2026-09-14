@@ -1,0 +1,60 @@
+name: Test WID production builder
+
+on:
+  push:
+    branches:
+      - feature/wid-inequality
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      R_LIBS_USER: /tmp/Rlib
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install R and WID package
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes r-base r-cran-httr r-cran-base64enc r-cran-plyr r-cran-jsonlite
+          mkdir -p "$R_LIBS_USER"
+          Rscript -e 'install.packages("wid", repos="https://cloud.r-project.org", dependencies=FALSE)'
+
+      - name: Download and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p raw/wid
+          Rscript scripts/download_wid_inequality.R raw/wid/inequality.csv raw/wid/download-metadata.json 1980 "$(date -u +%Y)" 0.0.3
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_wid_inequality.py --registry "$REGISTRY_URL" --input-csv raw/wid/inequality.csv --input-metadata raw/wid/download-metadata.json
+
+      - name: Validate result
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          provider = json.loads(Path("dist/statistics/wid-inequality/index.json").read_text(encoding="utf-8"))
+          assert len(provider["indicators"]) == 4
+          assert provider["dataset"]["minimumDataQuality"] == 1
+          assert provider["dataset"]["qualityCounts"]["0"] > 0
+          assert "0" not in provider["dataset"]["retainedQualityCounts"]
+          for item in provider["indicators"]:
+          	assert item["availableYears"][0] == 1980
+          	assert item["availableYears"][-1] >= 2024
+          	assert item["coverage"]["areasInDefaultYear"] >= 156
+          	payload = json.loads(Path("dist/statistics/wid-inequality", item["path"]).read_text(encoding="utf-8"))
+          	assert "country:XKX" in payload["values"]["2024"]
+          print(f"snapshot={provider['activeSnapshot']}")
+          for item in provider["indicators"]:
+          	print(item["id"], item["defaultYear"], item["coverage"]["areasInDefaultYear"])
+          PY
