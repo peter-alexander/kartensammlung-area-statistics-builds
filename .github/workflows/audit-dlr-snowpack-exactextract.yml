@@ -39,7 +39,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes gdal-bin
+          sudo apt-get install --yes aria2 gdal-bin
           pip install --requirement requirements.txt
           pip install exactextract==0.3.0 rasterio pyproj
 
@@ -58,8 +58,18 @@ jobs:
       - name: Download DLR SnowPack SCD 2024
         run: |
           set -euo pipefail
-          curl --fail --location --retry 4 --retry-delay 5 \
-            --output /tmp/2024_SCD_full_wgs84.tif \
+          aria2c \
+            --allow-overwrite=true \
+            --auto-file-renaming=false \
+            --continue=true \
+            --file-allocation=none \
+            --max-connection-per-server=4 \
+            --max-tries=5 \
+            --min-split-size=16M \
+            --retry-wait=5 \
+            --split=4 \
+            --dir=/tmp \
+            --out=2024_SCD_full_wgs84.tif \
             https://download.geoservice.dlr.de/GSP/files/yearly/SCD/2024/2024_SCD_full_wgs84.tif
           test "$(stat --format=%s /tmp/2024_SCD_full_wgs84.tif)" -eq 538301148
           sha256sum /tmp/2024_SCD_full_wgs84.tif
