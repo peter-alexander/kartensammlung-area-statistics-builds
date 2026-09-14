@@ -18,6 +18,7 @@ DEFAULT_OUTPUT_DIR = ROOT / "dist" / "statistics"
 DEFAULT_REGISTRY = "https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json"
 EXPECTED_SOURCE_INDICATOR = "EN.CLC.SPEI.XD"
 EXPECTED_BREAKS = [-2, -1.5, -1, 1, 1.5, 2]
+EXPECTED_HISTORICAL_EXCEPTIONS = {"1961": ["VUT"]}
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,6 +59,18 @@ def validate_config(payload: Any) -> dict[str, Any]:
 	if len(missing) != 61 or 250 - len(missing) != int(payload["expectedAreas"]):
 		raise ValueError("World Bank SPEI expectedMissingIso3 must describe exactly 61 of 250 registry areas.")
 
+	historical_exceptions = payload.get("expectedAdditionalMissingByYear")
+	if historical_exceptions != EXPECTED_HISTORICAL_EXCEPTIONS:
+		raise ValueError(
+			"World Bank SPEI expectedAdditionalMissingByYear must remain the audited {'1961': ['VUT']} exception."
+		)
+	for year_text, codes in historical_exceptions.items():
+		if len(year_text) != 4 or not year_text.isdigit():
+			raise ValueError(f"Invalid World Bank SPEI historical exception year: {year_text!r}")
+		validate_iso3_list(f"expectedAdditionalMissingByYear.{year_text}", codes)
+		if any(code in missing for code in codes):
+			raise ValueError(f"Historical exception {year_text} duplicates a permanently missing area.")
+
 	required_areas = payload.get("requiredAreas")
 	if not isinstance(required_areas, list) or not required_areas:
 		raise ValueError("World Bank SPEI requiredAreas is missing.")
@@ -89,8 +102,7 @@ def validate_config(payload: Any) -> dict[str, Any]:
 	common.validate_classification(str(indicator["id"]), indicator.get("classification"))
 	if indicator["classification"].get("breaks") != EXPECTED_BREAKS:
 		raise ValueError(f"World Bank SPEI classification must remain {EXPECTED_BREAKS}.")
-	value_range = indicator.get("valueRange")
-	if value_range != [-10, 10]:
+	if indicator.get("valueRange") != [-10, 10]:
 		raise ValueError("World Bank SPEI valueRange must remain [-10, 10].")
 
 	audit_2023 = payload.get("audit2023")
@@ -125,6 +137,12 @@ def fetch_records(config: dict[str, Any], timeout: int) -> tuple[list[dict[str, 
 	return [record for record in records if isinstance(record, dict)], metadata, url
 
 
+def expected_missing_for_year(config: dict[str, Any], year: int) -> list[str]:
+	missing = set(str(code) for code in config["expectedMissingIso3"])
+	missing.update(str(code) for code in config["expectedAdditionalMissingByYear"].get(str(year), []))
+	return sorted(missing)
+
+
 def load_values(
 	config: dict[str, Any],
 	area_by_iso3: dict[str, str],
@@ -137,6 +155,7 @@ def load_values(
 	indicator = config["indicator"]
 	value_min, value_max = (float(item) for item in indicator["valueRange"])
 	start_year = int(config["startYear"])
+	minimum_latest_year = int(config["minimumLatestYear"])
 	current_year = datetime.now(timezone.utc).year
 	values_by_year: dict[int, dict[str, int | float]] = {}
 	ignored_iso3: set[str] = set()
@@ -191,7 +210,6 @@ def load_values(
 
 	expected_areas = int(config["expectedAreas"])
 	expected_missing = list(config["expectedMissingIso3"])
-	registry_areas = set(area_by_iso3.values())
 	mapped_areas = {area_id for year_values in values_by_year.values() for area_id in year_values}
 	missing_any = sorted(iso3 for iso3, area_id in area_by_iso3.items() if area_id not in mapped_areas)
 	if len(mapped_areas) != expected_areas or missing_any != expected_missing:
@@ -204,43 +222,54 @@ def load_values(
 		raise RuntimeError(f"World Bank SPEI starts at {source_years[0]}, expected {start_year}.")
 	if source_years != list(range(start_year, source_years[-1] + 1)):
 		raise RuntimeError("World Bank SPEI source years are not contiguous.")
-	if source_years[-1] < int(config["minimumLatestYear"]):
+	if source_years[-1] < minimum_latest_year:
 		raise RuntimeError(
-			f"World Bank SPEI latest source year {source_years[-1]} is older than required {config['minimumLatestYear']}."
+			f"World Bank SPEI latest source year {source_years[-1]} is older than required {minimum_latest_year}."
 		)
 
 	required = set(str(area_id) for area_id in config["requiredAreas"])
-	complete_years: list[int] = []
-	incomplete_years: list[int] = []
+	published_years: list[int] = []
+	incomplete_trailing_years: list[int] = []
 	for year in source_years:
 		year_values = values_by_year[year]
 		missing_year = sorted(iso3 for iso3, area_id in area_by_iso3.items() if area_id not in year_values)
-		complete = (
+		if year <= minimum_latest_year:
+			expected_missing_year = expected_missing_for_year(config, year)
+			expected_count = len(area_by_iso3) - len(expected_missing_year)
+			if len(year_values) != expected_count or missing_year != expected_missing_year:
+				raise RuntimeError(
+					f"World Bank SPEI audited year {year} has changed coverage: "
+					f"{len(year_values)} areas, missing={missing_year}; "
+					f"expected {expected_count}, missing={expected_missing_year}."
+				)
+			if not required.issubset(year_values):
+				raise RuntimeError(f"World Bank SPEI audited year {year} is missing a required regression area.")
+			published_years.append(year)
+			continue
+
+		complete_new_year = (
 			len(year_values) == expected_areas
 			and missing_year == expected_missing
 			and required.issubset(year_values)
 		)
-		if complete:
-			if incomplete_years:
+		if complete_new_year:
+			if incomplete_trailing_years:
 				raise RuntimeError(
-					f"World Bank SPEI has a complete year {year} after incomplete trailing years {incomplete_years}."
+					f"World Bank SPEI has a complete year {year} after incomplete trailing years "
+					f"{incomplete_trailing_years}."
 				)
-			complete_years.append(year)
+			published_years.append(year)
 		else:
-			if year <= int(config["minimumLatestYear"]):
-				raise RuntimeError(
-					f"World Bank SPEI audited year {year} has changed coverage: {len(year_values)} areas, missing={missing_year}."
-				)
 			if not set(year_values).issubset(mapped_areas):
 				raise RuntimeError(f"World Bank SPEI trailing year {year} contains an unexpected area.")
-			incomplete_years.append(year)
+			incomplete_trailing_years.append(year)
 
-	if not complete_years:
-		raise RuntimeError("World Bank SPEI has no complete publishable years.")
-	default_year = complete_years[-1]
-	published_values = {year: values_by_year[year] for year in complete_years}
-	if complete_years != list(range(start_year, default_year + 1)):
+	if not published_years:
+		raise RuntimeError("World Bank SPEI has no publishable years.")
+	default_year = published_years[-1]
+	if published_years != list(range(start_year, default_year + 1)):
 		raise RuntimeError("World Bank SPEI publishable years are not contiguous.")
+	published_values = {year: values_by_year[year] for year in published_years}
 
 	if 2023 in published_values:
 		for area_id, expected_value in config["audit2023"].items():
@@ -264,8 +293,9 @@ def load_values(
 		"sourceFirstYear": source_years[0],
 		"sourceLatestYear": source_years[-1],
 		"publishedLatestYear": default_year,
-		"excludedTrailingYears": incomplete_years,
+		"excludedTrailingYears": incomplete_trailing_years,
 		"expectedMissingIso3": expected_missing,
+		"expectedAdditionalMissingByYear": config["expectedAdditionalMissingByYear"],
 	}
 
 
@@ -308,6 +338,7 @@ def build_payload(
 			"sourceLatestYear": diagnostics["sourceLatestYear"],
 			"excludedTrailingYears": diagnostics["excludedTrailingYears"],
 			"expectedMissingIso3": diagnostics["expectedMissingIso3"],
+			"expectedAdditionalMissingByYear": diagnostics["expectedAdditionalMissingByYear"],
 		},
 		"availableYears": available_years,
 		"defaultYear": default_year,
@@ -331,7 +362,7 @@ def build_payload(
 		f"{indicator['id']}: published={available_years[0]}-{default_year} "
 		f"sourceLatest={diagnostics['sourceLatestYear']} "
 		f"excludedTrailing={diagnostics['excludedTrailingYears']} "
-		f"coverage={len(values_by_year[default_year])}/{len(area_by_iso3)} "
+		f"latestCoverage={len(values_by_year[default_year])}/{len(area_by_iso3)} "
 		f"observations={diagnostics['publishedObservations']}"
 	)
 	return payload
@@ -395,6 +426,7 @@ def main() -> None:
 			"excludedTrailingYears": diagnostics["excludedTrailingYears"],
 			"mappedAreas": diagnostics["mappedAreas"],
 			"expectedMissingIso3": diagnostics["expectedMissingIso3"],
+			"expectedAdditionalMissingByYear": diagnostics["expectedAdditionalMissingByYear"],
 			"publishedObservations": diagnostics["publishedObservations"],
 			"retainedSourceObservations": diagnostics["retainedSourceObservations"],
 			"nullRecords": diagnostics["nullRecords"],
@@ -419,7 +451,8 @@ def main() -> None:
 			"Direct World Bank annual country series EN.CLC.SPEI.XD; no interpolation, extrapolation or cross-provider fallback is used.",
 			"The World Bank DataBank metadata describes this as the 12-month SPEI time-scale with annual periodicity and Average aggregation; the underlying source is the Global SPEI database (SPEIbase).",
 			"Negative SPEI values indicate drier conditions and positive values wetter conditions relative to local normal conditions; values are standardized and therefore comparable through time and space.",
-			"Incomplete trailing source years are retained only in source diagnostics and are not published until they reach the audited 189-area coverage.",
+			"The audited historical series has 189 registry areas in every year except 1961, when Vanuatu is absent and coverage is 188; this single source gap is preserved as missing, not interpolated.",
+			"Incomplete trailing source years are retained only in source diagnostics and are not published until they reach the normal audited 189-area coverage.",
 			"The exact World Bank DataBank metadata currently states CC BY 4.0. The separate Sovereign ESG web interface has displayed different license text; the DataBank metadata URL is retained explicitly so this can be re-audited if World Bank licensing metadata changes.",
 		],
 	}
