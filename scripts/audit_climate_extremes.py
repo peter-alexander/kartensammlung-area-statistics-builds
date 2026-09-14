@@ -207,19 +207,37 @@ def audit_spei(area_by_iso3: dict[str, str]) -> None:
 		by_year[int(year_text)][area_id] = float(value)
 	if not by_year:
 		raise RuntimeError("No SPEI observations mapped")
+
 	available_years = sorted(by_year)
-	print(f"SPEI years={available_years[0]}-{available_years[-1]} yearCount={len(available_years)}")
-	for year in available_years[-8:]:
-		print(f"  SPEI {year}: coverage={len(by_year[year])}")
 	all_areas = set().union(*(set(values) for values in by_year.values()))
 	latest_areas = set(by_year[available_years[-1]])
+	missing_any = registry_areas - all_areas
+	print(f"SPEI years={available_years[0]}-{available_years[-1]} yearCount={len(available_years)}")
 	print(f"SPEI areasWithAnyValue={len(all_areas)} unmapped={sorted(unmapped)}")
-	print(f"SPEI missingAny={iso3_list(registry_areas - all_areas)}")
+	print(f"SPEI missingAny={iso3_list(missing_any)}")
 	print(f"SPEI missingLatest={iso3_list(registry_areas - latest_areas)}")
-	for iso3 in ("AUT", "DEU", "USA", "IND", "CHN", "ZAF", "NAM", "XKX"):
+
+	coverage_groups: dict[tuple[str, ...], list[int]] = defaultdict(list)
+	for year in available_years:
+		missing_year = tuple(iso3_list(registry_areas - set(by_year[year])))
+		coverage_groups[missing_year].append(year)
+	print(f"SPEI distinct yearly coverage patterns={len(coverage_groups)}")
+	for missing_year, years in sorted(coverage_groups.items(), key=lambda item: (len(item[0]), item[1][0], item[0])):
+		coverage = len(registry_areas) - len(missing_year)
+		extra_missing = sorted(set(missing_year) - set(iso3_list(missing_any)))
+		print(
+			f"  coverage={coverage} years={years} extraMissingVsAny={extra_missing} "
+			f"missing={list(missing_year)}"
+		)
+
+	for iso3 in ("AUT", "DEU", "USA", "IND", "CHN", "ZAF", "NAM", "VUT", "XKX"):
 		area_id = area_by_iso3[iso3]
 		series = [(year, by_year[year][area_id]) for year in available_years if area_id in by_year[year]]
-		print(f"  {iso3}: latest={series[-1] if series else None} count={len(series)}")
+		missing_years = [year for year in available_years if area_id not in by_year[year]]
+		print(
+			f"  {iso3}: latest={series[-1] if series else None} count={len(series)} "
+			f"missingYears={missing_years}"
+		)
 
 
 def main() -> None:
