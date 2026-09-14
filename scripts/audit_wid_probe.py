@@ -48,6 +48,11 @@ def target_kind(variable: str) -> str | None:
 	return None
 
 
+def quality_label(value: str | None) -> str:
+	label = (value or "").strip()
+	return label if label else "<empty>"
+
+
 def main() -> None:
 	for country in COUNTRIES:
 		url = f"{BASE_URL}/WID_data_{country}.csv"
@@ -70,7 +75,8 @@ def main() -> None:
 		print("targetVariableCandidatesRaw=" + repr(sorted(value for value in raw_variables if target_kind(value))))
 		print("targetVariableCandidatesNormalized=" + repr(sorted(value for value in normalized_variables if target_kind(value))))
 
-		matches: dict[tuple[str, str], list[tuple[int, float, str]]] = defaultdict(list)
+		matches: dict[tuple[str, str], list[tuple[int, float, str, str]]] = defaultdict(list)
+		target_quality = Counter()
 		for row in rows:
 			raw_variable = row.get("variable", "")
 			variable = normalize_variable(raw_variable)
@@ -87,8 +93,11 @@ def main() -> None:
 				value = float(row["value"])
 			except (KeyError, TypeError, ValueError):
 				continue
-			matches[(concept, percentile)].append((year, value, raw_variable))
+			quality = quality_label(row.get("data_quality"))
+			target_quality[quality] += 1
+			matches[(concept, percentile)].append((year, value, raw_variable, quality))
 
+		print(f"targetDataQuality={dict(sorted(target_quality.items()))}")
 		for concept in TARGET_CONCEPTS:
 			for percentile in sorted(TARGET_PERCENTILES):
 				values = sorted(matches.get((concept, percentile), []))
@@ -96,9 +105,11 @@ def main() -> None:
 					print(f"{concept} {percentile}: MISSING")
 					continue
 				years = [item[0] for item in values]
+				quality_counts = Counter(item[3] for item in values)
 				print(
 					f"{concept} {percentile}: observations={len(values)} years={min(years)}..{max(years)} "
-					f"latest={values[-1][0]}:{values[-1][1]} rawVariable={values[-1][2]}"
+					f"latest={values[-1][0]}:{values[-1][1]} rawVariable={values[-1][2]} "
+					f"latestQuality={values[-1][3]} quality={dict(sorted(quality_counts.items()))}"
 				)
 
 		unexpected_columns = sorted(
