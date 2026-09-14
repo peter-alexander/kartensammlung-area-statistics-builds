@@ -20,9 +20,9 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install --yes r-base
+          sudo apt-get install --yes r-base r-cran-httr r-cran-base64enc r-cran-plyr r-cran-jsonlite
           mkdir -p "$R_LIBS_USER"
-          Rscript -e 'install.packages("wid", repos="https://cloud.r-project.org")'
+          Rscript -e 'install.packages("wid", repos="https://cloud.r-project.org", dependencies=FALSE)'
       - name: Download selected WID series
         shell: bash
         run: |
@@ -105,7 +105,7 @@ jobs:
           	rows = list(csv.DictReader(path.open(encoding="utf-8-sig")))
           	print(f"\n=== {filename} rows={len(rows)} ===")
           	print("columns=", list(rows[0]) if rows else [])
-          
+
           	unmapped = defaultdict(int)
           	series = defaultdict(lambda: defaultdict(dict))
           	meta_examples = {}
