@@ -23,10 +23,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install audit dependency
-        run: python -m pip install --disable-pip-version-check openpyxl==3.1.5
+      - name: Install audit dependencies
+        run: python -m pip install --disable-pip-version-check openpyxl==3.1.5 pycountry==26.2.16
 
-      - name: Download official Annex B1 performance tables
+      - name: Download official Annex B1 performance tables and country registry
         shell: bash
         run: |
           set -euo pipefail
@@ -37,61 +37,210 @@ jobs:
             --output diagnostics-annex/pisa-2025-annex-b1a.xlsx \
             --write-out 'effective_url=%{url_effective}\ncontent_type=%{content_type}\nhttp_code=%{http_code}\nsize_download=%{size_download}\n' \
             'https://stat.link/mrq53f' | tee diagnostics-annex/statlink-transfer.txt
+          curl --fail --silent --show-error --location \
+            --connect-timeout 15 --max-time 120 --retry 2 --retry-delay 2 --retry-all-errors \
+            --output diagnostics-annex/area-registry-countries.json \
+            'https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json'
           file diagnostics-annex/pisa-2025-annex-b1a.xlsx | tee diagnostics-annex/file-type.txt
           sha256sum diagnostics-annex/pisa-2025-annex-b1a.xlsx | tee diagnostics-annex/sha256.txt
           cat diagnostics-annex/statlink-headers.txt
 
-      - name: Inspect target tables
+      - name: Inspect target tables and country mapping
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY' | tee diagnostics-annex/structure.txt
+          import json
+          import re
           from pathlib import Path
 
+          import pycountry
           from openpyxl import load_workbook
 
-          path = Path("diagnostics-annex/pisa-2025-annex-b1a.xlsx")
-          workbook = load_workbook(path, read_only=True, data_only=True)
+          workbook_path = Path("diagnostics-annex/pisa-2025-annex-b1a.xlsx")
+          registry_path = Path("diagnostics-annex/area-registry-countries.json")
+          workbook = load_workbook(workbook_path, read_only=True, data_only=True)
 
-          targets = (
-          	"I.B1.2a.1",
-          	"I.B1.2a.2",
-          	"I.B1.2a.3",
-          	"I.B1.2a.36",
-          	"I.B1.2a.37",
-          	"I.B1.2a.38",
-          )
+          current_tables = {
+          	"science": "Table I.B1.2a.1",
+          	"reading": "Table I.B1.2a.2",
+          	"mathematics": "Table I.B1.2a.3",
+          }
+          trend_tables = {
+          	"science": "Table I.B1.2a.36",
+          	"reading": "Table I.B1.2a.37",
+          	"mathematics": "Table I.B1.2a.38",
+          }
+          expected_sheets = list(current_tables.values()) + list(trend_tables.values())
+          missing_sheets = [name for name in expected_sheets if name not in workbook.sheetnames]
+          if missing_sheets:
+          	raise RuntimeError(f"Missing target sheets: {missing_sheets}")
 
-          print(f"sheets={len(workbook.sheetnames)}")
-          for name in workbook.sheetnames:
-          	print(f"sheet={name!r}")
+          registry = json.loads(registry_path.read_text(encoding="utf-8"))
+          if registry.get("schema") != "kartensammlung.area-registry/v1":
+          	raise RuntimeError("Unexpected country registry schema")
+          areas = registry.get("areas")
+          if not isinstance(areas, list):
+          	raise RuntimeError("Country registry has no areas list")
+          area_by_iso3 = {}
+          for area in areas:
+          	if not isinstance(area, dict) or area.get("level") != "country":
+          		continue
+          	codes = area.get("codes")
+          	if not isinstance(codes, dict):
+          		continue
+          	iso3 = str(codes.get("iso3") or "").strip().upper()
+          	area_id = str(area.get("area_id") or "").strip()
+          	if len(iso3) == 3 and area_id:
+          		area_by_iso3[iso3] = area_id
+          print(f"registry_country_areas={len(area_by_iso3)}")
 
-          selected = []
-          for sheet in workbook.worksheets:
-          	matched = any(target.lower() in sheet.title.lower() for target in targets)
-          	if not matched:
-          		for row in sheet.iter_rows(min_row=1, max_row=min(sheet.max_row, 12), values_only=True):
-          			text = " | ".join(str(value) for value in row if value is not None)
-          			if any(target.lower() in text.lower() for target in targets):
-          				matched = True
-          				break
-          	if matched:
-          		selected.append(sheet.title)
+          aliases = {
+          	"Brunei Darussalam": "BRN",
+          	"Czechia": "CZE",
+          	"Hong Kong (China)": "HKG",
+          	"Korea": "KOR",
+          	"Kosovo": "XKX",
+          	"Macao (China)": "MAC",
+          	"Moldova": "MDA",
+          	"Palestinian Authority": "PSE",
+          	"Slovak Republic": "SVK",
+          	"Chinese Taipei": "TWN",
+          	"Türkiye": "TUR",
+          	"Viet Nam": "VNM",
+          }
+          excluded_partial_areas = {
+          	"B-S-J-Z (China)",
+          	"Dushanbe (Tajikistan)",
+          	"Kurdistan Region (Iraq)",
+          	"Ukrainian regions (17 of 27)",
+          }
 
-          print("\nselected_target_sheets=")
-          for name in selected:
-          	print(name)
+          def source_name(value):
+          	return str(value).strip().removesuffix("*")
 
-          print("\n--- target sheet excerpts ---")
-          for name in selected:
-          	print(f"\n[{name}]")
-          	sheet = workbook[name]
-          	for row_index, row in enumerate(sheet.iter_rows(values_only=True), start=1):
-          		values = ["" if value is None else str(value) for value in row[:28]]
-          		if any(values):
-          			print(f"{row_index}: " + "\t".join(values))
-          		if row_index >= 125:
-          			break
+          def iso3_for_name(name):
+          	if name in aliases:
+          		return aliases[name]
+          	try:
+          		return pycountry.countries.lookup(name).alpha_3
+          	except LookupError:
+          		return None
+
+          def years_for_sheet(sheet):
+          	header = list(next(sheet.iter_rows(min_row=8, max_row=8, values_only=True)))
+          	year_columns = {}
+          	for column, value in enumerate(header):
+          		if not isinstance(value, str):
+          			continue
+          		match = re.fullmatch(r"PISA (\d{4})", value.strip())
+          		if match:
+          			year_columns[int(match.group(1))] = column
+          	return year_columns
+
+          def source_rows(sheet, year_columns):
+          	rows = {}
+          	for row in sheet.iter_rows(values_only=True):
+          		name_raw = row[0]
+          		if not isinstance(name_raw, str):
+          			continue
+          		name = source_name(name_raw)
+          		values = {}
+          		for year, column in year_columns.items():
+          			value = row[column]
+          			if isinstance(value, bool) or not isinstance(value, (int, float)):
+          				continue
+          			values[year] = float(value)
+          		if values and not name.startswith("OECD average"):
+          			rows[name] = values
+          	return rows
+
+          def current_rows(sheet):
+          	rows = {}
+          	for row in sheet.iter_rows(values_only=True):
+          		name_raw = row[0]
+          		value = row[1] if len(row) > 1 else None
+          		if not isinstance(name_raw, str) or isinstance(value, bool) or not isinstance(value, (int, float)):
+          			continue
+          		name = source_name(name_raw)
+          		if name.startswith("OECD "):
+          			continue
+          		rows[name] = float(value)
+          	return rows
+
+          all_source_names = set()
+          for subject, trend_name in trend_tables.items():
+          	trend_sheet = workbook[trend_name]
+          	year_columns = years_for_sheet(trend_sheet)
+          	rows = source_rows(trend_sheet, year_columns)
+          	all_source_names.update(rows)
+          	counts = {
+          		year: sum(year in values for values in rows.values())
+          		for year in sorted(year_columns)
+          	}
+          	print(f"{subject}: years={sorted(year_columns)} coverage={counts}")
+
+          	current = current_rows(workbook[current_tables[subject]])
+          	differences = []
+          	for name, value in current.items():
+          		trend_value = rows.get(name, {}).get(2025)
+          		if trend_value is None or abs(value - trend_value) > 1e-10:
+          			differences.append((name, value, trend_value))
+          	if differences:
+          		raise RuntimeError(f"{subject} 2025 current/trend mismatch: {differences[:10]}")
+          	print(f"{subject}: current2025={len(current)} exact_matches={len(current)}")
+
+          mapped = {}
+          excluded = {}
+          unresolved = {}
+          missing_registry = {}
+          for name in sorted(all_source_names):
+          	if name in excluded_partial_areas:
+          		excluded[name] = "partial-country PISA sample"
+          		continue
+          	iso3 = iso3_for_name(name)
+          	if iso3 is None:
+          		unresolved[name] = None
+          		continue
+          	area_id = area_by_iso3.get(iso3)
+          	if area_id is None:
+          		missing_registry[name] = iso3
+          		continue
+          	mapped[name] = {"iso3": iso3, "area_id": area_id}
+
+          print(f"source_entities={len(all_source_names)}")
+          print(f"mapped_entities={len(mapped)}")
+          print(f"excluded_partial_entities={json.dumps(excluded, ensure_ascii=False, sort_keys=True)}")
+          print(f"unresolved_entities={json.dumps(unresolved, ensure_ascii=False, sort_keys=True)}")
+          print(f"missing_registry_entities={json.dumps(missing_registry, ensure_ascii=False, sort_keys=True)}")
+          if unresolved or missing_registry:
+          	raise RuntimeError("Country mapping audit has unresolved or registry-missing entities")
+
+          print("special_mappings=")
+          for name in (
+          	"Hong Kong (China)",
+          	"Macao (China)",
+          	"Chinese Taipei",
+          	"Palestinian Authority",
+          	"Kosovo",
+          	"Korea",
+          	"Türkiye",
+          	"Viet Nam",
+          ):
+          	print(f"  {name}: {mapped.get(name)}")
+
+          for subject, trend_name in trend_tables.items():
+          	trend_sheet = workbook[trend_name]
+          	year_columns = years_for_sheet(trend_sheet)
+          	rows = source_rows(trend_sheet, year_columns)
+          	mapped_counts = {}
+          	for year in sorted(year_columns):
+          		mapped_counts[year] = sum(
+          			1
+          			for name, values in rows.items()
+          			if year in values and name in mapped
+          		)
+          	print(f"{subject}: mapped_coverage={mapped_counts}")
 
           workbook.close()
           PY
