@@ -1,0 +1,130 @@
+{
+	"schema": "kartensammlung.unsd-national-accounts-statistics/v1",
+	"sourcePage": "https://unstats.un.org/unsd/snaama/downloads",
+	"termsUrl": "https://data.un.org/Host.aspx?Content=UNdataUse",
+	"expectedStartYear": 1970,
+	"minimumLatestYear": 2024,
+	"provider": {
+		"id": "unsd-national-accounts",
+		"name": "United Nations Statistics Division (UNSD)",
+		"dataset": "National Accounts Main Aggregates",
+		"license": "UNdata Terms of Use",
+		"licenseUrl": "https://data.un.org/Host.aspx?Content=UNdataUse",
+		"attribution": "United Nations Statistics Division (UNSD), National Accounts Main Aggregates"
+	},
+	"ignoredSourceCodes": [
+		"200",
+		"230",
+		"530",
+		"720",
+		"736",
+		"810",
+		"886",
+		"890"
+	],
+	"countryIdAliases": {
+		"412": "country:XKX"
+	},
+	"compositions": {
+		"country:TZA": {
+			"sourceCodes": ["835", "836"],
+			"minimumYear": 1990,
+			"label": "Tanzania = U.R. of Tanzania: Mainland + Zanzibar"
+		}
+	},
+	"resources": {
+		"gdp": {
+			"fileId": 2,
+			"downloadUrl": "https://unstats.un.org/unsd/amaapi/api/file/2",
+			"minimumBytes": 2000000,
+			"rowSelector": {
+				"column": "IndicatorName",
+				"value": "Gross Domestic Product (GDP)"
+			}
+		},
+		"gdpPerCapita": {
+			"fileId": 9,
+			"downloadUrl": "https://unstats.un.org/unsd/amaapi/api/file/9",
+			"minimumBytes": 100000
+		},
+		"gni": {
+			"fileId": 24,
+			"downloadUrl": "https://unstats.un.org/unsd/amaapi/api/file/24",
+			"minimumBytes": 100000
+		},
+		"population": {
+			"fileId": 30,
+			"downloadUrl": "https://unstats.un.org/unsd/amaapi/api/file/30",
+			"minimumBytes": 100000,
+			"rowSelector": {
+				"column": "Measure",
+				"value": "Population"
+			}
+		}
+	},
+	"indicators": [
+		{
+			"id": "gdp.current-usd",
+			"slug": "gdp-current-usd",
+			"resource": "gdp",
+			"sourceIndicator": "Gross Domestic Product (GDP)",
+			"title": "Bruttoinlandsprodukt",
+			"description": "Bruttoinlandsprodukt zu laufenden Preisen in US-Dollar.",
+			"unit": {
+				"id": "usd-current",
+				"label": "US-Dollar (laufende Preise)",
+				"symbol": "$"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [1000000000, 10000000000, 100000000000, 1000000000000, 5000000000000, 20000000000000]
+			},
+			"minAreasWithAnyValue": 205,
+			"minAreasInDefaultYear": 205,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND", "country:XKX", "country:TZA"]
+		},
+		{
+			"id": "gdp-per-capita.current-usd",
+			"slug": "gdp-per-capita-current-usd",
+			"resource": "gdpPerCapita",
+			"sourceIndicator": "GDP per capita in US dollars",
+			"title": "BIP pro Kopf",
+			"description": "Bruttoinlandsprodukt pro Einwohner zu laufenden Preisen in US-Dollar.",
+			"unit": {
+				"id": "usd-current-per-person",
+				"label": "US-Dollar pro Einwohner (laufende Preise)",
+				"symbol": "$"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [1000, 5000, 10000, 25000, 50000, 100000]
+			},
+			"minAreasWithAnyValue": 205,
+			"minAreasInDefaultYear": 205,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND", "country:XKX", "country:TZA"]
+		},
+		{
+			"id": "gni.current-usd",
+			"slug": "gni-current-usd",
+			"resource": "gni",
+			"sourceIndicator": "GNI in US dollars",
+			"title": "Bruttonationaleinkommen (BNE)",
+			"description": "Bruttonationaleinkommen (GNI/BNE) zu laufenden Preisen in US-Dollar.",
+			"unit": {
+				"id": "usd-current",
+				"label": "US-Dollar (laufende Preise)",
+				"symbol": "$"
+			},
+			"classification": {
+				"type": "fixed",
+				"scale": "logarithmic",
+				"breaks": [1000000000, 10000000000, 100000000000, 500000000000, 2000000000000, 10000000000000]
+			},
+			"minAreasWithAnyValue": 205,
+			"minAreasInDefaultYear": 205,
+			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND", "country:XKX", "country:TZA"]
+		}
+	]
+}
