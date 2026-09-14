@@ -18,7 +18,7 @@ SOURCES = {
 	"pisa-2015-collaborative-problem-solving": "https://doi.org/10.1787/888933616769",
 	"pisa-2012-computer-based-mathematics": "https://doi.org/10.1787/888932935781",
 	"pisa-2012-digital-reading": "https://doi.org/10.1787/888932935781",
-	"pisa-2012-creative-problem-solving": "https://doi.org/10.1787/888933003573",
+	"pisa-2012-creative-problem-solving": "https://doi.org/10.1787/888933003668",
 	"pisa-2009-digital-reading": "https://doi.org/10.1787/888932436556",
 	"pisa-2003-cross-curricular-problem-solving": "https://doi.org/10.1787/402381481733",
 }
@@ -35,7 +35,7 @@ TITLE_PATTERNS = {
 	"pisa-2012-digital-reading": (
 		"mean score, variation and gender differences in student performance on the digital reading scale",
 	),
-	"pisa-2012-creative-problem-solving": ("mean score", "problem solving"),
+	"pisa-2012-creative-problem-solving": ("mean score and variation in student performance in problem solving",),
 	"pisa-2009-digital-reading": ("mean score", "digital", "reading"),
 	"pisa-2003-cross-curricular-problem-solving": ("problem-solving",),
 }
