@@ -8,6 +8,7 @@ from urllib.request import Request, urlopen
 
 from openpyxl import load_workbook
 
+# Temporary source audit. Remove this file before the production PR.
 SOURCES = {
 	"pisa-2025-core-and-digital": "https://stat.link/mrq53f",
 	"pisa-2022-financial-literacy": "https://stat.link/4nx1lb",
