@@ -22,6 +22,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install audit dependencies
-        run: python -m pip install --disable-pip-version-check openpyxl==3.1.5
+        run: python -m pip install --disable-pip-version-check openpyxl==3.1.5 xlrd==2.0.1
       - name: Audit official OECD sources
         run: python scripts/audit_pisa_additional_domains.py
