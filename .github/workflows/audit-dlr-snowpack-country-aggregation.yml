@@ -1,0 +1,76 @@
+name: Audit DLR SnowPack country aggregation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/dlr-global-snowpack
+    paths:
+      - "scripts/audit_dlr_snowpack_country_aggregation.py"
+      - ".github/workflows/audit-dlr-snowpack-country-aggregation.yml"
+      - "scripts/build_countries.py"
+      - "config/country-code-overrides.json"
+      - "config/country-compositions.json"
+      - "config/overture-excluded-country-codes.json"
+      - "requirements.txt"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-dlr-snowpack-country-aggregation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gdal-bin
+          pip install --requirement requirements.txt
+
+      - name: Validate scripts
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/build_countries.py
+          python -m py_compile scripts/audit_dlr_snowpack_country_aggregation.py
+          git diff --check
+
+      - name: Build Overture land country geometry
+        run: |
+          set -euo pipefail
+          python scripts/build_countries.py --release latest --skip-tiles
+
+      - name: Aggregate 2024 SnowPack SCD prototype countries
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          python scripts/audit_dlr_snowpack_country_aggregation.py \
+            2>&1 | tee diagnostics/dlr-snowpack-country-aggregation.log
+
+      - name: Show summary
+        run: |
+          set -euo pipefail
+          cat diagnostics/dlr-snowpack-country-aggregation.json
+          du -h build/dlr-snowpack-country-aggregation/*/*.tif || true
+
+      - name: Upload diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: dlr-snowpack-country-aggregation-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
