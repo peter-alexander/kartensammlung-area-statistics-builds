@@ -1,0 +1,225 @@
+name: Build World Bank remittance statistics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "37 6 18 * *"
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "config/world-bank-remittances-indicators.json"
+      - "scripts/build_world_bank_remittances.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-world-bank-remittances-statistics.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "config/statistics-providers.json"
+      - "config/world-bank-remittances-indicators.json"
+      - "scripts/build_world_bank_remittances.py"
+      - "scripts/build_world_bank.py"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-world-bank-remittances-statistics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-world-bank-remittances-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: python -m pip install --quiet "openpyxl>=3.1,<4"
+
+      - name: Validate scripts
+        run: |
+          bash -n .github/scripts/deploy-world-bank-statistics.sh
+          python -m py_compile scripts/build_world_bank_remittances.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/world-bank-remittances-indicators.json >/dev/null
+          git diff --check
+
+      - name: Build World Bank remittance statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_world_bank_remittances.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/world-bank-remittances.log
+
+      - name: Validate World Bank remittance output
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path("config/world-bank-remittances-indicators.json").read_text(encoding="utf-8"))
+          provider = json.loads(Path("dist/statistics/world-bank-remittances/index.json").read_text(encoding="utf-8"))
+          global_index = json.loads(Path("dist/statistics/index.json").read_text(encoding="utf-8"))
+
+          assert provider["provider"]["id"] == "world-bank-remittances"
+          assert len(provider["indicators"]) == len(config["indicators"]) == 2
+          assert any(item["id"] == "world-bank-remittances" for item in global_index["providers"])
+          assert provider["dataset"]["datasetId"] == "0066146"
+          assert provider["dataset"]["title"] == "KNOMAD"
+          assert provider["dataset"]["license"] == "Creative Commons Attribution 4.0"
+          assert provider["dataset"]["securityClassification"] == "Public"
+          resources = {item["resourceId"]: item for item in provider["dataset"]["resources"]}
+          assert set(resources) == {"DR0095569", "DR0095570"}
+          for resource in resources.values():
+          	assert resource["sourceStartYear"] == 2000
+          	assert resource["sourceLatestYear"] >= 2024
+          	assert resource["mappedSourceRows"] >= 205
+          	assert resource["ignoredSourceNames"] == ["Channel Islands"]
+          	assert resource["bytes"] > 70_000
+          	assert len(resource["sha256"]) == 64
+
+          configured = {item["id"]: item for item in config["indicators"]}
+          for item in provider["indicators"]:
+          	cfg = configured[item["id"]]
+          	coverage = item["coverage"]
+          	assert item["sourceIndicator"] == cfg["resourceId"]
+          	assert item["availableYears"][0] == 2000
+          	assert item["availableYears"][-1] >= 2024
+          	assert item["defaultYear"] >= 2024
+          	assert coverage["mappedSourceRows"] >= cfg["minAreasWithAnyValue"]
+          	assert coverage["areasWithAnyValue"] >= cfg["minAreasWithAnyValue"]
+          	assert coverage["areasInDefaultYear"] >= cfg["minAreasInDefaultYear"]
+          	assert item["classification"]["scale"] == "logarithmic"
+          	assert item["classification"]["breaks"] == [10, 100, 500, 2000, 10000, 50000]
+
+          	payload = json.loads(Path("dist/statistics/world-bank-remittances", item["path"]).read_text(encoding="utf-8"))
+          	assert payload["source"]["providerId"] == "world-bank-remittances"
+          	assert payload["source"]["datasetId"] == "0066146"
+          	assert payload["source"]["resourceId"] == cfg["resourceId"]
+          	assert payload["source"]["ignoredSourceNames"] == ["Channel Islands"]
+          	assert payload["source"]["mappingAliases"] == config["nameAliases"]
+          	assert payload["source"]["workbookNotes"]
+          	assert payload["source"]["downloadUrl"].endswith(f"/resources/{cfg['resourceId']}/download")
+
+          	latest_year = str(item["availableYears"][-1])
+          	latest_values = list(payload["values"][latest_year].values())
+          	assert all(value >= 0 for value in latest_values)
+          	assert sum(value == 0 for value in latest_values) >= 10
+          	if int(latest_year) == 2024:
+          		assert coverage["areasInLatestYear"] == 200
+          		assert item["defaultYear"] == 2024
+
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"retrievedAt={provider['retrievedAt']}")
+          for item in provider["indicators"]:
+          	coverage = item["coverage"]
+          	print(
+          		f"{item['id']}: defaultYear={item['defaultYear']} "
+          		f"areas={coverage['areasInDefaultYear']}/{coverage['registryAreas']} "
+          		f"years={item['availableYears'][0]}-{item['availableYears'][-1]} "
+          		f"anyCoverage={coverage['areasWithAnyValue']}"
+          	)
+          PY
+          du -h dist/statistics/world-bank-remittances/index.json
+          du -ch dist/statistics/world-bank-remittances/releases/*/*.json | tail -n 1
+
+      - name: Upload statistics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-bank-remittances-statistics-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Deploy to tiles.radlobby.at
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          PROVIDER_ID: world-bank-remittances
+        run: |
+          chmod +x .github/scripts/deploy-world-bank-statistics.sh
+          .github/scripts/deploy-world-bank-statistics.sh dist/statistics
+
+      - name: Verify browser access and public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          check_file() {
+          	local url="$1"
+          	local local_file="$2"
+          	local output="$3"
+          	local headers
+          	local allow_origin
+          	headers="$(mktemp)"
+          	curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+          		--header "Origin: ${BROWSER_ORIGIN}" --dump-header "$headers" \
+          		--output "$output" "${url}?${CACHE_BUST}"
+          	cmp "$local_file" "$output"
+          	allow_origin="$(awk '
+          		BEGIN { IGNORECASE = 1 }
+          		tolower($1) == "access-control-allow-origin:" {
+          			value = $0
+          			sub(/^[^:]+:[[:space:]]*/, "", value)
+          			gsub(/\r/, "", value)
+          			print value
+          		}
+          	' "$headers" | tail -n 1)"
+          	rm -f "$headers"
+          	if [ "$allow_origin" != "*" ] && [ "$allow_origin" != "$BROWSER_ORIGIN" ]; then
+          		echo "CORS check failed for ${url}: Access-Control-Allow-Origin='${allow_origin:-<missing>}'" >&2
+          		exit 1
+          	fi
+          }
+
+          check_file "${PUBLIC_BASE}/index.json" "dist/statistics/index.json" /tmp/public-statistics-index.json
+          check_file "${PUBLIC_BASE}/world-bank-remittances/index.json" "dist/statistics/world-bank-remittances/index.json" /tmp/public-world-bank-remittances-index.json
+          while IFS= read -r path; do
+          	mkdir -p "/tmp/public-world-bank-remittances/$(dirname "$path")"
+          	check_file \
+          		"${PUBLIC_BASE}/world-bank-remittances/${path}" \
+          		"dist/statistics/world-bank-remittances/${path}" \
+          		"/tmp/public-world-bank-remittances/${path}"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/world-bank-remittances/index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+          	print(indicator["path"])
+          PY
+          )
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-bank-remittances-statistics-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
