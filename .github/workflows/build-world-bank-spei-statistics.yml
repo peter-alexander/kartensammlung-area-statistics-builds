@@ -1,0 +1,241 @@
+name: Build World Bank SPEI drought statistics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 8 27 * *"
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "config/world-bank-spei-indicators.json"
+      - "scripts/build_world_bank_spei.py"
+      - "scripts/build_world_bank.py"
+      - "docs/world-bank-spei-source-policy.md"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-world-bank-spei-statistics.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "config/statistics-providers.json"
+      - "config/world-bank-spei-indicators.json"
+      - "scripts/build_world_bank_spei.py"
+      - "scripts/build_world_bank.py"
+      - "docs/world-bank-spei-source-policy.md"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-world-bank-spei-statistics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-world-bank-spei-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate scripts and configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n .github/scripts/deploy-world-bank-statistics.sh
+          python -m py_compile scripts/build_world_bank_spei.py scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/world-bank-spei-indicators.json >/dev/null
+          git diff --check
+
+      - name: Build World Bank SPEI drought statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python scripts/build_world_bank_spei.py --registry "$REGISTRY_URL" 2>&1 | tee diagnostics/world-bank-spei.log
+
+      - name: Validate World Bank SPEI output
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import math
+          from pathlib import Path
+
+          config = json.loads(Path("config/world-bank-spei-indicators.json").read_text(encoding="utf-8"))
+          provider_dir = Path("dist/statistics/world-bank-spei")
+          provider = json.loads((provider_dir / "index.json").read_text(encoding="utf-8"))
+          global_index = json.loads(Path("dist/statistics/index.json").read_text(encoding="utf-8"))
+
+          assert provider["provider"]["id"] == "world-bank-spei"
+          assert provider["provider"]["name"] == "Weltbank – Dürre (SPEI)"
+          assert provider["provider"]["license"] == "CC BY 4.0"
+          assert provider["dataset"]["sourceIndicator"] == "EN.CLC.SPEI.XD"
+          assert provider["dataset"]["mappedAreas"] == 189
+          assert provider["dataset"]["sourceFirstYear"] == 1960
+          assert provider["dataset"]["sourceLatestYear"] >= 2023
+          assert provider["dataset"]["publishedLatestYear"] >= 2023
+          assert provider["dataset"]["expectedMissingIso3"] == config["expectedMissingIso3"]
+          assert provider["dataset"]["expectedAdditionalMissingByYear"] == {"1961": ["VUT"]}
+          assert len(provider["dataset"]["expectedMissingIso3"]) == 61
+          assert len(provider["indicators"]) == 1
+          assert any(item["id"] == "world-bank-spei" for item in global_index["providers"])
+
+          item = provider["indicators"][0]
+          assert item["id"] == "climate.spei-12-month"
+          assert item["sourceIndicator"] == "EN.CLC.SPEI.XD"
+          assert item["unit"]["id"] == "standardized-index"
+          assert item["classification"] == {"type": "fixed", "breaks": [-2, -1.5, -1, 1, 1.5, 2]}
+          assert item["availableYears"][0] == 1960
+          assert item["availableYears"][-1] == item["defaultYear"]
+          assert item["defaultYear"] >= 2023
+          assert item["availableYears"] == list(range(1960, item["defaultYear"] + 1))
+          assert item["coverage"]["registryAreas"] == 250
+          assert item["coverage"]["areasWithAnyValue"] == 189
+          assert item["coverage"]["areasInLatestYear"] == 189
+          assert item["coverage"]["areasInDefaultYear"] == 189
+          expected_observations = 189 * len(item["availableYears"]) - (1 if 1961 in item["availableYears"] else 0)
+          assert item["coverage"]["observations"] == expected_observations
+
+          payload = json.loads((provider_dir / item["path"]).read_text(encoding="utf-8"))
+          assert payload["source"]["providerId"] == "world-bank-spei"
+          assert payload["source"]["indicator"] == "EN.CLC.SPEI.XD"
+          assert payload["source"]["license"] == "CC BY 4.0"
+          assert payload["source"]["timeScaleMonths"] == 12
+          assert payload["source"]["aggregationMethod"] == "Average"
+          assert payload["source"]["expectedMissingIso3"] == config["expectedMissingIso3"]
+          assert payload["source"]["expectedAdditionalMissingByYear"] == {"1961": ["VUT"]}
+          assert payload["source"]["sourceLatestYear"] >= payload["defaultYear"]
+          assert all(year > payload["defaultYear"] for year in payload["source"]["excludedTrailingYears"])
+          assert "fallback" not in payload["source"]
+
+          for year in payload["availableYears"]:
+              expected_count = 188 if year == 1961 else 189
+              assert len(payload["values"][str(year)]) == expected_count, (year, len(payload["values"][str(year)]))
+          assert "country:VUT" not in payload["values"]["1961"]
+          for year in payload["availableYears"]:
+              if year != 1961:
+                  assert "country:VUT" in payload["values"][str(year)], year
+          for missing_iso3 in config["expectedMissingIso3"]:
+              assert f"country:{missing_iso3}" not in payload["values"][str(payload["defaultYear"])]
+          for area_id in config["requiredAreas"]:
+              assert area_id in payload["values"][str(payload["defaultYear"])]
+
+          for area_id, expected_value in config["audit2023"].items():
+              actual = payload["values"]["2023"][area_id]
+              assert abs(actual - expected_value) <= 1e-10, (area_id, actual, expected_value)
+
+          for year_values in payload["values"].values():
+              for value in year_values.values():
+                  assert math.isfinite(value)
+                  assert -10 <= value <= 10
+
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"retrievedAt={provider['retrievedAt']}")
+          print(
+              f"published=1960-{item['defaultYear']} sourceLatest={provider['dataset']['sourceLatestYear']} "
+              f"excludedTrailing={provider['dataset']['excludedTrailingYears']} latestCoverage=189/250 "
+              f"historicalException=1961:VUT"
+          )
+          PY
+          du -h dist/statistics/world-bank-spei/index.json
+          du -ch dist/statistics/world-bank-spei/releases/*/*.json | tail -n 1
+
+      - name: Upload statistics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-bank-spei-statistics-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Deploy to tiles.radlobby.at
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          PROVIDER_ID: world-bank-spei
+        run: |
+          chmod +x .github/scripts/deploy-world-bank-statistics.sh
+          .github/scripts/deploy-world-bank-statistics.sh dist/statistics
+
+      - name: Verify browser access and public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          check_file() {
+            local url="$1"
+            local local_file="$2"
+            local output="$3"
+            local headers
+            local allow_origin
+            headers="$(mktemp)"
+            curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+              --header "Origin: ${BROWSER_ORIGIN}" --dump-header "$headers" \
+              --output "$output" "${url}?${CACHE_BUST}"
+            cmp "$local_file" "$output"
+            allow_origin="$(awk '
+              BEGIN { IGNORECASE = 1 }
+              tolower($1) == "access-control-allow-origin:" {
+                value = $0
+                sub(/^[^:]+:[[:space:]]*/, "", value)
+                gsub(/\r/, "", value)
+                print value
+              }
+            ' "$headers" | tail -n 1)"
+            rm -f "$headers"
+            if [ "$allow_origin" != "*" ] && [ "$allow_origin" != "$BROWSER_ORIGIN" ]; then
+              echo "CORS check failed for ${url}: Access-Control-Allow-Origin='${allow_origin:-<missing>}'" >&2
+              exit 1
+            fi
+            echo "CORS OK: ${url} -> ${allow_origin}"
+          }
+
+          check_file "${PUBLIC_BASE}/index.json" "dist/statistics/index.json" /tmp/public-statistics-index.json
+          check_file "${PUBLIC_BASE}/world-bank-spei/index.json" "dist/statistics/world-bank-spei/index.json" /tmp/public-world-bank-spei-index.json
+          while IFS= read -r path; do
+            mkdir -p "/tmp/public-world-bank-spei/$(dirname "$path")"
+            check_file \
+              "${PUBLIC_BASE}/world-bank-spei/${path}" \
+              "dist/statistics/world-bank-spei/${path}" \
+              "/tmp/public-world-bank-spei/${path}"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("dist/statistics/world-bank-spei/index.json").read_text(encoding="utf-8"))
+          for indicator in payload["indicators"]:
+              print(indicator["path"])
+          PY
+          )
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-bank-spei-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: error
+          retention-days: 30
