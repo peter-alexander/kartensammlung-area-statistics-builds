@@ -78,8 +78,7 @@ jobs:
 
           def inspect_workbook(path, label):
           	print(f"\n=== workbook: {label} ===")
-          	with path.open("rb") as handle:
-          		workbook = load_workbook(handle, read_only=True, data_only=True)
+          	workbook = load_workbook(path, read_only=True, data_only=True)
           	print(f"sheets={len(workbook.sheetnames)}")
           	for name in workbook.sheetnames:
           		print(f"sheet={name!r}")
