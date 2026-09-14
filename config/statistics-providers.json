@@ -67,6 +67,11 @@
 			"index": "eurostat/index.json"
 		},
 		{
+			"id": "unsd-national-accounts",
+			"name": "UNSD – Volkswirtschaft: BIP & Volkseinkommen",
+			"index": "unsd-national-accounts/index.json"
+		},
+		{
 			"id": "un-wpp",
 			"name": "UN – Bevölkerung & Demografie (WPP)",
 			"index": "un-wpp/index.json"
