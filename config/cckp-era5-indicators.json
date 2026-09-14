@@ -1,0 +1,113 @@
+{
+	"schema": "kartensammlung.cckp-era5-statistics/v1",
+	"apiBaseUrl": "https://cckpapi.worldbank.org/cckp/v1",
+	"sourcePage": "https://climateknowledgeportal.worldbank.org/",
+	"metadataPage": "https://climateknowledgeportal.worldbank.org/index.php/metadata",
+	"documentationPage": "https://worldbank.github.io/climateknowledgeportal/docs/collections/era5-x0.25.html",
+	"dataReferenceDoi": "https://doi.org/10.57966/128g-6s70",
+	"licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+	"collection": "era5-x0.25",
+	"scenario": "historical_era5",
+	"aggregation": "annual",
+	"productType": "timeseries",
+	"statistic": "mean",
+	"startYear": 1950,
+	"minimumLatestYear": 2025,
+	"provider": {
+		"id": "world-bank-cckp-era5",
+		"name": "Weltbank – Klima & Wetter (ERA5)",
+		"dataset": "Climate Change Knowledge Portal – ERA5 0.25°",
+		"license": "CC BY 4.0",
+		"licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+		"attribution": "World Bank Climate Change Knowledge Portal (CCKP); ERA5 / ECMWF Copernicus Climate Change Service"
+	},
+	"areaAliases": {
+		"KSV": "XKX"
+	},
+	"knownMissingAreas": ["country:ATA", "country:ESH", "country:FLK", "country:SGS"],
+	"indicators": [
+		{
+			"id": "cckp-era5.mean-temperature",
+			"slug": "mean-temperature",
+			"sourceVariable": "tas",
+			"title": "Jahresmitteltemperatur",
+			"description": "Räumlich über das Land gemittelter ERA5-Jahreswert der bodennahen Lufttemperatur. Die Länderwerte werden vom World Bank Climate Change Knowledge Portal aus der ERA5-Reanalyse aufbereitet.",
+			"unit": {"id": "degree-celsius", "label": "Grad Celsius", "symbol": "°C"},
+			"classification": {"type": "fixed", "breaks": [0, 5, 10, 15, 20, 25]},
+			"sanityRange": [-60, 50]
+		},
+		{
+			"id": "cckp-era5.annual-precipitation",
+			"slug": "annual-precipitation",
+			"sourceVariable": "pr",
+			"title": "Jahresniederschlag",
+			"description": "Räumlich über das Land gemittelte jährliche Niederschlagssumme aus ERA5, aufbereitet vom World Bank Climate Change Knowledge Portal.",
+			"unit": {"id": "millimeter", "label": "Millimeter", "symbol": "mm"},
+			"classification": {"type": "fixed", "breaks": [250, 500, 750, 1000, 1500, 2500]},
+			"sanityRange": [0, 10000]
+		},
+		{
+			"id": "cckp-era5.maximum-daily-maximum-temperature",
+			"slug": "maximum-daily-maximum-temperature",
+			"sourceVariable": "txx",
+			"title": "Höchste Tageshöchsttemperatur",
+			"description": "Jährlicher ERA5-Klimaindex TXx: Maximum der täglichen Höchsttemperatur, räumlich über das Land aggregiert. Der Länderwert ist daher kein einzelner Stationsrekord.",
+			"unit": {"id": "degree-celsius", "label": "Grad Celsius", "symbol": "°C"},
+			"classification": {"type": "fixed", "breaks": [20, 25, 30, 35, 40, 45]},
+			"sanityRange": [-30, 70]
+		},
+		{
+			"id": "cckp-era5.minimum-daily-minimum-temperature",
+			"slug": "minimum-daily-minimum-temperature",
+			"sourceVariable": "tnn",
+			"title": "Niedrigste Tagestiefsttemperatur",
+			"description": "Jährlicher ERA5-Klimaindex TNn: Minimum der täglichen Tiefsttemperatur, räumlich über das Land aggregiert. Der Länderwert ist daher kein einzelner Stationsrekord.",
+			"unit": {"id": "degree-celsius", "label": "Grad Celsius", "symbol": "°C"},
+			"classification": {"type": "fixed", "breaks": [-20, -10, 0, 10, 20, 25]},
+			"sanityRange": [-90, 50]
+		},
+		{
+			"id": "cckp-era5.frost-days",
+			"slug": "frost-days",
+			"sourceVariable": "fd",
+			"title": "Frosttage",
+			"description": "Jährliche Zahl der Tage mit einer täglichen Tiefsttemperatur unter 0 °C (ERA5-Index FD), räumlich über das Land gemittelt. Deshalb können auch Dezimalwerte auftreten.",
+			"unit": {"id": "days-per-year", "label": "Tage pro Jahr", "symbol": "Tage"},
+			"classification": {"type": "fixed", "breaks": [1, 10, 30, 60, 100, 180]},
+			"sanityRange": [0, 366]
+		},
+		{
+			"id": "cckp-era5.tropical-nights",
+			"slug": "tropical-nights",
+			"sourceVariable": "tr",
+			"title": "Tropennächte",
+			"description": "Jährliche Zahl der Tage mit einer täglichen Tiefsttemperatur über 20 °C (ERA5-Index TR), räumlich über das Land gemittelt. Deshalb können auch Dezimalwerte auftreten.",
+			"unit": {"id": "days-per-year", "label": "Tage pro Jahr", "symbol": "Tage"},
+			"classification": {"type": "fixed", "breaks": [1, 30, 90, 180, 270, 350]},
+			"sanityRange": [0, 366]
+		},
+		{
+			"id": "cckp-era5.largest-1-day-precipitation",
+			"slug": "largest-1-day-precipitation",
+			"sourceVariable": "rx1day",
+			"title": "Größter 1-Tages-Niederschlag",
+			"description": "ERA5-Klimaindex Rx1day: größter 1-Tages-Niederschlag des Jahres, räumlich über das Land aggregiert.",
+			"unit": {"id": "millimeter", "label": "Millimeter", "symbol": "mm"},
+			"classification": {"type": "fixed", "breaks": [20, 30, 40, 60, 90, 130]},
+			"sanityRange": [0, 2000]
+		},
+		{
+			"id": "cckp-era5.largest-5-day-precipitation",
+			"slug": "largest-5-day-precipitation",
+			"sourceVariable": "rx5day",
+			"title": "Größte 5-Tages-Niederschlagssumme",
+			"description": "ERA5-Klimaindex Rx5day: größte Niederschlagssumme über fünf aufeinanderfolgende Tage des Jahres, räumlich über das Land aggregiert.",
+			"unit": {"id": "millimeter", "label": "Millimeter", "symbol": "mm"},
+			"classification": {"type": "fixed", "breaks": [40, 60, 80, 120, 180, 280]},
+			"sanityRange": [0, 3000]
+		}
+	],
+	"minimumAreasWithAnyValue": 240,
+	"minimumAreasInDefaultYear": 240,
+	"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND", "country:CHN", "country:ZAF", "country:NAM", "country:XKX"]
+}

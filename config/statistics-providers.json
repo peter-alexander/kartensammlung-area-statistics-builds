@@ -17,6 +17,11 @@
 			"index": "world-bank-electrification/index.json"
 		},
 		{
+			"id": "world-bank-cckp-era5",
+			"name": "Weltbank – Klima & Wetter (ERA5)",
+			"index": "world-bank-cckp-era5/index.json"
+		},
+		{
 			"id": "edgar",
 			"name": "EDGAR (EU/JRC) – Treibhausgasemissionen",
 			"index": "edgar/index.json"
