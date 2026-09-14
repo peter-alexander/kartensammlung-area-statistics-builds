@@ -5,7 +5,6 @@ import argparse
 import csv
 import hashlib
 import io
-import json
 import math
 import time
 from collections import defaultdict
@@ -67,18 +66,15 @@ def validate_config(payload: Any) -> dict[str, Any]:
 	for key in ("name", "dataset", "license", "licenseUrl", "attribution"):
 		if not str(provider.get(key, "")).strip():
 			raise ValueError(f"OECD extreme-temperature provider metadata is missing {key}.")
-
-	aliases = payload.get("areaAliases")
-	if aliases != {"XKX": "XKV"}:
-		raise ValueError("OECD extreme-temperature areaAliases must remain the explicit XKX -> XKV mapping.")
-	required_areas = payload.get("requiredAreas")
-	if not isinstance(required_areas, list) or not required_areas:
+	if payload.get("areaAliases") != {"XKX": "XKV"}:
+		raise ValueError("OECD extreme-temperature areaAliases must remain XKX -> XKV.")
+	if not isinstance(payload.get("requiredAreas"), list) or not payload["requiredAreas"]:
 		raise ValueError("OECD extreme-temperature requiredAreas is missing.")
 
 	indicators = payload.get("indicators")
 	if not isinstance(indicators, list) or len(indicators) != 4:
 		raise ValueError("OECD extreme-temperature config requires exactly four indicators.")
-	expected_pairs = {
+	expected = {
 		"oecd-extreme-temperature.population-weighted-hot-days-35c": ("HD_PW_EXP", "H_35", 1979),
 		"oecd-extreme-temperature.strong-heat-stress-days": ("UTCI_PW_EXP", "H_32", 1981),
 		"oecd-extreme-temperature.very-strong-heat-stress-days": ("UTCI_PW_EXP", "H_38", 1981),
@@ -94,15 +90,14 @@ def validate_config(payload: Any) -> dict[str, Any]:
 			if not str(indicator.get(key, "")).strip():
 				raise ValueError(f"OECD extreme-temperature indicator is missing {key}.")
 		indicator_id = str(indicator["id"])
-		slug = str(indicator["slug"])
 		pair = (str(indicator["measure"]), str(indicator["threshold"]))
-		start_year = indicator.get("startYear")
-		if indicator_id not in expected_pairs or (pair[0], pair[1], start_year) != expected_pairs[indicator_id]:
-			raise ValueError(f"Unexpected OECD extreme-temperature mapping for {indicator_id}: {pair}, {start_year}")
-		if indicator_id in ids or slug in slugs or pair in pairs:
+		triple = (pair[0], pair[1], indicator.get("startYear"))
+		if expected.get(indicator_id) != triple:
+			raise ValueError(f"Unexpected OECD extreme-temperature mapping for {indicator_id}: {triple}")
+		if indicator_id in ids or str(indicator["slug"]) in slugs or pair in pairs:
 			raise ValueError(f"Duplicate OECD extreme-temperature indicator: {indicator_id}")
 		ids.add(indicator_id)
-		slugs.add(slug)
+		slugs.add(str(indicator["slug"]))
 		pairs.add(pair)
 		unit = indicator.get("unit")
 		if not isinstance(unit, dict) or unit.get("id") != "days-per-year":
@@ -119,8 +114,14 @@ def validate_config(payload: Any) -> dict[str, Any]:
 		for key in ("expectedAreasWithAnyValue", "expectedAreasIn2024"):
 			if not isinstance(indicator.get(key), int) or int(indicator[key]) <= 0:
 				raise ValueError(f"Invalid {key} for {indicator_id}.")
-		missing_any = validate_iso3_list(f"{indicator_id}.expectedMissingAnyIso3", indicator.get("expectedMissingAnyIso3"))
-		missing_2024 = validate_iso3_list(f"{indicator_id}.expectedMissing2024Iso3", indicator.get("expectedMissing2024Iso3"))
+		missing_any = validate_iso3_list(
+			f"{indicator_id}.expectedMissingAnyIso3",
+			indicator.get("expectedMissingAnyIso3"),
+		)
+		missing_2024 = validate_iso3_list(
+			f"{indicator_id}.expectedMissing2024Iso3",
+			indicator.get("expectedMissing2024Iso3"),
+		)
 		if 250 - len(missing_any) != int(indicator["expectedAreasWithAnyValue"]):
 			raise ValueError(f"Coverage/missing-any mismatch for {indicator_id}.")
 		if 250 - len(missing_2024) != int(indicator["expectedAreasIn2024"]):
@@ -150,15 +151,14 @@ def fetch_csv(url: str, timeout: int) -> tuple[bytes, dict[str, str]]:
 
 
 def source_code_map(config: dict[str, Any], area_by_iso3: dict[str, str]) -> dict[str, str]:
-	aliases = config["areaAliases"]
 	mapping: dict[str, str] = {}
 	for iso3, area_id in sorted(area_by_iso3.items()):
-		source_code = str(aliases.get(iso3, iso3)).upper()
+		source_code = str(config["areaAliases"].get(iso3, iso3)).upper()
 		if source_code in mapping:
 			raise RuntimeError(f"Duplicate OECD source area code after aliases: {source_code}")
 		mapping[source_code] = area_id
 	if len(mapping) != 250:
-		raise RuntimeError(f"OECD source area mapping unexpectedly has {len(mapping)} areas, expected 250.")
+		raise RuntimeError(f"OECD source area mapping has {len(mapping)} areas, expected 250.")
 	return mapping
 
 
@@ -225,7 +225,7 @@ def parse_response(
 		source_code = str(row.get("REF_AREA") or "").strip().upper()
 		area_id = source_to_area.get(source_code)
 		if area_id is None:
-			raise RuntimeError(f"OECD response contains an unrequested/unmapped area code: {source_code!r}")
+			raise RuntimeError(f"OECD response contains an unrequested area code: {source_code!r}")
 		year_text = str(row.get("TIME_PERIOD") or "").strip()
 		value_text = str(row.get("OBS_VALUE") or "").strip()
 		if not year_text or not value_text:
@@ -245,23 +245,22 @@ def parse_response(
 	return values, statuses, row_count
 
 
-def validate_indicator_coverage(
+def choose_published_years(
 	indicator: dict[str, Any],
 	area_by_iso3: dict[str, str],
 	values: dict[int, dict[str, int | float]],
 	minimum_latest_year: int,
-) -> tuple[list[int], int]:
-	available_years = sorted(year for year, mapped in values.items() if mapped)
-	if not available_years or available_years[0] != int(indicator["startYear"]):
-		raise RuntimeError(f"Unexpected first year for {indicator['id']}: {available_years[:1]}")
-	if available_years != list(range(available_years[0], available_years[-1] + 1)):
-		raise RuntimeError(f"OECD {indicator['id']} has gaps in available years.")
-	if available_years[-1] < minimum_latest_year:
+) -> tuple[list[int], list[int], int]:
+	source_years = sorted(year for year, mapped in values.items() if mapped)
+	if not source_years or source_years[0] != int(indicator["startYear"]):
+		raise RuntimeError(f"Unexpected first year for {indicator['id']}: {source_years[:1]}")
+	if source_years != list(range(source_years[0], source_years[-1] + 1)):
+		raise RuntimeError(f"OECD {indicator['id']} has gaps in source years.")
+	if source_years[-1] < minimum_latest_year:
 		raise RuntimeError(
-			f"OECD {indicator['id']} latest year {available_years[-1]} is older than required {minimum_latest_year}."
+			f"OECD {indicator['id']} latest source year {source_years[-1]} is older than {minimum_latest_year}."
 		)
 
-	registry_areas = set(area_by_iso3.values())
 	mapped_areas = {area_id for year_values in values.values() for area_id in year_values}
 	missing_any = sorted(
 		iso3 for iso3, area_id in area_by_iso3.items()
@@ -282,15 +281,19 @@ def validate_indicator_coverage(
 		raise RuntimeError(f"Unexpected 2024 coverage for {indicator['id']}: {len(values[2024])}")
 	if missing_2024 != indicator["expectedMissing2024Iso3"]:
 		raise RuntimeError(f"Unexpected 2024 missing areas for {indicator['id']}: {missing_2024}")
-	if mapped_areas | (registry_areas - mapped_areas) != registry_areas:
-		raise RuntimeError(f"Internal registry coverage error for {indicator['id']}.")
 
-	minimum_default_coverage = int(indicator["expectedAreasIn2024"])
-	eligible = [year for year in available_years if len(values[year]) >= minimum_default_coverage]
+	minimum_coverage = int(indicator["expectedAreasIn2024"])
+	eligible = [year for year in source_years if len(values[year]) >= minimum_coverage]
 	if not eligible:
-		raise RuntimeError(f"OECD {indicator['id']} has no default year with audited coverage.")
-	default_year = eligible[-1]
-	return available_years, default_year
+		raise RuntimeError(f"OECD {indicator['id']} has no publishable year with audited coverage.")
+	published_through = eligible[-1]
+	if published_through < minimum_latest_year:
+		raise RuntimeError(
+			f"OECD {indicator['id']} latest publishable year {published_through} is older than {minimum_latest_year}."
+		)
+	published_years = [year for year in source_years if year <= published_through]
+	excluded_trailing_years = [year for year in source_years if year > published_through]
+	return source_years, published_years, published_through
 
 
 def build_payload(
@@ -302,7 +305,7 @@ def build_payload(
 	source_rows: int,
 	api_url: str,
 ) -> dict[str, Any]:
-	available_years, default_year = validate_indicator_coverage(
+	source_years, published_years, default_year = choose_published_years(
 		indicator,
 		area_by_iso3,
 		values,
@@ -318,8 +321,12 @@ def build_payload(
 		if area_id not in values[default_year]:
 			raise RuntimeError(f"OECD {indicator['id']} default year {default_year} is missing {area_id}.")
 
-	mapped_areas = {area_id for year_values in values.values() for area_id in year_values}
-	latest_year = available_years[-1]
+	published_areas = {
+		area_id
+		for year in published_years
+		for area_id in values[year]
+	}
+	excluded_trailing_years = [year for year in source_years if year > default_year]
 	provider = config["provider"]
 	return {
 		"schema": "kartensammlung.statistics-indicator/v1",
@@ -353,25 +360,27 @@ def build_payload(
 			},
 			"observationStatuses": sorted(statuses),
 			"sourceRows": source_rows,
+			"sourceAvailableYears": source_years,
+			"sourceLatestYear": source_years[-1],
+			"excludedTrailingYears": excluded_trailing_years,
 			"mapping": {"XKV": "XKX"},
-			"fallback": None,
 		},
-		"availableYears": available_years,
+		"availableYears": published_years,
 		"defaultYear": default_year,
 		"coverage": {
 			"registryAreas": len(area_by_iso3),
-			"areasWithAnyValue": len(mapped_areas),
-			"latestYear": latest_year,
-			"areasInLatestYear": len(values[latest_year]),
+			"areasWithAnyValue": len(published_areas),
+			"latestYear": default_year,
+			"areasInLatestYear": len(values[default_year]),
 			"areasInDefaultYear": len(values[default_year]),
-			"observations": sum(len(year_values) for year_values in values.values()),
+			"observations": sum(len(values[year]) for year in published_years),
 		},
 		"values": {
 			str(year): {
 				area_id: values[year][area_id]
 				for area_id in sorted(values[year])
 			}
-			for year in available_years
+			for year in published_years
 		},
 	}
 
@@ -383,10 +392,10 @@ def main() -> None:
 	provider = config["provider"]
 	if not any(item["id"] == provider["id"] for item in provider_catalog["providers"]):
 		raise RuntimeError("OECD extreme-temperature provider is missing from statistics-providers.json.")
+
 	area_by_iso3, registry_payload = common.load_registry(args.registry, args.timeout)
 	source_to_area = source_code_map(config, area_by_iso3)
 	source_codes = sorted(source_to_area)
-
 	groups = [
 		("HD_PW_EXP", ["H_35"], 1979),
 		("UTCI_PW_EXP", ["H_32", "H_38", "H_46"], 1981),
@@ -441,9 +450,10 @@ def main() -> None:
 		payloads.append((indicator, payload))
 		coverage = payload["coverage"]
 		print(
-			f"{indicator['id']}: years={payload['availableYears'][0]}-{coverage['latestYear']} "
-			f"areas={coverage['areasWithAnyValue']} default={payload['defaultYear']} "
-			f"defaultCoverage={coverage['areasInDefaultYear']} observations={coverage['observations']}"
+			f"{indicator['id']}: published={payload['availableYears'][0]}-{payload['availableYears'][-1]} "
+			f"sourceLatest={payload['source']['sourceLatestYear']} excludedTrailing={payload['source']['excludedTrailingYears']} "
+			f"areas={coverage['areasWithAnyValue']} defaultCoverage={coverage['areasInDefaultYear']} "
+			f"observations={coverage['observations']}"
 		)
 
 	hasher = hashlib.sha256()
@@ -507,8 +517,9 @@ def main() -> None:
 			"Direct OECD Historical exposure to extreme temperature country series; no interpolation, extrapolation or cross-provider fallback is used.",
 			"Hot days use the OECD definition of daily maximum temperature above 35 °C and are population-weighted across the country.",
 			"UTCI heat-stress days combine air temperature, humidity, wind and radiation; the published thresholds are above 32 °C (strong), 38 °C (very strong) and 46 °C (extreme) UTCI.",
-			"Population weighting means the values describe the average exposure of the population rather than an unweighted land-area mean; decimal day values are therefore expected.",
-			"The explicit XKV source code is mapped to the registry area XKX (Kosovo); no fuzzy country-name mapping is used.",
+			"Population weighting describes average population exposure rather than an unweighted land-area mean; decimal day values are expected.",
+			"Trailing source years with less coverage than audited 2024 are recorded in source metadata but excluded from published availableYears until coverage is sufficient.",
+			"The explicit XKV source code is mapped to registry XKX (Kosovo); no fuzzy country-name mapping is used.",
 		],
 	}
 	common.write_json(provider_dir / "index.json", provider_index)
