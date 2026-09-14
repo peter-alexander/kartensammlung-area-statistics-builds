@@ -5,7 +5,7 @@
 	"provider": {
 		"id": "unesco-uis",
 		"name": "UNESCO UIS",
-		"dataset": "UNESCO DataHub – SDG 4 Education Indicators and Other Policy Relevant Indicators",
+		"dataset": "UNESCO DataHub – Bildung, Forschung & Entwicklung",
 		"license": "CC BY-SA 4.0",
 		"licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
 		"attribution": "UNESCO Institute for Statistics (UIS)"
@@ -14,6 +14,11 @@
 		"uis001": {
 			"name": "SDG 4 Education Indicators (Global & Thematic)",
 			"sourceUrl": "https://data.unesco.org/explore/assets/uis001/"
+		},
+		"uis004": {
+			"name": "SDG 9.5 – Research & Development (R&D) Indicators",
+			"sourceUrl": "https://data.unesco.org/explore/assets/uis004/",
+			"minimumSourceLatestYear": 2024
 		},
 		"uis006": {
 			"name": "Other Policy Relevant Indicators (Education – OPRI)",
@@ -241,6 +246,32 @@
 			"classification": {"type": "fixed", "scale": "linear", "breaks": [10, 15, 20, 25, 30, 40]},
 			"minAreasWithAnyValue": 145,
 			"minAreasInDefaultYear": 100
+		},
+		{
+			"id": "research.rd-expenditure-gdp-percent",
+			"slug": "research-rd-expenditure-gdp-percent",
+			"dataset": "uis004",
+			"sourceIndicator": "EXPGDP.TOT",
+			"sourceLabel": "GERD as a percentage of GDP",
+			"title": "F&E-Ausgaben am BIP",
+			"description": "Bruttoinlandsausgaben für Forschung und Entwicklung (GERD) als Anteil des Bruttoinlandsprodukts nach UNESCO UIS.",
+			"unit": {"id": "percent-of-gdp", "label": "% des BIP", "symbol": "%"},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [0.1, 0.25, 0.5, 1, 2, 3]},
+			"minAreasWithAnyValue": 150,
+			"minAreasInDefaultYear": 80
+		},
+		{
+			"id": "research.researchers-per-million-fte",
+			"slug": "research-researchers-per-million-fte",
+			"dataset": "uis004",
+			"sourceIndicator": "RESDEN.INHAB.TFTE",
+			"sourceLabel": "Researchers per million inhabitants (FTE)",
+			"title": "Forscherinnen und Forscher je Mio. Einwohner",
+			"description": "Forscherinnen und Forscher in Forschung und Entwicklung, gemessen in Vollzeitäquivalenten (FTE) je eine Million Einwohner, nach UNESCO UIS.",
+			"unit": {"id": "per-million-inhabitants", "label": "je Mio. Einwohner", "symbol": "je Mio."},
+			"classification": {"type": "fixed", "scale": "linear", "breaks": [100, 500, 1000, 2500, 5000, 7500]},
+			"minAreasWithAnyValue": 140,
+			"minAreasInDefaultYear": 75
 		}
 	]
 }
