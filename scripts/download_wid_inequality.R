@@ -92,7 +92,7 @@ write.csv(data, output_csv, row.names = FALSE, na = "")
 
 quality_table <- table(data$data_quality, useNA = "ifany")
 metadata <- list(
-	retrievedAt = format(Sys.time(), tz = "UTC", usetz = TRUE),
+	retrievedAt = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
 	package = list(
 		name = "wid",
 		version = actual_version,
