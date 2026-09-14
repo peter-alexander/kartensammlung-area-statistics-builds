@@ -1,0 +1,85 @@
+{
+	"schema": "kartensammlung.oecd-extreme-temperature-statistics/v1",
+	"sourceUrl": "https://data-explorer.oecd.org/vis?df%5Bag%5D=OECD.ENV.EPI&df%5Bds%5D=dsDisseminateFinalDMZ&df%5Bid%5D=DSD_ECH%40EXT_TEMP_H&df%5Bvs%5D=2.0",
+	"apiBaseUrl": "https://sdmx.oecd.org/public/rest/data/OECD.ENV.EPI,DSD_ECH@EXT_TEMP_H,2.0",
+	"dataflow": "OECD.ENV.EPI:DSD_ECH@EXT_TEMP_H(2.0)",
+	"minimumLatestYear": 2024,
+	"provider": {
+		"id": "oecd-extreme-temperature",
+		"name": "OECD – Hitze & Temperaturbelastung",
+		"dataset": "Historical exposure to extreme temperature",
+		"license": "OECD Terms and Conditions",
+		"licenseUrl": "https://www.oecd.org/en/about/terms-conditions.html",
+		"attribution": "OECD/IEA; Copernicus Climate Change Service ERA5; Global Human Settlement Layer (GHSL)"
+	},
+	"areaAliases": {
+		"XKX": "XKV"
+	},
+	"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND", "country:CHN", "country:ZAF", "country:NAM", "country:XKX"],
+	"indicators": [
+		{
+			"id": "oecd-extreme-temperature.population-weighted-hot-days-35c",
+			"slug": "population-weighted-hot-days-35c",
+			"measure": "HD_PW_EXP",
+			"threshold": "H_35",
+			"startYear": 1979,
+			"title": "Heiße Tage über 35 °C (bevölkerungsgewichtet)",
+			"description": "Bevölkerungsgewichtete Zahl der Tage pro Jahr mit einer täglichen Höchsttemperatur über 35 °C. Gebiete mit mehr Einwohnern erhalten bei der räumlichen Aggregation ein höheres Gewicht; deshalb können Dezimalwerte auftreten.",
+			"unit": {"id": "days-per-year", "label": "Tage pro Jahr", "symbol": "Tage"},
+			"classification": {"type": "fixed", "breaks": [1, 5, 15, 30, 60, 120]},
+			"sanityRange": [0, 366],
+			"expectedAreasWithAnyValue": 235,
+			"expectedAreasIn2024": 235,
+			"expectedMissingAnyIso3": ["ALA", "ATA", "BES", "BLM", "CCK", "CUW", "FLK", "GIB", "GLP", "GUF", "MAF", "MTQ", "MYT", "REU", "SXM"],
+			"expectedMissing2024Iso3": ["ALA", "ATA", "BES", "BLM", "CCK", "CUW", "FLK", "GIB", "GLP", "GUF", "MAF", "MTQ", "MYT", "REU", "SXM"]
+		},
+		{
+			"id": "oecd-extreme-temperature.strong-heat-stress-days",
+			"slug": "strong-heat-stress-days",
+			"measure": "UTCI_PW_EXP",
+			"threshold": "H_32",
+			"startYear": 1981,
+			"title": "Starke Hitzestresstage (UTCI über 32 °C)",
+			"description": "Bevölkerungsgewichtete Zahl der Tage pro Jahr mit starkem Hitzestress nach dem Universal Thermal Climate Index (UTCI über 32 °C). Der UTCI berücksichtigt neben Lufttemperatur auch Luftfeuchte, Wind und Strahlung.",
+			"unit": {"id": "days-per-year", "label": "Tage pro Jahr", "symbol": "Tage"},
+			"classification": {"type": "fixed", "breaks": [10, 30, 60, 120, 180, 270]},
+			"sanityRange": [0, 366],
+			"expectedAreasWithAnyValue": 232,
+			"expectedAreasIn2024": 231,
+			"expectedMissingAnyIso3": ["ALA", "ATA", "ATF", "BES", "BLM", "BVT", "CCK", "CUW", "FLK", "GIB", "HMD", "IOT", "MAF", "NFK", "PCN", "SGS", "SXM", "UMI"],
+			"expectedMissing2024Iso3": ["ALA", "ATA", "ATF", "BES", "BLM", "BVT", "CCK", "CUW", "FLK", "GIB", "HMD", "IOT", "MAF", "MYT", "NFK", "PCN", "SGS", "SXM", "UMI"]
+		},
+		{
+			"id": "oecd-extreme-temperature.very-strong-heat-stress-days",
+			"slug": "very-strong-heat-stress-days",
+			"measure": "UTCI_PW_EXP",
+			"threshold": "H_38",
+			"startYear": 1981,
+			"title": "Sehr starke Hitzestresstage (UTCI über 38 °C)",
+			"description": "Bevölkerungsgewichtete Zahl der Tage pro Jahr mit sehr starkem Hitzestress nach dem Universal Thermal Climate Index (UTCI über 38 °C). Der UTCI berücksichtigt neben Lufttemperatur auch Luftfeuchte, Wind und Strahlung.",
+			"unit": {"id": "days-per-year", "label": "Tage pro Jahr", "symbol": "Tage"},
+			"classification": {"type": "fixed", "breaks": [1, 5, 15, 30, 60, 120]},
+			"sanityRange": [0, 366],
+			"expectedAreasWithAnyValue": 232,
+			"expectedAreasIn2024": 231,
+			"expectedMissingAnyIso3": ["ALA", "ATA", "ATF", "BES", "BLM", "BVT", "CCK", "CUW", "FLK", "GIB", "HMD", "IOT", "MAF", "NFK", "PCN", "SGS", "SXM", "UMI"],
+			"expectedMissing2024Iso3": ["ALA", "ATA", "ATF", "BES", "BLM", "BVT", "CCK", "CUW", "FLK", "GIB", "HMD", "IOT", "MAF", "MYT", "NFK", "PCN", "SGS", "SXM", "UMI"]
+		},
+		{
+			"id": "oecd-extreme-temperature.extreme-heat-stress-days",
+			"slug": "extreme-heat-stress-days",
+			"measure": "UTCI_PW_EXP",
+			"threshold": "H_46",
+			"startYear": 1981,
+			"title": "Extreme Hitzestresstage (UTCI über 46 °C)",
+			"description": "Bevölkerungsgewichtete Zahl der Tage pro Jahr mit extremem Hitzestress nach dem Universal Thermal Climate Index (UTCI über 46 °C). Der UTCI berücksichtigt neben Lufttemperatur auch Luftfeuchte, Wind und Strahlung.",
+			"unit": {"id": "days-per-year", "label": "Tage pro Jahr", "symbol": "Tage"},
+			"classification": {"type": "fixed", "breaks": [0.01, 0.1, 1, 3, 10, 30]},
+			"sanityRange": [0, 366],
+			"expectedAreasWithAnyValue": 232,
+			"expectedAreasIn2024": 231,
+			"expectedMissingAnyIso3": ["ALA", "ATA", "ATF", "BES", "BLM", "BVT", "CCK", "CUW", "FLK", "GIB", "HMD", "IOT", "MAF", "NFK", "PCN", "SGS", "SXM", "UMI"],
+			"expectedMissing2024Iso3": ["ALA", "ATA", "ATF", "BES", "BLM", "BVT", "CCK", "CUW", "FLK", "GIB", "HMD", "IOT", "MAF", "MYT", "NFK", "PCN", "SGS", "SXM", "UMI"]
+		}
+	]
+}
