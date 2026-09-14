@@ -25,16 +25,17 @@ jobs:
           import io
           import json
           import urllib.request
+          from collections import Counter
           from pathlib import Path
 
           countries = ["AT", "DE", "US", "IN", "BR", "ZA"]
           wanted = {
-          	("sptinc992j", "p0p50"),
-          	("sptinc992j", "p90p100"),
-          	("sptinc992j", "p99p100"),
-          	("shweal992j", "p0p50"),
-          	("shweal992j", "p90p100"),
-          	("shweal992j", "p99p100"),
+          	("sptinc992", "j", "p0p50"),
+          	("sptinc992", "j", "p90p100"),
+          	("sptinc992", "j", "p99p100"),
+          	("shweal992", "j", "p0p50"),
+          	("shweal992", "j", "p90p100"),
+          	("shweal992", "j", "p99p100"),
           }
           result = {"source": "https://wid.world/bulk_download/WID_data_<ISO2>.csv", "countries": {}}
 
@@ -48,22 +49,24 @@ jobs:
           	rows = list(reader)
           	fields = reader.fieldnames or []
           	selected = {}
-          	for variable, percentile in sorted(wanted):
-          		matches = [row for row in rows if row.get("variable") == variable and row.get("percentile") == percentile]
+          	for variable, pop, percentile in sorted(wanted):
+          		matches = [row for row in rows if row.get("variable") == variable and row.get("pop") == pop and row.get("percentile") == percentile]
           		if matches:
           			years = sorted(int(row["year"]) for row in matches if row.get("year", "").isdigit())
           			latest = max(matches, key=lambda row: int(row["year"])) if years else None
-          			selected[f"{variable}:{percentile}"] = {
+          			quality = Counter((row.get("data_quality") or "").strip() for row in matches)
+          			selected[f"{variable}{pop}:{percentile}"] = {
           				"count": len(matches),
           				"firstYear": years[0] if years else None,
           				"lastYear": years[-1] if years else None,
           				"latestValue": latest.get("value") if latest else None,
+          				"latestDataQuality": latest.get("data_quality") if latest else None,
+          				"dataQualityValues": dict(sorted(quality.items())),
           			}
           	result["countries"][country] = {
           		"bytes": len(raw),
           		"fields": fields,
           		"rows": len(rows),
-          		"sample": rows[0] if rows else None,
           		"selected": selected,
           	}
           	print(country, len(raw), "bytes", len(rows), "rows", fields)
