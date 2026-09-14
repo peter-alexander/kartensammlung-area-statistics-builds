@@ -48,18 +48,22 @@ def normalize_name(value):
 	return " ".join(value.split())
 
 
+def add_string_values(value, result):
+	if isinstance(value, str) and value.strip():
+		result.add(value.strip())
+	elif isinstance(value, dict):
+		for nested in value.values():
+			if isinstance(nested, str) and nested.strip():
+				result.add(nested.strip())
+
+
 def area_names(area):
 	result = set()
-	for key in ("name", "label", "display_name", "displayName", "title"):
-		value = area.get(key)
-		if isinstance(value, str) and value.strip():
-			result.add(value.strip())
-	for key in ("names", "labels"):
-		value = area.get(key)
-		if isinstance(value, dict):
-			for nested in value.values():
-				if isinstance(nested, str) and nested.strip():
-					result.add(nested.strip())
+	for key in ("name", "names", "label", "labels", "display_name", "displayName", "title"):
+		add_string_values(area.get(key), result)
+	metadata = area.get("metadata")
+	if isinstance(metadata, dict):
+		add_string_values(metadata.get("sourceName"), result)
 	return result
 
 
