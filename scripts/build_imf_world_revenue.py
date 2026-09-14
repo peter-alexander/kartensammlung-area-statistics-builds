@@ -270,7 +270,10 @@ def workbook_sheet_targets(archive: zipfile.ZipFile) -> dict[str, str]:
 	relationships = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
 	rel_map = {relation.attrib["Id"]: relation.attrib["Target"] for relation in relationships}
 	targets: dict[str, str] = {}
-	for sheet in workbook.find("m:sheets", XML_NS) or []:
+	sheets = workbook.find("m:sheets", XML_NS)
+	if sheets is None:
+		raise RuntimeError("IMF WoRLD workbook is missing the workbook sheets collection.")
+	for sheet in sheets:
 		name = str(sheet.attrib.get("name", "")).strip()
 		relation_id = sheet.attrib.get(f"{{{XML_NS['r']}}}id")
 		if not name or relation_id not in rel_map:

@@ -24,7 +24,7 @@
 			"description": "Gesamte Staatseinnahmen nach IMF WoRLD in Prozent des BIP. Der abgedeckte Staatssektor folgt der WoRLD-Methodik; soweit verfügbar wird der Gesamtstaat (General Government) bevorzugt, andernfalls können Zentralstaat oder in Einzelfällen der öffentliche Sektor verwendet werden.",
 			"unit": {"id": "percent-of-gdp", "label": "Prozent des BIP", "symbol": "%"},
 			"classification": {"type": "fixed", "breaks": [15, 25, 35, 45, 55, 65]},
-			"valueRange": [-20, 150],
+			"valueRange": [-20, 200],
 			"minAreasWithAnyValue": 190,
 			"minAreasInDefaultYear": 185,
 			"requiredAreas": ["country:USA", "country:IND"]
