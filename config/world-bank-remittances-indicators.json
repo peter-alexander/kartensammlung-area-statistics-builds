@@ -44,7 +44,7 @@
 			"description": "Rücküberweisungen, die in die berichtende Volkswirtschaft eingehen, in Millionen laufenden US-Dollar.",
 			"unit": {"id": "million-current-usd", "label": "Mio. US-Dollar (laufend)", "symbol": "Mio. $"},
 			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [10, 100, 500, 2000, 10000, 50000]},
-			"minAreasWithAnyValue": 205,
+			"minAreasWithAnyValue": 195,
 			"minAreasInDefaultYear": 195,
 			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		},
@@ -59,7 +59,7 @@
 			"description": "Rücküberweisungen, die aus der berichtenden Volkswirtschaft ins Ausland fließen, in Millionen laufenden US-Dollar.",
 			"unit": {"id": "million-current-usd", "label": "Mio. US-Dollar (laufend)", "symbol": "Mio. $"},
 			"classification": {"type": "fixed", "scale": "logarithmic", "breaks": [10, 100, 500, 2000, 10000, 50000]},
-			"minAreasWithAnyValue": 205,
+			"minAreasWithAnyValue": 195,
 			"minAreasInDefaultYear": 195,
 			"requiredAreas": ["country:AUT", "country:DEU", "country:USA", "country:IND"]
 		}
