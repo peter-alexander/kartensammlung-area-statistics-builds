@@ -56,13 +56,27 @@ def audit_oecd() -> None:
 				codes[code_id] = text_name(code)
 		codelists[(agency, codelist_id)] = codes
 
-	structure = None
-	for node in root.iter():
-		if local_name(node.tag) == "DataStructure" and node.attrib.get("id") == "DSD_ECH@EXT_TEMP_H":
-			structure = node
-			break
-	if structure is None:
-		raise RuntimeError("OECD data structure DSD_ECH@EXT_TEMP_H not found")
+	structures = [node for node in root.iter() if local_name(node.tag) == "DataStructure"]
+	print("OECD data structures=" + ", ".join(
+		f"{node.attrib.get('agencyID', '')}:{node.attrib.get('id', '')}({node.attrib.get('version', '')})"
+		for node in structures
+	))
+	candidates = [
+		node for node in structures
+		if node.attrib.get("id") in {"DSD_ECH", "DSD_ECH@EXT_TEMP_H"}
+		or "ECH" in str(node.attrib.get("id", ""))
+	]
+	if len(candidates) != 1:
+		raise RuntimeError(
+			"Could not uniquely resolve OECD extreme-temperature data structure: "
+			+ ", ".join(str(node.attrib.get("id", "")) for node in candidates)
+		)
+	structure = candidates[0]
+	print(
+		"OECD selected data structure="
+		+ f"{structure.attrib.get('agencyID', '')}:{structure.attrib.get('id', '')}"
+		+ f"({structure.attrib.get('version', '')})"
+	)
 
 	print("OECD dimensions:")
 	for node in structure.iter():
