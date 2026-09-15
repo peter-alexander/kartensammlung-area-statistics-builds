@@ -83,8 +83,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE_URL="https://globalwindatlas.info/api/gis/global/wind-speed/100/"
-          headers="diagnostics/global-wind-speed-100.range-headers.txt"
+          SOURCE_URL="https://globalwindatlas.info/api/gis/global/power-density/100/"
+          headers="diagnostics/global-power-density-100.range-headers.txt"
           curl --fail --silent --show-error --location \
             --range 0-0 \
             --connect-timeout 15 --max-time 60 --retry 2 --retry-delay 2 --retry-all-errors \
@@ -105,7 +105,6 @@ jobs:
           echo "freeBytesBeforeCleanup=$FREE_BYTES" | tee -a diagnostics/capacity.txt
           df -h / /tmp | tee -a diagnostics/capacity.txt
           echo "source_bytes=$TOTAL_BYTES" >> "$GITHUB_OUTPUT"
-          echo "free_bytes=$FREE_BYTES" >> "$GITHUB_OUTPUT"
 
       - name: Free runner disk if necessary
         shell: bash
@@ -129,12 +128,12 @@ jobs:
             exit 1
           fi
 
-      - name: Download global 100 m mean wind-speed COG
+      - name: Download global 100 m mean power-density COG
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE_URL="https://globalwindatlas.info/api/gis/global/wind-speed/100/"
-          SOURCE_PATH="/tmp/wind_speed_cog_100m.tif"
+          SOURCE_URL="https://globalwindatlas.info/api/gis/global/power-density/100/"
+          SOURCE_PATH="/tmp/power_density_cog_100m.tif"
           rm -f "$SOURCE_PATH"
           started="$(date +%s)"
           curl --fail --show-error --location \
@@ -155,11 +154,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gdalinfo -json /tmp/wind_speed_cog_100m.tif > diagnostics/global-wind-speed-100.gdal.json
+          gdalinfo -json /tmp/power_density_cog_100m.tif > diagnostics/global-power-density-100.gdal.json
           python - <<'PY' | tee diagnostics/source-summary.txt
           import json
           from pathlib import Path
-          payload = json.loads(Path('diagnostics/global-wind-speed-100.gdal.json').read_text(encoding='utf-8'))
+          payload = json.loads(Path('diagnostics/global-power-density-100.gdal.json').read_text(encoding='utf-8'))
           print('size=', payload.get('size'))
           print('driver=', payload.get('driverShortName'), payload.get('driverLongName'))
           print('geoTransform=', payload.get('geoTransform'))
@@ -175,16 +174,16 @@ jobs:
           ])
           PY
 
-      - name: Aggregate native 250 m wind speed for all countries
+      - name: Aggregate native 250 m power density for all countries
         shell: bash
         run: |
           set -euo pipefail
           python scripts/audit_global_wind_atlas_full.py \
-            --source /tmp/wind_speed_cog_100m.tif \
+            --source /tmp/power_density_cog_100m.tif \
             --country-geojsonseq raw/gwa-geometry/country.geojsonseq \
             --registry raw/gwa-geometry/area-registry-countries.json \
-            --work-dir /tmp/gwa-full-wind \
-            --output diagnostics/global-wind-speed-all-countries.json
+            --work-dir /tmp/gwa-full-power \
+            --output diagnostics/global-power-density-all-countries.json
 
       - name: Validate audit files
         shell: bash
@@ -194,7 +193,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          payload = json.loads(Path('diagnostics/global-wind-speed-all-countries.json').read_text(encoding='utf-8'))
+          payload = json.loads(Path('diagnostics/global-power-density-all-countries.json').read_text(encoding='utf-8'))
           assert payload['schema'] == 'kartensammlung.global-wind-atlas-audit/v1'
           assert payload['geometry']['countryCount'] == 250
           assert len(payload['values']) == 250
@@ -210,7 +209,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: global-wind-atlas-full-audit
+          name: global-wind-atlas-power-density-audit
           path: diagnostics/
           if-no-files-found: error
           retention-days: 30
