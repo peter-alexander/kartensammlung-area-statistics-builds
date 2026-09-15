@@ -26,6 +26,7 @@ DEFAULT_INPUT_DIR = ROOT / "raw" / "global-wind-atlas"
 DEFAULT_OUTPUT_DIR = ROOT / "dist" / "statistics"
 DEFAULT_REGISTRY = ROOT / "raw" / "global-wind-atlas-geometry" / "area-registry-countries.json"
 EXPECTED_COUNTRIES = 250
+EXPECTED_AREAS = 246
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,6 +50,21 @@ def validate_iso3_list(name: str, value: Any) -> list[str]:
 	return value
 
 
+def validate_sha256(name: str, value: Any) -> str:
+	normalized = str(value or "").lower()
+	if len(normalized) != 64 or any(char not in "0123456789abcdef" for char in normalized):
+		raise ValueError(f"{name} must be a lowercase SHA-256 digest.")
+	return normalized
+
+
+def assert_close_sequence(name: str, actual: Any, expected: Any, tolerance: float = 1e-9) -> None:
+	if not isinstance(actual, (list, tuple)) or len(actual) != len(expected):
+		raise RuntimeError(f"{name} length changed: {actual} != {expected}")
+	for actual_value, expected_value in zip(actual, expected, strict=True):
+		if abs(float(actual_value) - float(expected_value)) > tolerance:
+			raise RuntimeError(f"{name} changed: {actual} != {expected}")
+
+
 def validate_config(payload: Any) -> dict[str, Any]:
 	if not isinstance(payload, dict) or payload.get("schema") != "kartensammlung.global-wind-atlas-statistics/v1":
 		raise ValueError("Invalid Global Wind Atlas config.")
@@ -60,6 +76,21 @@ def validate_config(payload: Any) -> dict[str, Any]:
 		raise ValueError("Global Wind Atlas 4.0 reference period must remain 2008-2017.")
 	if payload.get("heightMeters") != 100:
 		raise ValueError("Global Wind Atlas production height must remain 100 m.")
+	if not str(payload.get("auditOvertureRelease", "")).strip():
+		raise ValueError("Global Wind Atlas config requires auditOvertureRelease.")
+	for key in ("sourcePage", "gisPage", "methodUrl", "releaseNotesUrl", "termsUrl"):
+		if not str(payload.get(key, "")).startswith("https://"):
+			raise ValueError(f"Global Wind Atlas {key} must use HTTPS.")
+	if payload.get("expectedWidth") != 144000 or payload.get("expectedHeight") != 57600:
+		raise ValueError("Global Wind Atlas audited raster size changed.")
+	if abs(float(payload.get("expectedPixelSizeDegrees", 0)) - 0.0025) > 1e-12:
+		raise ValueError("Global Wind Atlas audited pixel size changed.")
+	expected_transform = payload.get("expectedTransform")
+	expected_bounds = payload.get("expectedBounds")
+	if not isinstance(expected_transform, list) or len(expected_transform) != 6:
+		raise ValueError("Global Wind Atlas expectedTransform must contain six values.")
+	if not isinstance(expected_bounds, list) or len(expected_bounds) != 4:
+		raise ValueError("Global Wind Atlas expectedBounds must contain four values.")
 	expected_missing = validate_iso3_list("expectedMissingIso3", payload.get("expectedMissingIso3"))
 	if expected_missing != ["ATA", "BVT", "HMD", "SGS"]:
 		raise ValueError("Global Wind Atlas audited missing-country contract changed.")
@@ -102,6 +133,12 @@ def validate_config(payload: Any) -> dict[str, Any]:
 			or float(value_range[0]) >= float(value_range[1])
 		):
 			raise ValueError(f"Indicator {indicator_id} has invalid valueRange.")
+		if indicator.get("expectedAreas") != EXPECTED_AREAS:
+			raise ValueError(f"Indicator {indicator_id} expectedAreas must remain {EXPECTED_AREAS}.")
+		expected_bytes = indicator.get("expectedSourceBytes")
+		if not isinstance(expected_bytes, int) or expected_bytes <= 1_000_000_000:
+			raise ValueError(f"Indicator {indicator_id} has invalid expectedSourceBytes.")
+		validate_sha256(f"{indicator_id}.expectedSourceSha256", indicator.get("expectedSourceSha256"))
 		audit_values = indicator.get("auditValues")
 		if not isinstance(audit_values, dict) or not audit_values:
 			raise ValueError(f"Indicator {indicator_id} requires auditValues.")
@@ -139,7 +176,7 @@ def validate_extraction(
 		raise RuntimeError(f"{indicator['id']}: source variable mismatch.")
 	if payload.get("heightMeters") != config["heightMeters"]:
 		raise RuntimeError(f"{indicator['id']}: source height mismatch.")
-	if payload.get("countryCount") != EXPECTED_COUNTRIES or payload.get("areasWithValue") != 246:
+	if payload.get("countryCount") != EXPECTED_COUNTRIES or payload.get("areasWithValue") != EXPECTED_AREAS:
 		raise RuntimeError(f"{indicator['id']}: country coverage mismatch.")
 	if payload.get("missingIso3") != config["expectedMissingIso3"]:
 		raise RuntimeError(f"{indicator['id']}: missing-country contract changed.")
@@ -153,12 +190,18 @@ def validate_extraction(
 		raise RuntimeError(f"{indicator['id']}: source grid size mismatch.")
 	if source.get("dataType") != "float32" or source.get("declaredNoData") != "NaN":
 		raise RuntimeError(f"{indicator['id']}: source raster contract changed.")
-	sha256 = str(source.get("sha256", "")).lower()
-	if len(sha256) != 64 or any(char not in "0123456789abcdef" for char in sha256):
-		raise RuntimeError(f"{indicator['id']}: invalid source SHA256.")
+	assert_close_sequence(f"{indicator['id']} source transform", source.get("transform"), config["expectedTransform"])
+	assert_close_sequence(f"{indicator['id']} source bounds", source.get("bounds"), config["expectedBounds"])
+	sha256 = validate_sha256(f"{indicator['id']} source.sha256", source.get("sha256"))
+	if sha256 != indicator["expectedSourceSha256"]:
+		raise RuntimeError(
+			f"{indicator['id']}: source SHA-256 changed: {sha256} != {indicator['expectedSourceSha256']}"
+		)
 	bytes_value = source.get("bytes")
-	if not isinstance(bytes_value, int) or bytes_value <= 0:
-		raise RuntimeError(f"{indicator['id']}: invalid source byte size.")
+	if bytes_value != indicator["expectedSourceBytes"]:
+		raise RuntimeError(
+			f"{indicator['id']}: source byte size changed: {bytes_value} != {indicator['expectedSourceBytes']}"
+		)
 	values = payload.get("values")
 	if not isinstance(values, dict) or set(values) != registry_iso3:
 		raise RuntimeError(f"{indicator['id']}: extraction ISO3 set differs from registry.")
@@ -183,8 +226,8 @@ def validate_extraction(
 		if isinstance(count, bool) or not isinstance(count, (int, float)) or float(count) <= 0:
 			raise RuntimeError(f"{indicator['id']} {iso3}: invalid coverage count.")
 		mapped[iso3] = float(mean)
-	if len(mapped) != 246:
-		raise RuntimeError(f"{indicator['id']}: expected 246 values, found {len(mapped)}.")
+	if len(mapped) != EXPECTED_AREAS:
+		raise RuntimeError(f"{indicator['id']}: expected {EXPECTED_AREAS} values, found {len(mapped)}.")
 	return mapped
 
 
@@ -214,12 +257,13 @@ def build_payload(
 		area_by_iso3[iso3]: round(value, 6)
 		for iso3, value in values_by_iso3.items()
 	}
-	for area_id, expected in indicator["auditValues"].items():
-		actual = values.get(area_id)
-		if actual is None or abs(float(actual) - float(expected)) > 1e-6:
-			raise RuntimeError(
-				f"{indicator['id']} audit value changed for {area_id}: {actual} != {expected}."
-			)
+	if overture_release == config["auditOvertureRelease"]:
+		for area_id, expected in indicator["auditValues"].items():
+			actual = values.get(area_id)
+			if actual is None or abs(float(actual) - float(expected)) > 1e-6:
+				raise RuntimeError(
+					f"{indicator['id']} audit value changed for {area_id}: {actual} != {expected}."
+				)
 	return {
 		"schema": "kartensammlung.statistics-indicator/v1",
 		"indicator": {
@@ -365,6 +409,7 @@ def main() -> int:
 			"referencePeriod": config["referencePeriod"],
 			"heightMeters": config["heightMeters"],
 			"overtureRelease": overture_release,
+			"auditOvertureRelease": config["auditOvertureRelease"],
 			"sourceFileCount": len(source_files),
 			"sourceFiles": source_files,
 			"expectedMissingIso3": config["expectedMissingIso3"],
@@ -376,7 +421,7 @@ def main() -> int:
 
 	print(f"Built Global Wind Atlas snapshot {snapshot}")
 	print(f"Indicators: {len(indicator_index)}")
-	print(f"Countries with values per indicator: {EXPECTED_COUNTRIES - len(config['expectedMissingIso3'])}/{EXPECTED_COUNTRIES}")
+	print(f"Countries with values per indicator: {EXPECTED_AREAS}/{EXPECTED_COUNTRIES}")
 	print(f"Overture release: {overture_release}")
 	return 0
 
