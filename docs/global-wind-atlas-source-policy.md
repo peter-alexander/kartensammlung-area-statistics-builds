@@ -50,7 +50,8 @@ Native 100 m mean-wind-speed audit against Overture release `2026-08-19.0`:
 - source bytes: `14074635333`
 - source SHA-256: `3ed2c0bce38cd681aa61729027f666e39bd1f356eade42e6b8199a9f7e7f1730`
 - raster size: `144000 × 57600`
-- transform: `[-180.00125, 0.0025, 0, 79.99875, 0, -0.0025]`
+- Rasterio/Affine transform coefficients `(a, b, c, d, e, f)`: `[0.002500000000000001, 0.0, -180.00125, 0.0, -0.002500000000000001, 79.99875]`
+- bounds `(left, bottom, right, top)`: `[-180.00125, -64.00125000000006, 179.99875000000011, 79.99875]`
 - countries with values: `246/250`
 - extraction runtime in the audited GitHub Actions run: `314.754 s`
 - download runtime in that run: `576 s`
