@@ -8,6 +8,7 @@ This document records the source and aggregation policy for country-level Global
 - Release: June 2025
 - Owner/operator: Technical University of Denmark (DTU)
 - Partnership: World Bank Group / ESMAP
+- Data provider attribution: Vortex
 - License: CC BY 4.0
 - Production height: 100 m above ground
 - Production variables: mean wind speed and mean power density
@@ -17,6 +18,8 @@ This document records the source and aggregation policy for country-level Global
 GWA 4.0 is a wind-climate snapshot, not an annual time series. The published country statistics therefore use 2025 as the snapshot/version year, reflecting the June 2025 GWA 4.0 release. The underlying large-scale ERA5 data and mesoscale simulations represent 2008-2017 and are recorded separately as the reference period.
 
 The production workflow uses the global GIS files exposed by the official Global Wind Atlas download/API service. It does not automate downloads of all individual country files. The GWA download page explicitly states that the API service must not be used for bulk downloads of all countries or datasets.
+
+Attribution in published metadata names DTU, World Bank Group / ESMAP and Vortex in accordance with the Global Wind Atlas terms.
 
 ## Geometry and aggregation
 
