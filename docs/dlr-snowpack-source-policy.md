@@ -20,9 +20,11 @@ The workflow discovers the available yearly SCD directories from the canonical D
 The yearly SCD product is not a calendar-year statistic.
 
 - Northern hemisphere: 1 September of the previous year through 31 August of the labelled year.
-- Southern hemisphere: 1 March of the previous year through 28/29 February of the labelled year.
+- Southern hemisphere: 1 March of the labelled year through 28/29 February of the following year.
 
-The published indicator therefore describes the DLR snow year. Countries spanning both hemispheres inherit the hemisphere-dependent source-product definition at raster-cell level.
+The specific DLR yearly-product page is authoritative for the September 1 northern-hemisphere start. The general Global SnowPack overview currently contains a conflicting October 1 statement in its description of the long-term mean product; this provider therefore follows the dedicated yearly SCD product definition.
+
+The published indicator describes the DLR snow year. Countries spanning both hemispheres inherit the hemisphere-dependent source-product definition at raster-cell level.
 
 ## Spatial aggregation
 
