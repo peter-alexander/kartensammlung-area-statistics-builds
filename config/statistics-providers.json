@@ -32,6 +32,11 @@
 			"index": "world-bank-esmap-solar-pv/index.json"
 		},
 		{
+			"id": "global-wind-atlas",
+			"name": "DTU/Weltbank – Windenergie-Potenzial (Global Wind Atlas)",
+			"index": "global-wind-atlas/index.json"
+		},
+		{
 			"id": "cru-cy",
 			"name": "CRU – Klima & Wetter (CRU-CY)",
 			"index": "cru-cy/index.json"
