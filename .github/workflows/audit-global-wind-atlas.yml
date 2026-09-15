@@ -11,10 +11,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: audit-global-wind-atlas
+  cancel-in-progress: true
+
 jobs:
   audit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 8
 
     steps:
       - name: Checkout
@@ -26,7 +30,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes gdal-bin
 
-      - name: Inspect Global Wind Atlas endpoints
+      - name: Inspect global endpoints without bulk download
         shell: bash
         run: |
           set -euo pipefail
@@ -34,8 +38,6 @@ jobs:
           endpoints=(
             "global-wind-speed-100|https://globalwindatlas.info/api/gis/global/wind-speed/100/"
             "global-power-density-100|https://globalwindatlas.info/api/gis/global/power-density/100/"
-            "austria-wind-speed-100|https://globalwindatlas.info/api/gis/country/AUT/wind-speed/100"
-            "austria-power-density-100|https://globalwindatlas.info/api/gis/country/AUT/power-density/100"
           )
 
           for spec in "${endpoints[@]}"; do
@@ -43,20 +45,35 @@ jobs:
             url="${spec#*|}"
             echo "=== ${name} ===" | tee -a diagnostics/summary.txt
             echo "URL: ${url}" | tee -a diagnostics/summary.txt
-
             curl --silent --show-error --location --head \
-              --connect-timeout 15 --max-time 120 --retry 2 --retry-delay 2 --retry-all-errors \
-              "$url" > "diagnostics/${name}.headers.txt" || true
+              --connect-timeout 15 --max-time 60 --retry 2 --retry-delay 2 --retry-all-errors \
+              "$url" > "diagnostics/${name}.headers.txt"
             cat "diagnostics/${name}.headers.txt" | tee -a diagnostics/summary.txt
+            echo | tee -a diagnostics/summary.txt
+          done
 
-            echo "--- GDAL ---" | tee -a diagnostics/summary.txt
-            CPL_VSIL_CURL_USE_HEAD=NO GDAL_HTTP_MAX_RETRY=2 GDAL_HTTP_RETRY_DELAY=2 \
-              timeout 180 gdalinfo -json "/vsicurl/${url}" \
-              > "diagnostics/${name}.gdal.json" \
-              2> "diagnostics/${name}.gdal.stderr" || true
-            cat "diagnostics/${name}.gdal.stderr" | tee -a diagnostics/summary.txt
-            if [ -s "diagnostics/${name}.gdal.json" ]; then
-              python - "$name" <<'PY' | tee -a diagnostics/summary.txt
+      - name: Download and inspect Austria rasters
+        shell: bash
+        run: |
+          set -euo pipefail
+          datasets=(
+            "austria-wind-speed-100|https://globalwindatlas.info/api/gis/country/AUT/wind-speed/100"
+            "austria-power-density-100|https://globalwindatlas.info/api/gis/country/AUT/power-density/100"
+          )
+
+          for spec in "${datasets[@]}"; do
+            name="${spec%%|*}"
+            url="${spec#*|}"
+            output="/tmp/${name}.tif"
+            echo "=== ${name} ===" | tee -a diagnostics/summary.txt
+            echo "URL: ${url}" | tee -a diagnostics/summary.txt
+            curl --fail --silent --show-error --location \
+              --connect-timeout 15 --max-time 180 --retry 2 --retry-delay 2 --retry-all-errors \
+              --output "$output" "$url"
+            sha256sum "$output" | tee -a diagnostics/summary.txt
+            stat --printf='bytes=%s\n' "$output" | tee -a diagnostics/summary.txt
+            gdalinfo -json -stats "$output" > "diagnostics/${name}.gdal.json"
+            python - "$name" <<'PY' | tee -a diagnostics/summary.txt
           import json
           import sys
           from pathlib import Path
@@ -65,8 +82,8 @@ jobs:
           payload = json.loads(Path(f"diagnostics/{name}.gdal.json").read_text(encoding="utf-8"))
           print("size:", payload.get("size"))
           print("driver:", payload.get("driverShortName"), payload.get("driverLongName"))
-          print("coordinateSystem:", payload.get("coordinateSystem", {}).get("wkt", "").split("\n", 1)[0])
           print("geoTransform:", payload.get("geoTransform"))
+          print("cornerCoordinates:", payload.get("cornerCoordinates"))
           print("bands:", [
               {
                   "band": band.get("band"),
@@ -74,11 +91,12 @@ jobs:
                   "noDataValue": band.get("noDataValue"),
                   "minimum": band.get("minimum"),
                   "maximum": band.get("maximum"),
+                  "mean": band.get("mean"),
+                  "stdDev": band.get("stdDev"),
               }
               for band in payload.get("bands", [])
           ])
           PY
-            fi
             echo | tee -a diagnostics/summary.txt
           done
 
