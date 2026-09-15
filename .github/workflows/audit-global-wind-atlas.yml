@@ -6,6 +6,8 @@ on:
       - audit/global-wind-atlas
     paths:
       - ".github/workflows/audit-global-wind-atlas.yml"
+      - "scripts/audit_global_wind_atlas_extract.py"
+      - "scripts/build_countries.py"
   workflow_dispatch:
 
 permissions:
@@ -18,23 +20,68 @@ concurrency:
 jobs:
   audit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install GDAL
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install --yes gdal-bin
+          pip install --requirement requirements.txt
+          pip install \
+            exactextract==0.3.0 \
+            rasterio==1.5.1 \
+            pyproj==3.8.0 \
+            numpy==2.5.3
+
+      - name: Read published country-registry release
+        id: registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics raw/gwa-geometry build/gwa-geometry
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          curl --fail --silent --show-error --location \
+            --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+            --output raw/gwa-geometry/area-registry-countries.json "$REGISTRY_URL"
+          RELEASE="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('raw/gwa-geometry/area-registry-countries.json').read_text(encoding='utf-8'))
+          assert payload['schema'] == 'kartensammlung.area-registry/v1'
+          assert len(payload['areas']) == 250
+          print(payload['source']['release'])
+          PY
+          )"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+          echo "Published Overture release: $RELEASE"
+
+      - name: Build matching Overture country geometry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/build_countries.py \
+            --release "${{ steps.registry.outputs.release }}" \
+            --skip-tiles \
+            --output-dir raw/gwa-geometry-built \
+            --work-dir build/gwa-geometry
+          cp build/gwa-geometry/country.geojsonseq raw/gwa-geometry/country.geojsonseq
 
       - name: Measure global COGs with a one-byte range request
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p diagnostics
           endpoints=(
             "global-wind-speed-100|https://globalwindatlas.info/api/gis/global/wind-speed/100/"
             "global-power-density-100|https://globalwindatlas.info/api/gis/global/power-density/100/"
@@ -51,8 +98,6 @@ jobs:
               --range 0-0 \
               --connect-timeout 15 --max-time 60 --retry 2 --retry-delay 2 --retry-all-errors \
               --dump-header "$headers" --output "$output" "$url"
-            cat "$headers" | tee -a diagnostics/summary.txt
-            stat --printf='rangeBytes=%s\n' "$output" | tee -a diagnostics/summary.txt
             python - "$headers" <<'PY' | tee -a diagnostics/summary.txt
           import re
           import sys
@@ -64,56 +109,87 @@ jobs:
           	raise SystemExit("Missing Content-Range total size")
           print(f"totalBytes={matches[-1]}")
           PY
-            echo | tee -a diagnostics/summary.txt
           done
 
-      - name: Download and inspect Austria rasters
+      - name: Download Austria reference rasters
         shell: bash
         run: |
           set -euo pipefail
-          datasets=(
-            "austria-wind-speed-100|https://globalwindatlas.info/api/gis/country/AUT/wind-speed/100"
-            "austria-power-density-100|https://globalwindatlas.info/api/gis/country/AUT/power-density/100"
-          )
+          curl --fail --silent --show-error --location \
+            --connect-timeout 15 --max-time 180 --retry 2 --retry-delay 2 --retry-all-errors \
+            --output /tmp/austria-wind-speed-100.tif \
+            "https://globalwindatlas.info/api/gis/country/AUT/wind-speed/100"
+          curl --fail --silent --show-error --location \
+            --connect-timeout 15 --max-time 180 --retry 2 --retry-delay 2 --retry-all-errors \
+            --output /tmp/austria-power-density-100.tif \
+            "https://globalwindatlas.info/api/gis/country/AUT/power-density/100"
 
-          for spec in "${datasets[@]}"; do
-            name="${spec%%|*}"
-            url="${spec#*|}"
-            output="/tmp/${name}.tif"
-            echo "=== ${name} ===" | tee -a diagnostics/summary.txt
-            echo "URL: ${url}" | tee -a diagnostics/summary.txt
-            curl --fail --silent --show-error --location \
-              --connect-timeout 15 --max-time 180 --retry 2 --retry-delay 2 --retry-all-errors \
-              --output "$output" "$url"
-            sha256sum "$output" | tee -a diagnostics/summary.txt
-            stat --printf='bytes=%s\n' "$output" | tee -a diagnostics/summary.txt
-            gdalinfo -json -stats "$output" > "diagnostics/${name}.gdal.json"
-            python - "$name" <<'PY' | tee -a diagnostics/summary.txt
+      - name: Benchmark native 250 m range extraction for Austria
+        shell: bash
+        env:
+          CPL_VSIL_CURL_USE_HEAD: "NO"
+          GDAL_HTTP_MAX_RETRY: "4"
+          GDAL_HTTP_RETRY_DELAY: "2"
+          GDAL_DISABLE_READDIR_ON_OPEN: "EMPTY_DIR"
+        run: |
+          set -euo pipefail
+          python scripts/audit_global_wind_atlas_extract.py \
+            --source "https://globalwindatlas.info/api/gis/global/wind-speed/100/" \
+            --country-geojsonseq raw/gwa-geometry/country.geojsonseq \
+            --iso3 AUT \
+            --work-dir /tmp/gwa-global-wind \
+            --output diagnostics/global-wind-speed-aut.json
+          python scripts/audit_global_wind_atlas_extract.py \
+            --source "https://globalwindatlas.info/api/gis/global/power-density/100/" \
+            --country-geojsonseq raw/gwa-geometry/country.geojsonseq \
+            --iso3 AUT \
+            --work-dir /tmp/gwa-global-power \
+            --output diagnostics/global-power-density-aut.json
+          python scripts/audit_global_wind_atlas_extract.py \
+            --source /tmp/austria-wind-speed-100.tif \
+            --country-geojsonseq raw/gwa-geometry/country.geojsonseq \
+            --iso3 AUT \
+            --work-dir /tmp/gwa-country-wind \
+            --output diagnostics/country-wind-speed-aut.json
+          python scripts/audit_global_wind_atlas_extract.py \
+            --source /tmp/austria-power-density-100.tif \
+            --country-geojsonseq raw/gwa-geometry/country.geojsonseq \
+            --iso3 AUT \
+            --work-dir /tmp/gwa-country-power \
+            --output diagnostics/country-power-density-aut.json
+
+      - name: Compare global and country extraction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' | tee -a diagnostics/summary.txt
           import json
-          import sys
           from pathlib import Path
 
-          name = sys.argv[1]
-          payload = json.loads(Path(f"diagnostics/{name}.gdal.json").read_text(encoding="utf-8"))
-          print("size:", payload.get("size"))
-          print("driver:", payload.get("driverShortName"), payload.get("driverLongName"))
-          print("geoTransform:", payload.get("geoTransform"))
-          print("cornerCoordinates:", payload.get("cornerCoordinates"))
-          print("bands:", [
-          	{
-          		"band": band.get("band"),
-          		"type": band.get("type"),
-          		"noDataValue": band.get("noDataValue"),
-          		"minimum": band.get("minimum"),
-          		"maximum": band.get("maximum"),
-          		"mean": band.get("mean"),
-          		"stdDev": band.get("stdDev"),
-          	}
-          	for band in payload.get("bands", [])
-          ])
+          pairs = [
+          	('wind-speed', 'global-wind-speed-aut.json', 'country-wind-speed-aut.json'),
+          	('power-density', 'global-power-density-aut.json', 'country-power-density-aut.json'),
+          ]
+          for name, global_name, country_name in pairs:
+          	global_payload = json.loads(Path('diagnostics', global_name).read_text(encoding='utf-8'))
+          	country_payload = json.loads(Path('diagnostics', country_name).read_text(encoding='utf-8'))
+          	global_mean = global_payload['values']['weightedMean']
+          	country_mean = country_payload['values']['weightedMean']
+          	difference = global_mean - country_mean
+          	relative = difference / country_mean * 100.0
+          	print(
+          		f"{name}: global={global_mean:.9f} country={country_mean:.9f} "
+          		f"difference={difference:.9f} relativePct={relative:.6f} "
+          		f"globalSeconds={global_payload['seconds']:.3f} countrySeconds={country_payload['seconds']:.3f}"
+          	)
           PY
-            echo | tee -a diagnostics/summary.txt
-          done
+
+      - name: Validate audit files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/audit_global_wind_atlas_extract.py
+          git diff --check
 
       - name: Upload diagnostics
         uses: actions/upload-artifact@v4
