@@ -1,0 +1,502 @@
+name: Build DLR Global SnowPack statistics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 15 1,4,7,10 *"
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "config/dlr-snowpack-indicators.json"
+      - "scripts/discover_dlr_snowpack_years.py"
+      - "scripts/extract_dlr_snowpack_year.py"
+      - "scripts/build_dlr_snowpack.py"
+      - "scripts/build_countries.py"
+      - "scripts/build_world_bank.py"
+      - "docs/dlr-snowpack-source-policy.md"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-dlr-snowpack-statistics.yml"
+  push:
+    branches:
+      - main
+      - audit/dlr-global-snowpack
+    paths:
+      - "config/statistics-providers.json"
+      - "config/dlr-snowpack-indicators.json"
+      - "scripts/discover_dlr_snowpack_years.py"
+      - "scripts/extract_dlr_snowpack_year.py"
+      - "scripts/build_dlr_snowpack.py"
+      - "scripts/build_countries.py"
+      - "scripts/build_world_bank.py"
+      - "docs/dlr-snowpack-source-policy.md"
+      - ".github/scripts/deploy-world-bank-statistics.sh"
+      - ".github/workflows/build-dlr-snowpack-statistics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-dlr-snowpack-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      years: ${{ steps.discover.outputs.years }}
+      latest: ${{ steps.discover.outputs.latest }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate discovery inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/discover_dlr_snowpack_years.py
+          python -m json.tool config/dlr-snowpack-indicators.json >/dev/null
+          git diff --check
+
+      - name: Discover available SnowPack years
+        id: discover
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/discover_dlr_snowpack_years.py --github-output "$GITHUB_OUTPUT"
+
+  geometry:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install country-build dependencies
+        run: pip install --requirement requirements.txt
+
+      - name: Read published country-registry release
+        id: registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          REGISTRY_URL="https://tiles.radlobby.at/AreaStatistics/area-registry-countries.json?build=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          curl --fail --silent --show-error --location \
+            --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+            --output /tmp/published-area-registry-countries.json "$REGISTRY_URL"
+          RELEASE="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('/tmp/published-area-registry-countries.json').read_text(encoding='utf-8'))
+          assert payload['schema'] == 'kartensammlung.area-registry/v1'
+          assert len(payload['areas']) == 250
+          release = payload['source']['release']
+          assert release
+          print(release)
+          PY
+          )"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+          echo "Published Overture release: $RELEASE"
+
+      - name: Build matching Overture land geometry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/build_countries.py \
+            --release "${{ steps.registry.outputs.release }}" \
+            --skip-tiles \
+            --output-dir raw/dlr-snowpack-geometry \
+            --work-dir build/dlr-snowpack-geometry
+          cp /tmp/published-area-registry-countries.json raw/dlr-snowpack-geometry/area-registry-countries.json
+
+      - name: Validate geometry against published registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          registry = json.loads(Path('raw/dlr-snowpack-geometry/area-registry-countries.json').read_text(encoding='utf-8'))
+          metadata = json.loads(Path('raw/dlr-snowpack-geometry/build-metadata.json').read_text(encoding='utf-8'))
+          assert registry['schema'] == 'kartensammlung.area-registry/v1'
+          assert len(registry['areas']) == 250
+          assert registry['source']['release'] == metadata['overtureRelease']
+          assert metadata['counts']['countries'] == 250
+
+          registry_iso3 = {area['codes']['iso3'] for area in registry['areas'] if area['level'] == 'country'}
+          feature_iso3 = set()
+          for raw in Path('build/dlr-snowpack-geometry/country.geojsonseq').read_text(encoding='utf-8').splitlines():
+            line = raw.strip().lstrip('\x1e')
+            if line:
+              feature_iso3.add(json.loads(line)['properties']['iso3'])
+          assert len(registry_iso3) == 250
+          assert feature_iso3 == registry_iso3
+          print(f"overtureRelease={metadata['overtureRelease']} countries={len(feature_iso3)}")
+          PY
+
+      - name: Stage geometry artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifact/dlr-snowpack-geometry
+          cp build/dlr-snowpack-geometry/country.geojsonseq artifact/dlr-snowpack-geometry/
+          cp raw/dlr-snowpack-geometry/area-registry-countries.json artifact/dlr-snowpack-geometry/
+          cp raw/dlr-snowpack-geometry/build-metadata.json artifact/dlr-snowpack-geometry/
+
+      - name: Upload country geometry
+        uses: actions/upload-artifact@v4
+        with:
+          name: dlr-snowpack-geometry
+          path: artifact/dlr-snowpack-geometry/
+          if-no-files-found: error
+          retention-days: 7
+
+  year:
+    needs:
+      - discover
+      - geometry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        year: ${{ fromJSON(needs.discover.outputs.years) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install extraction dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes aria2 gdal-bin
+          pip install \
+            exactextract==0.3.0 \
+            rasterio==1.5.1 \
+            pyproj==3.8.0 \
+            numpy==2.5.3
+
+      - name: Download matching country geometry
+        uses: actions/download-artifact@v4
+        with:
+          name: dlr-snowpack-geometry
+          path: raw/dlr-snowpack-geometry
+
+      - name: Download DLR SnowPack SCD ${{ matrix.year }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          YEAR="${{ matrix.year }}"
+          SOURCE_URL="https://download.geoservice.dlr.de/GSP/files/yearly/SCD/${YEAR}/${YEAR}_SCD_full_wgs84.tif"
+          SOURCE_PATH="/tmp/${YEAR}_SCD_full_wgs84.tif"
+          if ! aria2c \
+            --allow-overwrite=true \
+            --auto-file-renaming=false \
+            --continue=true \
+            --file-allocation=none \
+            --max-connection-per-server=2 \
+            --max-tries=5 \
+            --min-split-size=16M \
+            --retry-wait=5 \
+            --split=2 \
+            --dir=/tmp \
+            --out="${YEAR}_SCD_full_wgs84.tif" \
+            "$SOURCE_URL"; then
+            rm -f "$SOURCE_PATH" "${SOURCE_PATH}.aria2"
+            curl --fail --show-error --location \
+              --connect-timeout 15 --max-time 900 --retry 4 --retry-delay 5 --retry-all-errors \
+              --output "$SOURCE_PATH" "$SOURCE_URL"
+          fi
+          test -s "$SOURCE_PATH"
+
+      - name: Aggregate ${{ matrix.year }} on native SnowPack grid
+        shell: bash
+        run: |
+          set -euo pipefail
+          YEAR="${{ matrix.year }}"
+          SOURCE_URL="https://download.geoservice.dlr.de/GSP/files/yearly/SCD/${YEAR}/${YEAR}_SCD_full_wgs84.tif"
+          mkdir -p raw/dlr-snowpack diagnostics
+          python scripts/extract_dlr_snowpack_year.py \
+            --year "$YEAR" \
+            --source "/tmp/${YEAR}_SCD_full_wgs84.tif" \
+            --source-url "$SOURCE_URL" \
+            --country-geojsonseq raw/dlr-snowpack-geometry/country.geojsonseq \
+            --registry raw/dlr-snowpack-geometry/area-registry-countries.json \
+            --work-dir "/tmp/dlr-snowpack-${YEAR}" \
+            --output "raw/dlr-snowpack/${YEAR}.json" \
+            2>&1 | tee "diagnostics/dlr-snowpack-${YEAR}.log"
+
+      - name: Upload year extraction
+        uses: actions/upload-artifact@v4
+        with:
+          name: dlr-snowpack-year-${{ matrix.year }}
+          path: raw/dlr-snowpack/${{ matrix.year }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload year diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dlr-snowpack-year-${{ matrix.year }}-diagnostics
+          path: diagnostics/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  build:
+    needs:
+      - discover
+      - geometry
+      - year
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build dependencies
+        run: pip install --requirement requirements.txt
+
+      - name: Download country registry
+        uses: actions/download-artifact@v4
+        with:
+          name: dlr-snowpack-geometry
+          path: raw/dlr-snowpack-geometry
+
+      - name: Download all year extractions
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dlr-snowpack-year-20??
+          path: raw/dlr-snowpack
+          merge-multiple: true
+
+      - name: Validate scripts and configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n .github/scripts/deploy-world-bank-statistics.sh
+          python -m py_compile \
+            scripts/discover_dlr_snowpack_years.py \
+            scripts/extract_dlr_snowpack_year.py \
+            scripts/build_dlr_snowpack.py \
+            scripts/build_world_bank.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          python -m json.tool config/dlr-snowpack-indicators.json >/dev/null
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path('config/dlr-snowpack-indicators.json').read_text(encoding='utf-8'))
+          paths = sorted(Path('raw/dlr-snowpack').glob('20??.json'))
+          years = [int(path.stem) for path in paths]
+          assert years, 'No yearly extraction files downloaded.'
+          expected = list(range(config['startYear'], years[-1] + 1))
+          assert years == expected, (years, expected)
+          assert years[-1] >= config['minimumLatestYear']
+          print(f"yearFiles={len(years)} range={years[0]}-{years[-1]}")
+          PY
+          git diff --check
+
+      - name: Build DLR SnowPack statistics
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p diagnostics
+          python scripts/build_dlr_snowpack.py \
+            --registry raw/dlr-snowpack-geometry/area-registry-countries.json \
+            --input-dir raw/dlr-snowpack \
+            2>&1 | tee diagnostics/dlr-snowpack-build.log
+
+      - name: Validate DLR SnowPack output
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import math
+          from pathlib import Path
+
+          config = json.loads(Path('config/dlr-snowpack-indicators.json').read_text(encoding='utf-8'))
+          provider = json.loads(Path('dist/statistics/dlr-global-snowpack/index.json').read_text(encoding='utf-8'))
+          global_index = json.loads(Path('dist/statistics/index.json').read_text(encoding='utf-8'))
+
+          assert provider['schema'] == 'kartensammlung.statistics-provider-index/v1'
+          assert provider['provider']['id'] == 'dlr-global-snowpack'
+          assert provider['provider']['name'] == 'DLR – Schneebedeckung (Global SnowPack)'
+          assert provider['provider']['license'] == 'CC BY 4.0'
+          assert provider['areaRegistry']['areaCount'] == 250
+          assert provider['dataset']['productVersion'] == 2
+          assert provider['dataset']['sourceYearRange'][0] == 2001
+          assert provider['dataset']['sourceYearRange'][1] >= 2024
+          assert provider['dataset']['sourceFileCount'] == provider['dataset']['sourceYearRange'][1] - 2000
+          assert provider['dataset']['overtureRelease'] == provider['areaRegistry']['source']['release']
+          assert len(provider['dataset']['sourceFiles']) == provider['dataset']['sourceFileCount']
+          assert len(provider['indicators']) == 1
+          assert any(item['id'] == 'dlr-global-snowpack' for item in global_index['providers'])
+
+          item = provider['indicators'][0]
+          assert item['id'] == 'dlr-global-snowpack.snow-cover-duration'
+          assert item['availableYears'][0] == 2001
+          assert item['availableYears'][-1] == provider['dataset']['sourceYearRange'][1]
+          assert item['defaultYear'] == item['availableYears'][-1]
+          assert item['coverage']['registryAreas'] == 250
+          assert item['coverage']['areasWithAnyValue'] == 250
+          assert item['coverage']['areasInLatestYear'] == 250
+
+          payload = json.loads(Path('dist/statistics/dlr-global-snowpack', item['path']).read_text(encoding='utf-8'))
+          assert payload['source']['providerId'] == 'dlr-global-snowpack'
+          assert payload['source']['license'] == 'CC BY 4.0'
+          assert payload['source']['aggregation']['overtureRelease'] == provider['dataset']['overtureRelease']
+          assert len(payload['source']['sourceFiles']) == len(item['availableYears'])
+          assert payload['source']['periodDefinition']['type'] == 'hemisphere-dependent snow year'
+          assert len(payload['values']) == len(item['availableYears'])
+
+          for year in item['availableYears']:
+            values = payload['values'][str(year)]
+            assert len(values) == 250
+            for required in config['requiredAreas']:
+              assert required in values
+            for value in values.values():
+              assert math.isfinite(value)
+              assert 0 <= value <= 366.001
+
+          if provider['dataset']['overtureRelease'] == '2026-08-19.0' and item['defaultYear'] == 2024:
+            expected = {
+              'country:AUT': 92.894921,
+              'country:NOR': 195.573686,
+              'country:USA': 64.263524,
+              'country:CAN': 179.761017,
+              'country:NAM': 0.0,
+              'country:IND': 10.152983,
+              'country:XKX': 28.933335,
+              'country:VAT': 6.150971,
+            }
+            for area_id, expected_value in expected.items():
+              actual = payload['values']['2024'][area_id]
+              assert abs(actual - expected_value) <= 1e-6, (area_id, actual, expected_value)
+
+          print(f"snapshot={provider['activeSnapshot']}")
+          print(f"overtureRelease={provider['dataset']['overtureRelease']}")
+          print(f"sourceYearRange={provider['dataset']['sourceYearRange']}")
+          print(f"sourceFileCount={provider['dataset']['sourceFileCount']}")
+          print(f"latestCoverage={item['coverage']['areasInLatestYear']}")
+          PY
+          du -h dist/statistics/dlr-global-snowpack/index.json
+          du -ch dist/statistics/dlr-global-snowpack/releases/*/*.json | tail -n 1
+
+      - name: Upload statistics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dlr-snowpack-statistics-${{ github.sha }}
+          path: dist/statistics/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install deployment tools
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lftp
+
+      - name: Deploy to tiles.radlobby.at
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          PROVIDER_ID: dlr-global-snowpack
+        run: |
+          chmod +x .github/scripts/deploy-world-bank-statistics.sh
+          .github/scripts/deploy-world-bank-statistics.sh dist/statistics
+
+      - name: Verify browser access and public statistics
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_BASE="https://tiles.radlobby.at/AreaStatistics/statistics"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          CURL_RETRY=(--connect-timeout 10 --max-time 30 --retry 2 --retry-delay 2 --retry-all-errors)
+
+          check_file() {
+            local url="$1"
+            local local_file="$2"
+            local output="$3"
+            local headers
+            local allow_origin
+            headers="$(mktemp)"
+            curl --fail --silent --show-error --location "${CURL_RETRY[@]}" \
+              --header "Origin: ${BROWSER_ORIGIN}" --dump-header "$headers" \
+              --output "$output" "${url}?${CACHE_BUST}"
+            cmp "$local_file" "$output"
+            allow_origin="$(awk '
+              BEGIN { IGNORECASE = 1 }
+              tolower($1) == "access-control-allow-origin:" {
+                value = $0
+                sub(/^[^:]+:[[:space:]]*/, "", value)
+                gsub(/\r/, "", value)
+                print value
+              }
+            ' "$headers" | tail -n 1)"
+            rm -f "$headers"
+            if [ "$allow_origin" != "*" ] && [ "$allow_origin" != "$BROWSER_ORIGIN" ]; then
+              echo "CORS check failed for ${url}: Access-Control-Allow-Origin='${allow_origin:-<missing>}'" >&2
+              exit 1
+            fi
+          }
+
+          check_file "${PUBLIC_BASE}/index.json" "dist/statistics/index.json" /tmp/public-statistics-index.json
+          check_file "${PUBLIC_BASE}/dlr-global-snowpack/index.json" "dist/statistics/dlr-global-snowpack/index.json" /tmp/public-dlr-snowpack-index.json
+          while IFS= read -r path; do
+            mkdir -p "/tmp/public-dlr-snowpack/$(dirname "$path")"
+            check_file \
+              "${PUBLIC_BASE}/dlr-global-snowpack/${path}" \
+              "dist/statistics/dlr-global-snowpack/${path}" \
+              "/tmp/public-dlr-snowpack/${path}"
+          done < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('dist/statistics/dlr-global-snowpack/index.json').read_text(encoding='utf-8'))
+          for indicator in payload['indicators']:
+            print(indicator['path'])
+          PY
+          )
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dlr-snowpack-statistics-diagnostics-${{ github.sha }}
+          path: diagnostics/
+          if-no-files-found: ignore
+          retention-days: 30

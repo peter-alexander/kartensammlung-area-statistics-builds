@@ -37,6 +37,11 @@
 			"index": "cru-cy/index.json"
 		},
 		{
+			"id": "dlr-global-snowpack",
+			"name": "DLR – Schneebedeckung (Global SnowPack)",
+			"index": "dlr-global-snowpack/index.json"
+		},
+		{
 			"id": "oecd-extreme-temperature",
 			"name": "OECD – Hitze & Temperaturbelastung",
 			"index": "oecd-extreme-temperature/index.json"
