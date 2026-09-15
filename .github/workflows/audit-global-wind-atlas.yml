@@ -30,7 +30,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes gdal-bin
 
-      - name: Inspect global endpoints without bulk download
+      - name: Measure global COGs with a one-byte range request
         shell: bash
         run: |
           set -euo pipefail
@@ -43,12 +43,27 @@ jobs:
           for spec in "${endpoints[@]}"; do
             name="${spec%%|*}"
             url="${spec#*|}"
+            headers="diagnostics/${name}.range-headers.txt"
+            output="/tmp/${name}.byte"
             echo "=== ${name} ===" | tee -a diagnostics/summary.txt
             echo "URL: ${url}" | tee -a diagnostics/summary.txt
-            curl --silent --show-error --location --head \
+            curl --fail --silent --show-error --location \
+              --range 0-0 \
               --connect-timeout 15 --max-time 60 --retry 2 --retry-delay 2 --retry-all-errors \
-              "$url" > "diagnostics/${name}.headers.txt"
-            cat "diagnostics/${name}.headers.txt" | tee -a diagnostics/summary.txt
+              --dump-header "$headers" --output "$output" "$url"
+            cat "$headers" | tee -a diagnostics/summary.txt
+            stat --printf='rangeBytes=%s\n' "$output" | tee -a diagnostics/summary.txt
+            python - "$headers" <<'PY' | tee -a diagnostics/summary.txt
+          import re
+          import sys
+          from pathlib import Path
+
+          text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+          matches = re.findall(r"(?im)^content-range:\s*bytes\s+\d+-\d+/(\d+)\s*$", text)
+          if not matches:
+          	raise SystemExit("Missing Content-Range total size")
+          print(f"totalBytes={matches[-1]}")
+          PY
             echo | tee -a diagnostics/summary.txt
           done
 
@@ -85,16 +100,16 @@ jobs:
           print("geoTransform:", payload.get("geoTransform"))
           print("cornerCoordinates:", payload.get("cornerCoordinates"))
           print("bands:", [
-              {
-                  "band": band.get("band"),
-                  "type": band.get("type"),
-                  "noDataValue": band.get("noDataValue"),
-                  "minimum": band.get("minimum"),
-                  "maximum": band.get("maximum"),
-                  "mean": band.get("mean"),
-                  "stdDev": band.get("stdDev"),
-              }
-              for band in payload.get("bands", [])
+          	{
+          		"band": band.get("band"),
+          		"type": band.get("type"),
+          		"noDataValue": band.get("noDataValue"),
+          		"minimum": band.get("minimum"),
+          		"maximum": band.get("maximum"),
+          		"mean": band.get("mean"),
+          		"stdDev": band.get("stdDev"),
+          	}
+          	for band in payload.get("bands", [])
           ])
           PY
             echo | tee -a diagnostics/summary.txt
