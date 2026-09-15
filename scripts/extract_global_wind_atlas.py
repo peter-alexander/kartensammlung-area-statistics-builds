@@ -19,6 +19,7 @@ from rasterio.transform import Affine
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config" / "global-wind-atlas-indicators.json"
 EXPECTED_COUNTRIES = 250
+EXPECTED_AREAS = 246
 
 
 def parse_args() -> argparse.Namespace:
@@ -75,6 +76,13 @@ def validate_iso3_list(name: str, value: Any) -> list[str]:
 	return value
 
 
+def validate_sha256(name: str, value: Any) -> str:
+	normalized = str(value or "").lower()
+	if len(normalized) != 64 or any(char not in "0123456789abcdef" for char in normalized):
+		raise ValueError(f"{name} must be a lowercase SHA-256 digest.")
+	return normalized
+
+
 def validate_config(payload: Any) -> dict[str, Any]:
 	if not isinstance(payload, dict) or payload.get("schema") != "kartensammlung.global-wind-atlas-statistics/v1":
 		raise ValueError("Invalid Global Wind Atlas config.")
@@ -86,7 +94,9 @@ def validate_config(payload: Any) -> dict[str, Any]:
 		raise ValueError("Global Wind Atlas 4.0 snapshot year must remain 2025.")
 	if payload.get("referencePeriod") != [2008, 2017]:
 		raise ValueError("Global Wind Atlas 4.0 reference period must remain 2008-2017.")
-	validate_iso3_list("expectedMissingIso3", payload.get("expectedMissingIso3"))
+	expected_missing = validate_iso3_list("expectedMissingIso3", payload.get("expectedMissingIso3"))
+	if expected_missing != ["ATA", "BVT", "HMD", "SGS"]:
+		raise ValueError("Global Wind Atlas audited missing-country contract changed.")
 	for key in (
 		"expectedWidth",
 		"expectedHeight",
@@ -120,6 +130,12 @@ def validate_config(payload: Any) -> dict[str, Any]:
 			or float(value_range[0]) >= float(value_range[1])
 		):
 			raise ValueError(f"Indicator {indicator_id} has invalid valueRange.")
+		if indicator.get("expectedAreas") != EXPECTED_AREAS:
+			raise ValueError(f"Indicator {indicator_id} expectedAreas must remain {EXPECTED_AREAS}.")
+		expected_bytes = indicator.get("expectedSourceBytes")
+		if not isinstance(expected_bytes, int) or expected_bytes <= 1_000_000_000:
+			raise ValueError(f"Indicator {indicator_id} has invalid expectedSourceBytes.")
+		validate_sha256(f"{indicator_id}.expectedSourceSha256", indicator.get("expectedSourceSha256"))
 	return payload
 
 
@@ -183,15 +199,15 @@ def load_features(path: Path, registry_codes: set[str]) -> list[dict[str, Any]]:
 	return features
 
 
-def assert_close_sequence(name: str, actual: Any, expected: Any, tolerance: float = 1e-10) -> None:
-	if len(actual) != len(expected):
+def assert_close_sequence(name: str, actual: Any, expected: Any, tolerance: float = 1e-9) -> None:
+	if not isinstance(actual, (list, tuple)) or len(actual) != len(expected):
 		raise RuntimeError(f"{name} length changed: {actual} != {expected}")
 	for actual_value, expected_value in zip(actual, expected, strict=True):
 		if abs(float(actual_value) - float(expected_value)) > tolerance:
 			raise RuntimeError(f"{name} changed: {actual} != {expected}")
 
 
-def inspect_source(path: Path, config: dict[str, Any]) -> dict[str, Any]:
+def inspect_source(path: Path, config: dict[str, Any], indicator: dict[str, Any]) -> dict[str, Any]:
 	with rasterio.open(path) as dataset:
 		if dataset.width != int(config["expectedWidth"]) or dataset.height != int(config["expectedHeight"]):
 			raise RuntimeError(
@@ -210,7 +226,7 @@ def inspect_source(path: Path, config: dict[str, Any]) -> dict[str, Any]:
 		pixel = float(config["expectedPixelSizeDegrees"])
 		if abs(float(dataset.transform.a) - pixel) > 1e-12 or abs(abs(float(dataset.transform.e)) - pixel) > 1e-12:
 			raise RuntimeError(f"Unexpected Global Wind Atlas pixel size: {dataset.transform}")
-		return {
+		metadata = {
 			"width": dataset.width,
 			"height": dataset.height,
 			"crs": dataset.crs.to_string(),
@@ -222,6 +238,17 @@ def inspect_source(path: Path, config: dict[str, Any]) -> dict[str, Any]:
 			"bytes": path.stat().st_size,
 			"sha256": sha256_file(path),
 		}
+	if metadata["bytes"] != indicator["expectedSourceBytes"]:
+		raise RuntimeError(
+			f"{indicator['id']}: source byte size changed: "
+			f"{metadata['bytes']} != {indicator['expectedSourceBytes']}"
+		)
+	if metadata["sha256"] != indicator["expectedSourceSha256"]:
+		raise RuntimeError(
+			f"{indicator['id']}: source SHA-256 changed: "
+			f"{metadata['sha256']} != {indicator['expectedSourceSha256']}"
+		)
+	return metadata
 
 
 def create_area_weights(source: Path, work_dir: Path) -> tuple[Path, dict[str, Any]]:
@@ -356,7 +383,7 @@ def main() -> int:
 		)
 	registry_codes, overture_release = load_registry(args.registry)
 	features = load_features(args.country_geojsonseq, registry_codes)
-	metadata = inspect_source(args.source, config)
+	metadata = inspect_source(args.source, config, indicator)
 	weights, weight_metadata = create_area_weights(args.source, args.work_dir)
 
 	started = time.monotonic()
