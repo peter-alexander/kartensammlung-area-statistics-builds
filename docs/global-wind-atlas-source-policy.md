@@ -55,6 +55,9 @@ Native 100 m mean-wind-speed audit against Overture release `2026-08-19.0`:
 - countries with values: `246/250`
 - extraction runtime in the audited GitHub Actions run: `314.754 s`
 - download runtime in that run: `576 s`
+- audited country weighted-mean range: `2.3749301007303307` to `11.260532082584762` m/s
+- fixed classification breaks: `[3.5, 4.5, 5.5, 6.5, 7.5, 8.5]` m/s
+- class counts from low to high: `[25, 42, 52, 53, 47, 16, 11]`
 
 Control weighted means (m/s):
 
