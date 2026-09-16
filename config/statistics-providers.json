@@ -17,29 +17,9 @@
 			"index": "world-bank-electrification/index.json"
 		},
 		{
-			"id": "world-bank-cckp-era5",
-			"name": "Weltbank – Klima & Wetter (ERA5)",
-			"index": "world-bank-cckp-era5/index.json"
-		},
-		{
-			"id": "world-bank-spei",
-			"name": "Weltbank – Dürre (SPEI)",
-			"index": "world-bank-spei/index.json"
-		},
-		{
 			"id": "world-bank-esmap-solar-pv",
 			"name": "Weltbank/ESMAP – Solarenergie & PV-Potenzial",
 			"index": "world-bank-esmap-solar-pv/index.json"
-		},
-		{
-			"id": "cru-cy",
-			"name": "CRU – Klima & Wetter (CRU-CY)",
-			"index": "cru-cy/index.json"
-		},
-		{
-			"id": "dlr-global-snowpack",
-			"name": "DLR – Schneebedeckung (Global SnowPack)",
-			"index": "dlr-global-snowpack/index.json"
 		},
 		{
 			"id": "oecd-extreme-temperature",
