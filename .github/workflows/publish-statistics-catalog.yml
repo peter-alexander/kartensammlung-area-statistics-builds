@@ -1,0 +1,122 @@
+name: Publish statistics catalog
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "config/statistics-providers.json"
+      - "scripts/build_statistics_catalog.py"
+      - ".github/workflows/publish-statistics-catalog.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "config/statistics-providers.json"
+      - "scripts/build_statistics_catalog.py"
+      - ".github/workflows/publish-statistics-catalog.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: area-statistics-catalog-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate catalog builder
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/build_statistics_catalog.py
+          python -m json.tool config/statistics-providers.json >/dev/null
+          bash -n .github/scripts/lftp-upload.sh
+          git diff --check
+
+      - name: Build statistics catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/build_statistics_catalog.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path("config/statistics-providers.json").read_text(encoding="utf-8"))
+          index = json.loads(Path("dist/statistics/index.json").read_text(encoding="utf-8"))
+          assert index["schema"] == "kartensammlung.statistics-index/v1"
+          assert index["areaRegistry"] == "../area-registry-countries.json"
+          assert index["providers"] == config["providers"]
+          assert len(index["providers"]) == len({item["id"] for item in index["providers"]})
+          print(f"providers={len(index['providers'])}")
+          PY
+
+      - name: Upload catalog artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: statistics-catalog-${{ github.sha }}
+          path: dist/statistics/index.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Deploy statistics catalog
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x .github/scripts/lftp-upload.sh
+          .github/scripts/lftp-upload.sh \
+            dist/statistics/index.json \
+            AreaStatistics/statistics/index.json
+
+      - name: Verify public statistics catalog
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC_URL="https://tiles.radlobby.at/AreaStatistics/statistics/index.json"
+          BROWSER_ORIGIN="https://fahrrad.lima-city.de"
+          CACHE_BUST="run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          HEADERS="$(mktemp)"
+          trap 'rm -f "$HEADERS" /tmp/public-statistics-index.json' EXIT
+
+          curl --fail --silent --show-error --location \
+            --connect-timeout 10 --max-time 30 \
+            --retry 2 --retry-delay 2 --retry-all-errors \
+            --header "Origin: ${BROWSER_ORIGIN}" \
+            --dump-header "$HEADERS" \
+            --output /tmp/public-statistics-index.json \
+            "${PUBLIC_URL}?${CACHE_BUST}"
+          cmp dist/statistics/index.json /tmp/public-statistics-index.json
+
+          ALLOW_ORIGIN="$(awk '
+            BEGIN { IGNORECASE = 1 }
+            tolower($1) == "access-control-allow-origin:" {
+              value = $0
+              sub(/^[^:]+:[[:space:]]*/, "", value)
+              gsub(/\r/, "", value)
+              print value
+            }
+          ' "$HEADERS" | tail -n 1)"
+          if [ "$ALLOW_ORIGIN" != "*" ] && [ "$ALLOW_ORIGIN" != "$BROWSER_ORIGIN" ]; then
+            echo "CORS check failed: Access-Control-Allow-Origin='${ALLOW_ORIGIN:-<missing>}'" >&2
+            exit 1
+          fi
+
+          echo "Verified public statistics catalog byte-for-byte with CORS."
