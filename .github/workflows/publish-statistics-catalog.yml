@@ -1,4 +1,4 @@
-# Catalog-only publication deliberately avoids rebuilding provider datasets.
+# Catalog-only publication keeps provider-list changes independent from provider rebuilds.
 name: Publish statistics catalog
 
 on:
