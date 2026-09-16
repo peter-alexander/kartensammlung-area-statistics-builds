@@ -1,3 +1,4 @@
+# Catalog-only publication deliberately avoids rebuilding provider datasets.
 name: Publish statistics catalog
 
 on:
